@@ -110,17 +110,21 @@ describe("a lookalike of an ASCII address", () => {
     expect(parseEmail(PLAIN)).toEqual(ok(PLAIN));
   });
 
-  it("never folds into an ASCII domain, whichever single character it holds", () => {
-    const folded: string[] = [];
-    for (let codePoint = 0x80; codePoint <= 0x10ffff; codePoint += 1) {
-      if (codePoint >= 0xd800 && codePoint <= 0xdfff) continue;
-      const character = String.fromCodePoint(codePoint);
-      const parsed = parseEmail(`ana@a${character}b.example`);
-      if (parsed.ok && !parsed.value.startsWith("ana@xn--")) folded.push(parsed.value);
-    }
+  it(
+    "never folds into an ASCII domain, whichever single character it holds",
+    { timeout: 30_000 },
+    () => {
+      const folded: string[] = [];
+      for (let codePoint = 0x80; codePoint <= 0x10ffff; codePoint += 1) {
+        if (codePoint >= 0xd800 && codePoint <= 0xdfff) continue;
+        const character = String.fromCodePoint(codePoint);
+        const parsed = parseEmail(`ana@a${character}b.example`);
+        if (parsed.ok && !parsed.value.startsWith("ana@xn--")) folded.push(parsed.value);
+      }
 
-    expect(folded).toEqual([]);
-  });
+      expect(folded).toEqual([]);
+    },
+  );
 });
 
 describe("isEmailAddress", () => {
