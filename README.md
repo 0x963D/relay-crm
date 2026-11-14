@@ -1,12 +1,17 @@
 # Relay CRM
 
 Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone. The
-build has eight steps, and this is the state after step 2. Today it takes leads in from Meta Lead
-Ads, a web form and CSV files, decides what each submission means, and shows the leads in a list.
+build has nine steps, and steps 1 and 2 are done. Today it takes leads in from Meta Lead Ads, a web
+form and CSV files, decides what each submission means, and shows the leads in a list.
 
 The name is a working title.
 
-## What works today
+## Status
+
+Steps 1 and 2 are done. Work on steps 3 to 5 is paused, and none of it is in the code yet. The app
+has no sign-in, no lead assignment, no work queue and no payments.
+
+What works today:
 
 - **One intake path.** Every source builds a submission and calls the same function. The function
   creates a lead, attaches the submission to an open lead, reopens a closed lead, links a
@@ -167,12 +172,21 @@ the same file records nothing new. If you correct one row and import again, only
 
 ## Roadmap
 
-3. Sign-in, scoped access on every query, and lead distribution from the pool.
-4. The work queue, activities and tasks.
-5. Payments with two-person approval.
-6. Reports and the audit viewer.
-7. The outbox and email.
-8. Whitelabel settings, seed data, Docker and a demo.
+Steps 3 to 5 build the backend and a typed API. The screens come after them, in a step of their
+own.
+
+3. Sign-in with a one-time code sent by email, or with Google when it is configured. Scoped access
+   on every lead and account query. Lead distribution from the pool, where a preview is refused if
+   the leads changed hands after it was made.
+4. The work queue, with today's follow-ups, overdue callbacks, status changes, notes, and logged
+   call and WhatsApp attempts. A daily job returns exhausted leads to the pool.
+5. Payments with two-person approval. Two different approvers must approve, and neither of them can
+   be the person who recorded the payment. Conflicting payments are refused under concurrency, and
+   a reversal runs exactly once.
+6. The screens for the work queue, distribution and payments.
+7. Reports and the audit viewer.
+8. The outbox and email.
+9. Whitelabel settings, seed data, Docker and a demo.
 
 ## License
 
