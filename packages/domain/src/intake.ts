@@ -110,8 +110,8 @@ export type IntakeDecision =
   | { readonly kind: "suppress"; readonly leadId: LeadId };
 
 /**
- * Decides what one submission does. Pure and total: every snapshot and submission has exactly one
- * decision, and the first matching rule wins.
+ * Decides what one submission does. It is pure and total. Every snapshot and submission has
+ * exactly one decision, and the first matching rule wins.
  *
  * 1. The external ID was seen before: replay the first outcome, whatever this payload says.
  * 2. No usable email: reject, because email is the identity.

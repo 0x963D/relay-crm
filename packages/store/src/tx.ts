@@ -13,7 +13,7 @@ export function connect(connectionString: string): Db {
 /**
  * Serializable isolation locks whole index pages, so on small tables concurrent intakes conflict
  * even for unrelated people and a burst resolves close to serially. Ten attempts is what that
- * costs: in a measured burst of 12 the slowest call took 6, and 9 once every insert was slowed by
+ * costs. In a measured burst of 12 the slowest call took 6, and 9 once every insert was slowed by
  * 30 ms. Past the limit the sender retries, which the ledger makes safe.
  */
 const MAX_ATTEMPTS = 10;

@@ -13,7 +13,7 @@ import { z } from "zod";
 export interface MetaLeadSource {
   /**
    * Fetches the lead a notification named. It throws on every failure, "does not exist"
-   * included: Graph reports missing permissions with the same error, so treating it as permanent
+   * included. Graph reports missing permissions with the same error, so treating it as permanent
    * would drop real leads while a token is misconfigured.
    */
   fetchSubmission(leadgenId: string, receivedAt: Date): Promise<IntakeSubmission>;

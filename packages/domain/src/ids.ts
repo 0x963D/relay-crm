@@ -6,7 +6,7 @@ declare const brand: unique symbol;
  */
 export type Brand<T, B extends string> = T & { readonly [brand]: B };
 
-// Lowercase only: one ID has one spelling, so `===` compares IDs.
+// Lowercase only, so one ID has one spelling and `===` compares IDs.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /**

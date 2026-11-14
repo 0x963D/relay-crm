@@ -13,7 +13,7 @@ import type { Prisma } from "./generated/client.ts";
 import { InvariantError, leadFromRow, lifecycleFromRow, lifecycleToColumns } from "./lead-row.ts";
 import type { Db, Tx } from "./tx.ts";
 
-/** A lead as a list shows it: the record plus where it first came from. */
+/** A lead as a list shows it, which is the record plus where it first came from. */
 export interface LeadListItem extends Lead {
   /** From the ledger row that created the lead. null for a lead no intake created. */
   readonly origin: { readonly source: IntakeSource; readonly campaign: string | null } | null;

@@ -146,7 +146,7 @@ async function createTestDatabase(): Promise<{
 }
 
 /**
- * Vitest's `test`, with a `db` fixture: a fresh database per test that is dropped afterwards.
+ * Vitest's `test` with a `db` fixture, which is a fresh database that is dropped after the test.
  * Rolling back per test is not an option, because the code under test owns its transactions.
  */
 export const test = base.extend<{ db: TestDatabase }>({

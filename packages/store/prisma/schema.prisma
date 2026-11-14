@@ -181,8 +181,8 @@ model Lead {
   @@map("leads")
 }
 
-// The intake ledger: one append-only row per submission, with the original record and what was
-// decided. The unique pair is the idempotency key.
+// The intake ledger holds one append-only row per submission, with the original record and what
+// was decided. The unique pair is the idempotency key.
 model IntakeEvent {
   id          String        @id @default(uuid(7)) @db.Uuid
   source      IntakeSource
@@ -196,7 +196,8 @@ model IntakeEvent {
   form        String?
   submittedAt DateTime?     @map("submitted_at") @db.Timestamptz(3)
   receivedAt  DateTime      @map("received_at") @db.Timestamptz(3)
-  // json, not jsonb: the record is kept as received and never queried, and jsonb refuses \u0000.
+  // json and not jsonb, because the record is kept as received and never queried, and jsonb
+  // refuses a NUL escape.
   raw         Json          @db.Json
   outcome     IntakeOutcome
   leadId      String?       @map("lead_id") @db.Uuid

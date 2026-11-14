@@ -7,7 +7,7 @@ const USAGE = "Usage: pnpm import:csv <file.csv>";
 /**
  * Imports a CSV file through intake and prints the report as JSON. The exit code is 0 when every
  * row was recorded, 1 when some rows failed, and 2 when the file could not be imported at all.
- * Running it again on the same file is safe: recorded rows replay.
+ * Running it again on the same file is safe, because recorded rows replay.
  */
 async function main(path: string | undefined): Promise<number> {
   if (path === undefined) {

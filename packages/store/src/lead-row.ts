@@ -38,7 +38,7 @@ export type EnumParity = [
   Assert<Same<$Enums.TeamKind, TeamKind>>,
 ];
 
-/** A row holds a shape the CHECK constraints make impossible. Never caught: it means corruption. */
+/** A row holds a shape the CHECK constraints make impossible. Nothing catches it. */
 export class InvariantError extends Error {
   override readonly name = "InvariantError";
 }

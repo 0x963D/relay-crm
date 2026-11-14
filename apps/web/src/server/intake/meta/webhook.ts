@@ -123,7 +123,7 @@ export function createMetaWebhook(config: MetaWebhookConfig | null): WebhookHand
 
       const receivedAt = now();
       let failed = false;
-      // One at a time: leads in one batch would only contend with each other in the database.
+      // One at a time, because leads in one batch would only contend with each other.
       for (const leadgenId of ids) {
         try {
           await intake(await leads.fetchSubmission(leadgenId, receivedAt));

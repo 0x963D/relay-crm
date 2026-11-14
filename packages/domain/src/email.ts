@@ -45,9 +45,9 @@ export function isEmailKey(value: string): value is EmailKey {
 }
 
 /**
- * The identity rule, in one place. It is conservative on purpose: Gmail dots and plus tags stay
- * significant. Splitting one person into two leads is repaired by marking a duplicate, and merging
- * two people into one lead cannot be undone.
+ * The identity rule, in one place. It is conservative on purpose, so Gmail dots and plus tags
+ * stay significant. Splitting one person into two leads is repaired by marking a duplicate, and
+ * merging two people into one lead cannot be undone.
  */
 export function parseEmail(input: string): Email | null {
   const asTyped = input.trim();

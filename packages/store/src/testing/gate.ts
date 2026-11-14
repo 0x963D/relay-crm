@@ -19,7 +19,7 @@ export interface Gate {
 
 /**
  * `holder` keeps the locks inside a transaction. `watcher` must be a different session with no
- * open transaction: PostgreSQL freezes pg_stat_activity at a transaction's first read of it, so
+ * open transaction. PostgreSQL freezes pg_stat_activity at a transaction's first read of it, so
  * the holder would never see a waiter arrive.
  */
 export function createGate(holder: pg.Client, watcher: pg.Client): Gate {
