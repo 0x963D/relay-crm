@@ -34,7 +34,7 @@ describe("devActor", () => {
       "NODE_ENV is production, whatever the role",
       { NODE_ENV: "production", RELAY_DEV_ACTOR: "1", RELAY_DEV_ROLE: "owner" },
     ],
-  ])("is nobody when %s", (_label, variables) => {
-    expect(actorFor(variables)).toBeNull();
+  ])("throws when %s", (_label, variables) => {
+    expect(() => actorFor(variables)).toThrow(/NODE_ENV=development and RELAY_DEV_ACTOR=1/);
   });
 });

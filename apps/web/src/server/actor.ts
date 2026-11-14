@@ -8,5 +8,7 @@ import { devActor } from "./dev-actor.ts";
  * route answers 401, and a page renders app/unauthorized.tsx with status 401.
  */
 export function requireActor(): Actor {
-  return devActor(composition().env) ?? unauthorized();
+  const { env } = composition();
+  if (env.devRole === null) unauthorized();
+  return devActor(env);
 }
