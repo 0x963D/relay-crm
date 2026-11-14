@@ -14,6 +14,7 @@
   "dependencies": {
     "@relay/domain": "workspace:*",
     "@relay/store": "workspace:*",
+    "csv-parse": "^7.0.3",
     "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1",

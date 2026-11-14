@@ -1,0 +1,33 @@
+import { readFile } from "node:fs/promises";
+import { composition } from "../src/server/composition.ts";
+import { importCsv } from "../src/server/intake/csv.ts";
+
+const USAGE = "Usage: pnpm import:csv <file.csv>";
+
+/**
+ * Imports a CSV file through intake and prints the report as JSON. The exit code is 0 when every
+ * row was recorded, 1 when some rows failed, and 2 when the file could not be imported at all.
+ * Running it again on the same file is safe: recorded rows replay.
+ */
+async function main(path: string | undefined): Promise<number> {
+  if (path === undefined) {
+    process.stderr.write(`${USAGE}\n`);
+    return 2;
+  }
+  try {
+    const csvText = await readFile(path, "utf8");
+    const { store } = composition();
+    try {
+      const report = await importCsv({ intake: store.intake, now: () => new Date() }, csvText);
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return report.failures.length === 0 ? 0 : 1;
+    } finally {
+      await store.close();
+    }
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 2;
+  }
+}
+
+process.exitCode = await main(process.argv[2]);
