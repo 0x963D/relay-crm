@@ -1,8 +1,10 @@
 import { parseEmail } from "./email.ts";
-import type { AccountId } from "./ids.ts";
+import { IntakeEventId, LeadId, type AccountId } from "./ids.ts";
 import {
   normalizeAttribution,
   parseExternalId,
+  type Intake,
+  type IntakeResult,
   type IntakeSubmission,
   type JsonValue,
 } from "./intake.ts";
@@ -79,5 +81,37 @@ export function submissionExample(fields: SubmissionFields = {}): IntakeSubmissi
     submittedAt: fields.submittedAt ?? null,
     receivedAt: fields.receivedAt ?? new Date("2026-03-02T09:00:00.000Z"),
     raw: fields.raw ?? {},
+  };
+}
+
+export function intakeResultExample(): IntakeResult {
+  const eventId = IntakeEventId.parse("019a8e2c-0000-7000-8000-0000000000e1");
+  const leadId = LeadId.parse("019a8e2c-0000-7000-8000-0000000001ea");
+  if (eventId === null || leadId === null) throw new Error("The example IDs are not UUIDs");
+  return { eventId, outcome: { kind: "leadCreated", leadId }, replayed: false };
+}
+
+export interface IntakeFake {
+  readonly intake: Intake;
+  /** Every submission the fake was given, in order. */
+  readonly received: readonly IntakeSubmission[];
+}
+
+/**
+ * A stand-in for the store's intake, for testing an intake source without a database. `respond`
+ * picks the result, and a throw from it becomes the rejection a failed transaction would give.
+ */
+export function intakeFake(
+  respond: (submission: IntakeSubmission) => IntakeResult = intakeResultExample,
+): IntakeFake {
+  const received: IntakeSubmission[] = [];
+  return {
+    received,
+    intake: (submission) => {
+      received.push(submission);
+      return new Promise((resolve) => {
+        resolve(respond(submission));
+      });
+    },
   };
 }

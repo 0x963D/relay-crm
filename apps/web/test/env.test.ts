@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import { EnvError, parseEnv } from "../src/server/env.ts";
 
 const DATABASE_URL = "postgresql://relay:relay@localhost:5432/relay";
+const META = {
+  META_VERIFY_TOKEN: "verify",
+  META_APP_SECRET: "secret",
+  META_ACCESS_TOKEN: "token",
+  META_GRAPH_VERSION: "v24.0",
+};
 
 describe("parseEnv", () => {
-  it("reads the database URL", () => {
-    expect(parseEnv({ DATABASE_URL })).toEqual({ databaseUrl: DATABASE_URL });
+  it("reads the database URL, with Meta off when none of its variables is set", () => {
+    expect(parseEnv({ DATABASE_URL })).toEqual({ databaseUrl: DATABASE_URL, meta: null });
   });
 
   it.each([
@@ -15,5 +21,40 @@ describe("parseEnv", () => {
   ])("refuses a %s database URL and names the variable", (_label, variables) => {
     expect(() => parseEnv(variables)).toThrow(EnvError);
     expect(() => parseEnv(variables)).toThrow(/DATABASE_URL/);
+  });
+
+  it("reads a complete Meta configuration and defaults the Graph base URL", () => {
+    expect(parseEnv({ DATABASE_URL, ...META }).meta).toEqual({
+      verifyToken: "verify",
+      appSecret: "secret",
+      accessToken: "token",
+      graphVersion: "v24.0",
+      graphBaseUrl: "https://graph.facebook.com",
+    });
+  });
+
+  it("points the Graph client at another base URL when one is given", () => {
+    const env = parseEnv({ DATABASE_URL, ...META, META_GRAPH_BASE_URL: "http://127.0.0.1:4010" });
+
+    expect(env.meta?.graphBaseUrl).toBe("http://127.0.0.1:4010");
+  });
+
+  it("treats Meta variables left empty by a copied example file as unset", () => {
+    const empty = { META_VERIFY_TOKEN: "", META_APP_SECRET: "", META_ACCESS_TOKEN: "" };
+
+    expect(parseEnv({ DATABASE_URL, ...empty }).meta).toBeNull();
+  });
+
+  it("refuses a partial Meta configuration and names what is missing", () => {
+    const partial = { DATABASE_URL, META_VERIFY_TOKEN: "verify", META_APP_SECRET: "secret" };
+
+    expect(() => parseEnv(partial)).toThrow(EnvError);
+    expect(() => parseEnv(partial)).toThrow(/META_ACCESS_TOKEN, META_GRAPH_VERSION/);
+  });
+
+  it("refuses a Graph version that is not a version", () => {
+    expect(() => parseEnv({ DATABASE_URL, ...META, META_GRAPH_VERSION: "latest" })).toThrow(
+      /META_GRAPH_VERSION/,
+    );
   });
 });

@@ -1,13 +1,39 @@
 import { openStore, type Store } from "@relay/store";
 import { readEnv, type Env } from "./env.ts";
+import { createMetaLeadSource } from "./intake/meta/lead-source.ts";
+import { createMetaWebhook, type WebhookHandlers } from "./intake/meta/webhook.ts";
+import { logToConsole } from "./log.ts";
 
 /** Every long-lived object the application has. This file is the only one that builds any. */
 export interface Composition {
   readonly store: Store;
+  readonly metaWebhook: WebhookHandlers;
 }
 
 function compose(env: Env): Composition {
-  return { store: openStore({ connectionString: env.databaseUrl }) };
+  const store = openStore({ connectionString: env.databaseUrl });
+  const now = (): Date => new Date();
+  const log = logToConsole;
+
+  return {
+    store,
+    metaWebhook: createMetaWebhook(
+      env.meta && {
+        verifyToken: env.meta.verifyToken,
+        appSecret: env.meta.appSecret,
+        leads: createMetaLeadSource({
+          accessToken: env.meta.accessToken,
+          appSecret: env.meta.appSecret,
+          graphVersion: env.meta.graphVersion,
+          baseUrl: env.meta.graphBaseUrl,
+          fetch,
+        }),
+        intake: store.intake,
+        now,
+        log,
+      },
+    ),
+  };
 }
 
 declare global {
