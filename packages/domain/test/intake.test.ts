@@ -55,7 +55,6 @@ describe("resolveIntake", () => {
     expect(resolveIntake(snapshot, submissionExample({ email: null }))).toEqual(expected);
   });
 
-  /** The conflict rules as a specification: one decision for a lead in each example state. */
   const DECISIONS: readonly (readonly [state: string, decision: IntakeDecision["kind"]])[] = [
     ["new", "attach"],
     ["assigned", "attach"],

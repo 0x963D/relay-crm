@@ -12,17 +12,11 @@ import type { Prisma } from "./generated/client.ts";
 import { InvariantError, leadFromRow, lifecycleFromRow, lifecycleToColumns } from "./lead-row.ts";
 import type { Db, Tx } from "./tx.ts";
 
-/** A lead as a list shows it, which is the record plus where it first came from. */
 export interface LeadListItem extends Lead {
   /** From the ledger row that created the lead. null for a lead no intake created. */
   readonly origin: { readonly source: IntakeSource; readonly campaign: string | null } | null;
 }
 
-/**
- * The SQL reading of a scope, and the only place a scope becomes a query. It stays private:
- * every read exported from this file takes an Actor, so no caller can skip scoping.
- * test/leads.int.test.ts proves it selects exactly the rows `scopeAdmits` accepts.
- */
 function leadScopeWhere(scope: LeadScope): Prisma.LeadWhereInput {
   switch (scope.kind) {
     case "all":
@@ -43,7 +37,7 @@ export async function listLeads(
 ): Promise<readonly LeadListItem[]> {
   const rows = await db.lead.findMany({
     where: leadScopeWhere(leadScope(actor, "read")),
-    // Newest first. UUID v7 ascends with time, so the ID breaks ties in the same direction.
+    // UUID v7 ascends with time, so the ID breaks ties in the same direction.
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: page.limit,
     include: {

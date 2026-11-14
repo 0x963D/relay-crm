@@ -26,7 +26,6 @@ function describeState(state: LeadState): string {
 }
 
 export default async function LeadsPage() {
-  // The list reads the database, so it renders per request and never at build time.
   await connection();
   const leads = await composition().store.listLeads(requireActor(), { limit: PAGE_SIZE });
 

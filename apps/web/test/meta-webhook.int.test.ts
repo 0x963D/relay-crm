@@ -21,7 +21,6 @@ const GRAPH_LEAD = graphLead(
   { campaign_name: "Spring sale" },
 );
 
-/** The real webhook, the real Graph client and the real store. Only Graph's HTTP is canned. */
 function webhookOver(db: TestDatabase, leads: Readonly<Record<string, unknown>>) {
   const graph = graphFake(leads);
   const webhook = createMetaWebhook({

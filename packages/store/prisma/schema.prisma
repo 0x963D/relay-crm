@@ -1,5 +1,4 @@
-// Enum members are spelled exactly like the domain's discriminants, and src/lead-row.ts fails the
-// build if the two drift apart. CHECK constraints and triggers live in the hand-written migration.
+// CHECK constraints and triggers live in the hand-written migrations.
 
 generator client {
   provider = "prisma-client"
@@ -132,7 +131,6 @@ model Membership {
   @@map("memberships")
 }
 
-// A customer. Identity stays on the won lead that points here, so an account has no email.
 model Account {
   id        String   @id @default(uuid(7)) @db.Uuid
   ownerId   String?  @map("owner_id") @db.Uuid
@@ -147,9 +145,6 @@ model Account {
   @@map("accounts")
 }
 
-// One row per person, open or closed. The email is the canonical address that parseEmail produces,
-// and the leads_email_canonical CHECK holds it to that form. The state columns are one flattened
-// LeadState, and the leads_state_shape CHECK admits exactly the combinations the union has.
 model Lead {
   id              String      @id @default(uuid(7)) @db.Uuid
   email           String      @unique
@@ -181,8 +176,6 @@ model Lead {
   @@map("leads")
 }
 
-// The intake ledger holds one append-only row per submission, with the original record and what
-// was decided. The unique pair is the idempotency key.
 model IntakeEvent {
   id          String        @id @default(uuid(7)) @db.Uuid
   source      IntakeSource
@@ -213,7 +206,6 @@ model IntakeEvent {
   @@map("intake_events")
 }
 
-// The append-only timeline of a lead or an account.
 model Activity {
   id            String       @id @default(uuid(7)) @db.Uuid
   kind          ActivityKind

@@ -9,7 +9,6 @@ import {
 } from "@relay/domain";
 import { z } from "zod";
 
-/** The outbound half of the Meta connector. Graph JSON never crosses this interface. */
 export interface MetaLeadSource {
   /**
    * Fetches the lead a notification named. It throws on every failure, "does not exist"
@@ -22,7 +21,6 @@ export interface MetaLeadSource {
 export interface MetaGraphConfig {
   readonly accessToken: string;
   readonly appSecret: string;
-  /** For example "v24.0". */
   readonly graphVersion: string;
   readonly baseUrl: string;
   readonly fetch: typeof fetch;

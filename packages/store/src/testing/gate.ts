@@ -12,7 +12,6 @@ const WAIT_LIMIT_MS = 10_000;
  */
 export interface Gate {
   close(): Promise<void>;
-  /** Resolves once `count` sessions in this database wait on a lock. */
   waitForWaiters(count: number): Promise<void>;
   open(): Promise<void>;
 }

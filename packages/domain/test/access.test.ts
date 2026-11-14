@@ -47,7 +47,6 @@ const everywhere = (expected: Expected): Readonly<Record<TeamSituation, Expected
   "an accounts team they belong to": expected,
 });
 
-/** The access rules as a specification. The type demands a row for every role. */
 const EXPECTED: Readonly<Record<Role, Readonly<Record<TeamSituation, Expected>>>> = {
   owner: everywhere({ read: all, edit: all }),
   admin: everywhere({ read: all, edit: all }),

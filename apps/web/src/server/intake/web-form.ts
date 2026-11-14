@@ -63,12 +63,6 @@ function parseBody(contentType: string, bytes: Uint8Array): Body {
   return { kind: "refused", status: 415 };
 }
 
-/**
- * The idempotency key of a form submission. A form that mints a UUID when it renders sends it as
- * `submissionId`, and a retry or a double click then replays. Without one the server mints a key,
- * so a double submit records two ledger rows. It still cannot create two leads, because the lead
- * is found by email.
- */
 function externalIdFor(submissionId: string | undefined): ExternalId {
   const id =
     submissionId !== undefined && UUID.test(submissionId)

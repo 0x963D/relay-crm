@@ -45,7 +45,6 @@ export function signedDelivery(body: string): Request {
   return delivery(body, sign(body));
 }
 
-/** What Graph returns for a lead, in the shape `field_data` arrives in. */
 export function graphLead(
   id: string,
   answers: Readonly<Record<string, string>>,
@@ -59,7 +58,6 @@ export function graphLead(
   };
 }
 
-/** A `fetch` that serves canned Graph answers and records the requests it was sent. */
 export function graphFake(leads: Readonly<Record<string, unknown>>): {
   readonly fetch: typeof fetch;
   readonly requests: Request[];

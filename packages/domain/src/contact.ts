@@ -12,7 +12,6 @@ export function tidyText(input: string | null | undefined, maxLength: number): s
   return clipped === "" ? null : clipped;
 }
 
-/** Every intake source passes a name through here. It never fails. */
 export function normalizeName(input: string | null | undefined): string | null {
   return tidyText(input, MAX_NAME);
 }

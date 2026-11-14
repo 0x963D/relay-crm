@@ -28,12 +28,7 @@ export interface MetaEnv {
 
 export interface Env {
   readonly databaseUrl: string;
-  /** null when Meta Lead Ads is not set up. The webhook then answers 404. */
   readonly meta: MetaEnv | null;
-  /**
-   * The role of the built-in dev user, which stands in for sign-in until step 3. null unless
-   * NODE_ENV is development and RELAY_DEV_ACTOR is 1, so a production server has no dev user.
-   */
   readonly devRole: Role | null;
 }
 
@@ -41,7 +36,6 @@ export class EnvError extends Error {
   override readonly name = "EnvError";
 }
 
-/** An empty variable, as a copied example file leaves it, counts as unset. */
 function withoutEmpty(
   variables: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
@@ -52,7 +46,6 @@ function withoutEmpty(
   return set;
 }
 
-/** Meta is configured as a whole or not at all, so a half-filled setup fails at startup. */
 function metaEnv(variables: z.infer<typeof Variables>): MetaEnv | null {
   const required = {
     META_VERIFY_TOKEN: variables.META_VERIFY_TOKEN,
@@ -103,7 +96,6 @@ export function parseEnv(variables: Readonly<Record<string, string | undefined>>
   };
 }
 
-/** The one read of `process.env` in the application. Everything else takes an `Env`. */
 export function readEnv(): Env {
   return parseEnv(process.env);
 }

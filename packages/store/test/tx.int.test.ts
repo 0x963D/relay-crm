@@ -4,7 +4,6 @@ import { connect, isStaleSnapshot, RACE_CONSTRAINTS, transact, type Db } from ".
 
 const SERIALIZABLE = { isolationLevel: "Serializable", maxWait: 2_000, timeout: 5_000 } as const;
 
-/** A promise the test resolves by hand, to hold a transaction at a chosen point. */
 const latch = (): PromiseWithResolvers<void> => Promise.withResolvers();
 
 async function withClient<T>(db: TestDatabase, run: (prisma: Db) => Promise<T>): Promise<T> {

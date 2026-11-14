@@ -18,7 +18,6 @@ import {
 const NOW = new Date("2026-11-14T08:00:05.000Z");
 
 interface Options {
-  /** Leadgen IDs Graph fails for. */
   readonly graphFails?: readonly string[];
   readonly respond?: Parameters<typeof intakeFake>[0];
   readonly submissionFor?: (leadgenId: string, receivedAt: Date) => IntakeSubmission;

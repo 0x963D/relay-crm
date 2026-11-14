@@ -1,18 +1,9 @@
 declare const brand: unique symbol;
 
-/**
- * A primitive the compiler refuses to mix with another of the same shape.
- * Only a type guard that checks the value can mint one.
- */
 export type Brand<T, B extends string> = T & { readonly [brand]: B };
 
-// Lowercase only, so one ID has one spelling and `===` compares IDs.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-/**
- * The guard proves the value is a canonical UUID. It cannot prove which table the UUID came from,
- * so the brand records what the boundary that parsed it claims.
- */
 function uuidBrand<B extends string>() {
   const is = (value: string): value is Brand<string, B> => UUID.test(value);
   const parse = (value: string): Brand<string, B> | null => (is(value) ? value : null);

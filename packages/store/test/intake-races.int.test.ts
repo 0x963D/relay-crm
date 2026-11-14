@@ -10,10 +10,6 @@ const POOLED: LeadLifecycle = {
   previousOwnerId: null,
 };
 
-/**
- * Runs the submissions at once behind the gate. Every racer has read its snapshot and decided
- * before any of them writes, so each test starts from the worst interleaving, every time.
- */
 async function race(
   db: TestDatabase,
   submissions: readonly SubmissionFields[],
@@ -122,11 +118,6 @@ describe("two intakes that decide on the same stale snapshot", () => {
   });
 });
 
-/**
- * Delivers the way a real source does. When contention outlasts the store's retries the delivery
- * fails, the source sends it again, and the ledger makes the second delivery safe. Any failure
- * that is not contention fails the test.
- */
 async function deliver(db: TestDatabase, fields: SubmissionFields): Promise<IntakeResult> {
   const submission = submissionExample(fields);
   for (let redelivery = 0; ; redelivery += 1) {

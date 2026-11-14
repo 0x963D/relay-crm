@@ -30,16 +30,12 @@ export interface RowCounts {
   readonly activities: number;
 }
 
-/** A private database for one test, cloned from the migrated template. */
 export interface TestDatabase {
   readonly connectionString: string;
   readonly store: Store;
   readonly gate: Gate;
-  /** One report per store transaction since the test began, in the order they finished. */
   readonly transactions: readonly TransactionReport[];
-  /** Runs a query and returns its rows, for asserting on what was written. */
   rows(sql: string, values?: readonly unknown[]): Promise<readonly Record<string, unknown>[]>;
-  /** How many rows intake has written to each of its tables. */
   counts(): Promise<RowCounts>;
   seedUser(role: Role): Promise<UserId>;
   seedTeam(kind: TeamKind): Promise<TeamId>;

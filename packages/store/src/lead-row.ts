@@ -23,10 +23,6 @@ import type { $Enums, Lead as LeadRow } from "./generated/client.ts";
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Assert<T extends true> = T;
 
-/**
- * Each entry fails the build when a Prisma enum and the domain union it stores drift apart. The
- * schema and the domain each spell the members once, and this is where they are compared.
- */
 export type EnumParity = [
   Assert<Same<$Enums.LeadStatus, LeadStatus>>,
   Assert<Same<$Enums.WorkStage, WorkStage["kind"]>>,
@@ -38,7 +34,6 @@ export type EnumParity = [
   Assert<Same<$Enums.TeamKind, TeamKind>>,
 ];
 
-/** A row holds a shape the CHECK constraints make impossible. Nothing catches it. */
 export class InvariantError extends Error {
   override readonly name = "InvariantError";
 }
@@ -86,10 +81,6 @@ function stageColumns(
   }
 }
 
-/**
- * Flattens a state into its columns. It sets every state column, nulls included, so an update
- * can never leave a previous status's columns behind.
- */
 export function stateToColumns(state: LeadState): StateColumns {
   switch (state.status) {
     case "new":
@@ -215,7 +206,6 @@ export function lifecycleFromRow(row: LifecycleColumns): LeadLifecycle {
   };
 }
 
-/** Rows are boundary data, so IDs and the email are checked again on the way in. */
 export function leadFromRow(row: LeadRow): Lead {
   return {
     id: branded(LeadId, row.id, "id"),

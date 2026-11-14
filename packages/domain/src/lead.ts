@@ -17,7 +17,6 @@ export type LostReason = (typeof LOST_REASONS)[number];
 export const DEAD_REASONS = ["duplicate", "wrongNumber", "doNotContact"] as const;
 export type DeadReason = (typeof DEAD_REASONS)[number];
 
-/** Who holds a lead, and for which team. The two always change together. */
 export interface Assignment {
   readonly ownerId: UserId;
   readonly teamId: TeamId;
@@ -28,11 +27,6 @@ export type WorkStage =
   | { readonly kind: "callBack"; readonly at: Date }
   | { readonly kind: "noAnswer"; readonly count: number };
 
-/**
- * Where a lead stands. Each status carries exactly the facts it needs, so a lead in the pool has
- * no assignee to read and a won lead cannot exist without its account. A lead marked dead while
- * still in the pool has no assignee either.
- */
 export type LeadState =
   | { readonly status: "new" }
   | { readonly status: "assigned"; readonly assignee: Assignment }
@@ -44,14 +38,12 @@ export type LeadState =
 export type LeadStatus = LeadState["status"];
 export type StateOf<S extends LeadStatus> = Extract<LeadState, { status: S }>;
 
-/** A lead's state plus the ownership history that `transition` derives from it. */
 export interface LeadLifecycle {
   readonly state: LeadState;
   readonly firstAssignedAt: Date | null;
   readonly previousOwnerId: UserId | null;
 }
 
-/** The record of one person. Phone is contact data, never identity. */
 export interface Lead {
   readonly id: LeadId;
   readonly email: EmailAddress;
@@ -123,10 +115,6 @@ function callBack(
   return work(assignee, { kind: "callBack", at: callAt });
 }
 
-/**
- * The lead state machine: one row per status, one cell per event. Every cell must be written, so
- * a new status or event does not compile until each of its cells is decided.
- */
 const RULES: Rules = {
   new: {
     assign: (_from, event) => ok({ status: "assigned", assignee: event.to }),
@@ -272,7 +260,6 @@ export function assigneeOf(state: LeadState): Assignment | null {
   }
 }
 
-/** Open leads are the ones still in play: in the pool, assigned, or being worked. */
 export function isOpen(state: LeadState): boolean {
   switch (state.status) {
     case "new":

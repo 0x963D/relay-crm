@@ -18,11 +18,6 @@ export interface LeadStateSeed {
 
 export type LeadStateExamples = { readonly [S in LeadStatus]: readonly StateOf<S>[] };
 
-/**
- * Example lead states that cover every variant of every status. The return type is keyed by
- * status, so a new status does not compile until it has examples. Tests in other packages build
- * their fixtures from these, which keeps "every state" one list.
- */
 export function leadStateExamples(seed: LeadStateSeed): LeadStateExamples {
   const { assignee, accountId, callBackAt } = seed;
   return {
@@ -51,7 +46,6 @@ export function leadStateExamples(seed: LeadStateSeed): LeadStateExamples {
 export interface SubmissionFields {
   readonly source?: IntakeSource;
   readonly externalId?: string;
-  /** null builds a submission with no usable email. */
   readonly email?: string | null;
   readonly name?: string | null;
   readonly phone?: string | null;
@@ -61,7 +55,6 @@ export interface SubmissionFields {
   readonly raw?: JsonValue;
 }
 
-/** A valid submission for tests. Pass only the fields the test is about. */
 export function submissionExample(fields: SubmissionFields = {}): IntakeSubmission {
   const externalId = parseExternalId(fields.externalId ?? "example-1");
   if (externalId === null) throw new Error("submissionExample needs a usable external ID");
@@ -93,7 +86,6 @@ export function intakeResultExample(): IntakeResult {
 
 export interface IntakeFake {
   readonly intake: Intake;
-  /** Every submission the fake was given, in order. */
   readonly received: readonly IntakeSubmission[];
 }
 

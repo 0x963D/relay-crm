@@ -29,10 +29,6 @@ interface World {
   readonly leads: readonly Seeded[];
 }
 
-/**
- * Three agents, two of them on one team, and a lead in every example state for each of them.
- * Per agent that is ten leads they hold, one pooled lead and two that died in the pool.
- */
 async function seedWorld(db: TestDatabase): Promise<World> {
   const teamA = await db.seedTeam("sales");
   const teamB = await db.seedTeam("sales");

@@ -60,7 +60,6 @@ export default defineConfig(
       "no-console": "error",
       // Vitest fixtures take their dependencies as an object pattern, which may be empty.
       "no-empty-pattern": ["error", { allowObjectPatternsAsParameters: true }],
-      // An invisible character in a string must be written as an escape, so a reader can see it.
       "no-irregular-whitespace": ["error", { skipStrings: false, skipTemplates: false }],
       "no-restricted-syntax": ["error", PROCESS_ENV],
       "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],

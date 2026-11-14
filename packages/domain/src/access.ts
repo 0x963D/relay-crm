@@ -7,7 +7,7 @@ export type Role = (typeof ROLES)[number];
 export const TEAM_KINDS = ["sales", "accounts"] as const;
 export type TeamKind = (typeof TEAM_KINDS)[number];
 
-/** Who is asking. A session works inside one current team, or none. */
+/** A session works inside one current team, or none. */
 export interface Actor {
   readonly userId: UserId;
   readonly role: Role;
@@ -18,7 +18,7 @@ export interface Actor {
   } | null;
 }
 
-/** The set of leads an actor may reach. The pool is every lead with status `new`. */
+/** The pool is every lead with status `new`. */
 export type LeadScope =
   | { readonly kind: "all" }
   | { readonly kind: "teamAndPool"; readonly teamId: TeamId }

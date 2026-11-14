@@ -5,10 +5,6 @@ import { connect } from "./tx.ts";
 
 export type { LeadListItem };
 
-/**
- * Everything the application can do with the database. Callers pass domain values and get domain
- * values back. The Prisma client, the isolation level and the retry policy stay behind this.
- */
 export interface Store {
   /** Records one submission. Idempotent by source and external ID. */
   readonly intake: Intake;

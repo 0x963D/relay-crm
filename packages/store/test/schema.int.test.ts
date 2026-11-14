@@ -36,7 +36,6 @@ function lead(columns: Row): Row {
   };
 }
 
-/** Rows written straight to the tables, the way a writer that bypasses the store would. */
 const REJECTED: readonly (readonly [
   what: string,
   constraint: string,

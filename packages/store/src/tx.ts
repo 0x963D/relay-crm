@@ -66,7 +66,6 @@ export async function transact<T>(db: Db, body: (tx: Tx) => Promise<T>): Promise
         report({ attempts: attempt, committed: false });
         throw error;
       }
-      // Full jitter, so transactions that collided do not collide again in step.
       await sleep(Math.random() * Math.min(MAX_BACKOFF_MS, 10 * 2 ** attempt));
     }
   }

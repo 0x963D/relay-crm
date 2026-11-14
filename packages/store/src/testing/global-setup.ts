@@ -5,10 +5,6 @@ import { promisify } from "node:util";
 import pg from "pg";
 import { testServer } from "./server.ts";
 
-/**
- * Builds the template database once per run by applying the real migrations to it, hand-written
- * constraints included. Each test then clones the template, which takes milliseconds.
- */
 export default async function setup(): Promise<void> {
   const server = testServer();
   const template = pg.escapeIdentifier(server.templateName);

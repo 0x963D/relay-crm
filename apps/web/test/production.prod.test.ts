@@ -7,7 +7,6 @@ import { describe, expect, test } from "vitest";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
 const NEXT = createRequire(import.meta.url).resolve("next/dist/bin/next");
-// Nothing listens here, so any request that reached the database would fail with a 500.
 const UNREACHABLE_DATABASE = "postgresql://nobody:nobody@127.0.0.1:9/unreachable";
 
 async function freePort(): Promise<number> {
@@ -22,9 +21,8 @@ async function freePort(): Promise<number> {
 }
 
 /**
- * Runs `next start` on the build in .next, the way a host serves it. NODE_ENV is left for Next to
- * set, so the server runs as production and not as the test runner's "test". The app's own
- * variables come only from the test, never from the shell that runs it.
+ * NODE_ENV is left for Next to set, so the server runs as production and not as the test runner's
+ * "test".
  */
 async function serve(variables: Readonly<Record<string, string>>) {
   const port = await freePort();

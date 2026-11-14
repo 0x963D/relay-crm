@@ -15,7 +15,6 @@ export interface CsvImportReport {
   readonly rows: number;
   /** What this import did, by outcome. A row recorded by an earlier import is not counted here. */
   readonly byOutcome: Readonly<Record<IntakeOutcome["kind"], number>>;
-  /** Rows an earlier import already recorded. */
   readonly replayed: number;
   /** Rows that could not be recorded. Importing the file again retries only these. */
   readonly failures: readonly { readonly line: number; readonly message: string }[];
@@ -32,7 +31,6 @@ const Records = z.array(
   }),
 );
 
-/** "Ad Set" and "ad_set" name the same column. */
 function columnName(header: string): string {
   return header
     .trim()
@@ -40,12 +38,6 @@ function columnName(header: string): string {
     .replace(/[\s-]+/g, "_");
 }
 
-/**
- * The key of a row that has no `external_id`. It hashes the row's own content and nothing about
- * where the row sits, so the same row is one event whichever file or line carries it, and
- * correcting one row re-imports only that row. Changing this recipe would make every row
- * imported before the change look new.
- */
 function contentKey(fields: readonly (string | null)[]): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(fields)).digest("hex")}`;
 }

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 
-/** The PostgreSQL server the integration tests may create databases on. */
 export interface TestServer {
   readonly templateName: string;
   newDatabaseName(): string;

@@ -24,11 +24,6 @@ const IN_THE_POOL: LeadLifecycle = {
   previousOwnerId: null,
 };
 
-/**
- * The one intake path for every source. Each attempt loads what the database holds, asks the
- * pure decision, and writes the result, all inside one SERIALIZABLE transaction. Nothing read
- * before the transaction is trusted, so a retry decides again from a fresh snapshot.
- */
 export function intakeWith(db: Db): Intake {
   return (submission) =>
     transact(db, async (tx) => {
@@ -55,7 +50,6 @@ async function loadSnapshot(tx: Tx, submission: IntakeSubmission): Promise<Intak
   };
 }
 
-/** Each arm is inserts and at most one update. It reads nothing and branches on nothing. */
 async function applyDecision(
   tx: Tx,
   decision: IntakeDecision,
@@ -105,10 +99,6 @@ async function applyDecision(
   }
 }
 
-/**
- * Writes the ledger row and, when the outcome has a subject, the timeline entry that points at
- * it. Every timestamp is the submission's `receivedAt`, so a retried body writes the same facts.
- */
 async function record(
   tx: Tx,
   submission: IntakeSubmission,
@@ -193,7 +183,6 @@ function branded<T extends string>(
   return parsed;
 }
 
-/** The stored shape of a status change. Written out field by field so it cannot drift silently. */
 function statusChangeDetail(
   from: LeadStatus,
   to: LeadStatus,

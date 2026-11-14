@@ -33,7 +33,6 @@ export function parseExternalId(input: string): ExternalId | null {
 export type JsonValue =
   null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
-/** Where a submission came from, as the source names it. */
 export interface Attribution {
   readonly campaign: string | null;
   readonly adSet: string | null;
@@ -41,7 +40,6 @@ export interface Attribution {
   readonly form: string | null;
 }
 
-/** Every intake source builds its attribution here, from whatever labels it has. */
 export function normalizeAttribution(
   labels: Readonly<Partial<Record<keyof Attribution, string | null | undefined>>>,
 ): Attribution {
@@ -64,11 +62,9 @@ export interface IntakeSubmission {
   /** The source's own timestamp. null when it has none, so a report can say "unknown". */
   readonly submittedAt: Date | null;
   readonly receivedAt: Date;
-  /** The original record, stored as received. */
   readonly raw: JsonValue;
 }
 
-/** Three shapes for the three subjects a ledger row can point at: a lead, an account, nothing. */
 export type IntakeOutcome =
   | {
       readonly kind:
@@ -85,10 +81,8 @@ export interface IntakeResult {
   readonly replayed: boolean;
 }
 
-/** The port every intake source calls. The store implements it once. */
 export type Intake = (submission: IntakeSubmission) => Promise<IntakeResult>;
 
-/** Everything the database holds that the decision depends on. Two unique lookups fill it. */
 export interface IntakeSnapshot {
   readonly priorEvent: { readonly id: IntakeEventId; readonly outcome: IntakeOutcome } | null;
   readonly lead: { readonly id: LeadId; readonly lifecycle: LeadLifecycle } | null;

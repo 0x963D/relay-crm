@@ -27,11 +27,6 @@ import {
 
 const no = null;
 
-/**
- * The state machine as a specification, written by hand from the product rules. Each cell names
- * the status the event leads to, or `no` when the status never takes the event. The type demands
- * every cell, so a new status or event fails to compile here until its row and column exist.
- */
 const MATRIX: Readonly<
   Record<LeadStatus, Readonly<Record<LeadEventType, LeadStatus | typeof no>>>
 > = {
@@ -103,7 +98,6 @@ const MATRIX: Readonly<
   },
 };
 
-/** Every pair the matrix allows by status but a detail of the lead or the event rules out. */
 const REFUSALS = [
   "new + markDead(wrongNumber): wrongNumberNeedsAnAttempt",
   "dead(doNotContact) + reopen: doNotContactIsFinal",

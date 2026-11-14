@@ -1,4 +1,3 @@
-/** The outcome of an operation that can refuse. Callers branch on `ok` and the compiler narrows the rest. */
 export type Result<T, E> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E };
 

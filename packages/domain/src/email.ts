@@ -32,7 +32,6 @@ const NOT_HOSTNAME_TEXT =
 
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
-/** A non-ASCII character that stands for ASCII text, such as the Kelvin sign or a fullwidth K. */
 function foldsToAscii(character: string): boolean {
   return !ASCII_ONLY.test(character) && ASCII_ONLY.test(character.normalize("NFKC"));
 }
@@ -64,7 +63,6 @@ function canonicalDomain(domain: string): string | null {
 
 function canonicalize(input: string): Result<string, EmailProblem> {
   const address = input.trim();
-  // Bounds the work the URL parser is given. The canonical address is checked again below.
   if (address.length > MAX_ADDRESS) return err("tooLong");
 
   const parts = address.split("@");
@@ -94,6 +92,5 @@ export function isEmailAddress(value: string): value is EmailAddress {
 export function parseEmail(input: string): Result<EmailAddress, EmailProblem> {
   const canonical = canonicalize(input);
   if (!canonical.ok) return canonical;
-  // An address that does not parse to itself would give one person two spellings.
   return isEmailAddress(canonical.value) ? ok(canonical.value) : err("invalidDomain");
 }

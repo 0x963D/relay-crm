@@ -1,6 +1,5 @@
 /**
  * Supported ISO 4217 currencies and the number of digits in their minor unit.
- * Every currency type and parser derives from this table.
  */
 export const CURRENCIES = {
   AED: 2,
@@ -17,7 +16,6 @@ export function isCurrencyCode(value: string): value is CurrencyCode {
   return Object.hasOwn(CURRENCIES, value);
 }
 
-/** An amount counted in the currency's minor unit, so arithmetic is exact. */
 export interface Money {
   readonly minor: bigint;
   readonly currency: CurrencyCode;

@@ -53,10 +53,6 @@ function signatureMatches(body: Uint8Array, header: string | null, appSecret: st
   return timingSafeEqual(expected, Buffer.from(claimed, "hex"));
 }
 
-/**
- * The leadgen IDs a notification names, without repeats. An empty list means the notification
- * was for other fields. null means the body is not a page notification this code understands.
- */
 function leadgenIds(body: Uint8Array): readonly string[] | null {
   let json: unknown;
   try {
@@ -78,10 +74,6 @@ function leadgenIds(body: Uint8Array): readonly string[] | null {
 }
 
 /**
- * The inbound half of the Meta Lead Ads connector: the verify-token handshake, the signature
- * check, the notification shape and the status policy. A null config means Meta is not set up,
- * and both verbs answer 404.
- *
  * The status code answers one question, whether a redelivery could succeed. An unsigned request
  * gets 401. A signed body this code cannot read gets 500, because a deploy can fix that while
  * Meta still holds the notification. A failed Graph fetch or intake gets 500 too. Meta then
@@ -123,7 +115,6 @@ export function createMetaWebhook(config: MetaWebhookConfig | null): WebhookHand
 
       const receivedAt = now();
       let failed = false;
-      // One at a time, because leads in one batch would only contend with each other.
       for (const leadgenId of ids) {
         try {
           await intake(await leads.fetchSubmission(leadgenId, receivedAt));
