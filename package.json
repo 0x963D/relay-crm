@@ -1,0 +1,30 @@
+{
+  "name": "relay-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A sales CRM for small teams: lead intake, distribution, follow-up and payments.",
+  "license": "MIT",
+  "author": "Dan Doca",
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --project tsconfig.json && pnpm --recursive typecheck",
+    "test": "vitest run --project unit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "~10.14.0",
+    "jiti": "^2.7.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
