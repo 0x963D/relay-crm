@@ -1,0 +1,20 @@
+body {
+  margin: 0;
+  padding-block: 2rem;
+  padding-inline: 2rem;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+table {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+th,
+td {
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border-block-end: 1px solid #ddd;
+  text-align: start;
+}

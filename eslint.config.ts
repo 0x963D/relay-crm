@@ -44,6 +44,8 @@ export default defineConfig(
           "./tsconfig.json",
           "./packages/*/tsconfig.json",
           "./packages/*/tsconfig.test.json",
+          "./apps/*/tsconfig.json",
+          "./apps/*/tsconfig.test.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -112,7 +114,7 @@ export default defineConfig(
     rules: { "no-restricted-syntax": ["error", OWN_TRANSACTION, LEADS_TABLE] },
   },
   {
-    files: ["packages/store/prisma.config.ts"],
+    files: ["packages/store/prisma.config.ts", "apps/web/src/server/env.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
 );

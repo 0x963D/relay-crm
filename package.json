@@ -11,6 +11,9 @@
     "node": ">=24"
   },
   "scripts": {
+    "dev": "dotenv -- pnpm --filter @relay/web dev",
+    "build": "pnpm --filter @relay/web build",
+    "start": "dotenv -- pnpm --filter @relay/web start",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
