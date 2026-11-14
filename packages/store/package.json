@@ -1,0 +1,23 @@
+{
+  "name": "@relay/store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Every SQL statement and every transaction. Exports operations, never the Prisma client.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "prisma migrate deploy",
+    "typecheck": "tsc --project tsconfig.test.json"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@relay/domain": "workspace:*",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "prisma": "7.10.1"
+  }
+}

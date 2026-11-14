@@ -1,0 +1,233 @@
+// Enum members are spelled exactly like the domain's discriminants, and src/lead-row.ts fails the
+// build if the two drift apart. CHECK constraints and triggers live in the hand-written migration.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  owner
+  admin
+  manager
+  teamLead
+  agent
+  accountant
+
+  @@map("role")
+}
+
+enum TeamKind {
+  sales
+  accounts
+
+  @@map("team_kind")
+}
+
+enum LeadStatus {
+  new
+  assigned
+  working
+  won
+  lost
+  dead
+
+  @@map("lead_status")
+}
+
+enum WorkStage {
+  contacted
+  callBack
+  noAnswer
+
+  @@map("work_stage")
+}
+
+enum LostReason {
+  notInterested
+  noBudget
+  choseCompetitor
+  badTiming
+  other
+
+  @@map("lost_reason")
+}
+
+enum DeadReason {
+  duplicate
+  wrongNumber
+  doNotContact
+
+  @@map("dead_reason")
+}
+
+enum IntakeSource {
+  metaLeadAds
+  webForm
+  csv
+  manual
+
+  @@map("intake_source")
+}
+
+enum IntakeOutcome {
+  leadCreated
+  attachedToOpenLead
+  leadReopened
+  linkedToAccount
+  suppressedDoNotContact
+  rejectedNoEmail
+
+  @@map("intake_outcome")
+}
+
+enum ActivityKind {
+  intake
+  statusChange
+
+  @@map("activity_kind")
+}
+
+model User {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  email     String   @unique
+  name      String
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  memberships   Membership[]
+  leads         Lead[]       @relation("LeadOwner")
+  previousLeads Lead[]       @relation("LeadPreviousOwner")
+  accounts      Account[]
+
+  @@map("users")
+}
+
+model Team {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String
+  kind      TeamKind
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  memberships Membership[]
+  leads       Lead[]
+
+  @@map("teams")
+}
+
+model Membership {
+  userId String  @map("user_id") @db.Uuid
+  teamId String  @map("team_id") @db.Uuid
+  isLead Boolean @default(false) @map("is_lead")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([userId, teamId])
+  @@index([teamId])
+  @@map("memberships")
+}
+
+// A customer. Identity stays on the won lead that points here, so an account has no email.
+model Account {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  ownerId   String?  @map("owner_id") @db.Uuid
+  createdAt DateTime @map("created_at") @db.Timestamptz(3)
+
+  owner        User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  lead         Lead?
+  intakeEvents IntakeEvent[]
+  activities   Activity[]
+
+  @@index([ownerId])
+  @@map("accounts")
+}
+
+// One row per person, open or closed. The state columns are one flattened LeadState, and the
+// leads_state_shape CHECK admits exactly the combinations the union has.
+model Lead {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  emailKey        String      @unique @map("email_key")
+  email           String
+  name            String?
+  phone           String?
+  status          LeadStatus
+  ownerId         String?     @map("owner_id") @db.Uuid
+  teamId          String?     @map("team_id") @db.Uuid
+  stage           WorkStage?
+  callBackAt      DateTime?   @map("call_back_at") @db.Timestamptz(3)
+  noAnswerCount   Int?        @map("no_answer_count")
+  lostReason      LostReason? @map("lost_reason")
+  deadReason      DeadReason? @map("dead_reason")
+  accountId       String?     @unique @map("account_id") @db.Uuid
+  firstAssignedAt DateTime?   @map("first_assigned_at") @db.Timestamptz(3)
+  previousOwnerId String?     @map("previous_owner_id") @db.Uuid
+  createdAt       DateTime    @map("created_at") @db.Timestamptz(3)
+
+  owner         User?         @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  previousOwner User?         @relation("LeadPreviousOwner", fields: [previousOwnerId], references: [id], onDelete: SetNull)
+  team          Team?         @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  account       Account?      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  intakeEvents  IntakeEvent[]
+  activities    Activity[]
+
+  @@index([createdAt, id])
+  @@index([ownerId, createdAt, id])
+  @@index([teamId, createdAt, id])
+  @@map("leads")
+}
+
+// The intake ledger: one append-only row per submission, with the original record and what was
+// decided. The unique pair is the idempotency key.
+model IntakeEvent {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  source      IntakeSource
+  externalId  String        @map("external_id")
+  email       String?
+  name        String?
+  phone       String?
+  campaign    String?
+  adSet       String?       @map("ad_set")
+  ad          String?
+  form        String?
+  submittedAt DateTime?     @map("submitted_at") @db.Timestamptz(3)
+  receivedAt  DateTime      @map("received_at") @db.Timestamptz(3)
+  // json, not jsonb: the record is kept as received and never queried, and jsonb refuses \u0000.
+  raw         Json          @db.Json
+  outcome     IntakeOutcome
+  leadId      String?       @map("lead_id") @db.Uuid
+  accountId   String?       @map("account_id") @db.Uuid
+
+  lead       Lead?      @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  account    Account?   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  activities Activity[]
+
+  @@unique([source, externalId])
+  @@index([leadId])
+  @@index([accountId])
+  @@map("intake_events")
+}
+
+// The append-only timeline of a lead or an account.
+model Activity {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  kind          ActivityKind
+  leadId        String?      @map("lead_id") @db.Uuid
+  accountId     String?      @map("account_id") @db.Uuid
+  intakeEventId String?      @map("intake_event_id") @db.Uuid
+  detail        Json?
+  at            DateTime     @db.Timestamptz(3)
+
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  account     Account?     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  intakeEvent IntakeEvent? @relation(fields: [intakeEventId], references: [id], onDelete: Restrict)
+
+  @@index([leadId, id])
+  @@index([accountId, id])
+  @@index([intakeEventId])
+  @@map("activities")
+}

@@ -15,11 +15,14 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --project tsconfig.json && pnpm --recursive typecheck",
-    "test": "vitest run --project unit"
+    "test": "vitest run --project unit",
+    "db:generate": "pnpm --filter @relay/store generate",
+    "db:migrate": "dotenv -- pnpm --filter @relay/store migrate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.19.2",
+    "dotenv-cli": "^11.1.0",
     "eslint": "~10.14.0",
     "jiti": "^2.7.0",
     "prettier": "^3.10.1",

@@ -1,3 +1,9 @@
 packages:
   - packages/*
   - apps/*
+
+# Dependency build scripts are off by default. The Prisma engines package downloads the schema
+# engine that `prisma migrate` runs. The `prisma` script only checks the Node version.
+allowBuilds:
+  "@prisma/engines": true
+  prisma: false
