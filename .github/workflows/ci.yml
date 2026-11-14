@@ -29,8 +29,9 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
-      # No DATABASE_URL here, because the build must not need a database.
-      - run: pnpm build
+      # No DATABASE_URL here, because the build must not need a database. This builds the app and
+      # then serves the build to check that a request with no session gets 401.
+      - run: pnpm test:prod
 
   integration:
     runs-on: ubuntu-latest

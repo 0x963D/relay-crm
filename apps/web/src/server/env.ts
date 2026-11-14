@@ -1,3 +1,4 @@
+import { ROLES, type Role } from "@relay/domain";
 import { z } from "zod";
 
 const Variables = z.object({
@@ -10,6 +11,11 @@ const Variables = z.object({
     .regex(/^v\d+\.\d+$/, "must name a Graph API version, such as v24.0")
     .optional(),
   META_GRAPH_BASE_URL: z.url().default("https://graph.facebook.com"),
+  NODE_ENV: z.string().optional(),
+  RELAY_DEV_ACTOR: z
+    .literal("1", { error: "must be 1 to turn the dev actor on, or unset" })
+    .optional(),
+  RELAY_DEV_ROLE: z.enum(ROLES, { error: `must be one of ${ROLES.join(", ")}` }).default("agent"),
 });
 
 export interface MetaEnv {
@@ -24,6 +30,11 @@ export interface Env {
   readonly databaseUrl: string;
   /** null when Meta Lead Ads is not set up. The webhook then answers 404. */
   readonly meta: MetaEnv | null;
+  /**
+   * The role of the built-in dev user, which stands in for sign-in until step 3. null unless
+   * NODE_ENV is development and RELAY_DEV_ACTOR is 1, so a production server has no dev user.
+   */
+  readonly devRole: Role | null;
 }
 
 export class EnvError extends Error {
@@ -84,7 +95,12 @@ export function parseEnv(variables: Readonly<Record<string, string | undefined>>
   if (!parsed.success) {
     throw new EnvError(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
   }
-  return { databaseUrl: parsed.data.DATABASE_URL, meta: metaEnv(parsed.data) };
+  const { DATABASE_URL, NODE_ENV, RELAY_DEV_ACTOR, RELAY_DEV_ROLE } = parsed.data;
+  return {
+    databaseUrl: DATABASE_URL,
+    meta: metaEnv(parsed.data),
+    devRole: NODE_ENV === "development" && RELAY_DEV_ACTOR === "1" ? RELAY_DEV_ROLE : null,
+  };
 }
 
 /** The one read of `process.env` in the application. Everything else takes an `Env`. */

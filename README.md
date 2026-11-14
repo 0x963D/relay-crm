@@ -24,8 +24,9 @@ The name is a working title.
 - **Scoped reads.** One function maps a user to the leads they may read or edit. The lead list
   already goes through it.
 
-There is no sign-in yet. The lead list reads as a built-in user with the owner role, and the form
-endpoint has no rate limit. Do not put this build on the public internet.
+There is no sign-in yet, so the lead list answers 401 to everyone. Only `pnpm dev` can act as a
+built-in user, and only when `.env` turns it on. The form endpoint has no rate limit. Do not put
+this build on the public internet.
 
 ## How it is built
 
@@ -72,7 +73,8 @@ You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
    pnpm db:generate
    ```
 
-2. Copy `.env.example` to `.env` and set `DATABASE_URL`. To start a matching database with Docker:
+2. Copy `.env.example` to `.env`, set `DATABASE_URL`, and set `RELAY_DEV_ACTOR=1` to act as the
+   built-in dev user. To start a matching database with Docker:
 
    ```sh
    docker run --name relay-pg -e POSTGRES_USER=relay -e POSTGRES_PASSWORD=relay \
@@ -86,7 +88,11 @@ You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
    pnpm dev
    ```
 
-   The lead list is at <http://localhost:3000>. It is empty until a lead arrives.
+   The lead list is at <http://localhost:3000>. Without `RELAY_DEV_ACTOR=1` it answers 401 with a
+   not-signed-in page. With it, `pnpm dev` acts as the dev user with the `agent` role, which sees
+   only the leads assigned to it, so the list starts empty. Set `RELAY_DEV_ROLE=owner` to see
+   every lead. The dev user exists only when `NODE_ENV` is `development`, which `pnpm dev` sets and
+   `pnpm start` does not, so the built app answers 401.
 
 4. Send a lead through the web form endpoint.
 
@@ -96,7 +102,8 @@ You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
      -d '{"email":"ana@example.com","name":"Ana Silva","campaign":"spring"}'
    ```
 
-   The response is `{"received":true}` with status 202, and the lead appears in the list.
+   The response is `{"received":true}` with status 202. With `RELAY_DEV_ROLE=owner` the lead
+   appears in the list.
 
 ## Commands
 
@@ -110,6 +117,7 @@ You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
 | `pnpm import:csv <file>` | Imports a CSV file through intake and prints a report           |
 | `pnpm test`              | Runs the unit tests. They need no database                      |
 | `pnpm test:int`          | Runs the integration tests against the server in `DATABASE_URL` |
+| `pnpm test:prod`         | Builds the app, serves it and checks that nobody is signed in   |
 | `pnpm lint`              | Runs ESLint with type-aware rules                               |
 | `pnpm format:check`      | Checks formatting with Prettier                                 |
 | `pnpm typecheck`         | Typechecks every package and its tests                          |

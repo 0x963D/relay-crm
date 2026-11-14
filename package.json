@@ -20,6 +20,7 @@
     "typecheck": "tsc --project tsconfig.json && pnpm --recursive typecheck",
     "test": "vitest run --project unit",
     "test:int": "dotenv -- vitest run --project integration",
+    "test:prod": "pnpm build && vitest run --project production",
     "db:generate": "pnpm --filter @relay/store generate",
     "db:migrate": "dotenv -- pnpm --filter @relay/store migrate",
     "import:csv": "dotenv -- tsx apps/web/scripts/import-csv.ts"

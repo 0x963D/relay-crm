@@ -10,8 +10,12 @@ const META = {
 };
 
 describe("parseEnv", () => {
-  it("reads the database URL, with Meta off when none of its variables is set", () => {
-    expect(parseEnv({ DATABASE_URL })).toEqual({ databaseUrl: DATABASE_URL, meta: null });
+  it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
+    expect(parseEnv({ DATABASE_URL })).toEqual({
+      databaseUrl: DATABASE_URL,
+      meta: null,
+      devRole: null,
+    });
   });
 
   it.each([
@@ -56,5 +60,21 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ DATABASE_URL, ...META, META_GRAPH_VERSION: "latest" })).toThrow(
       /META_GRAPH_VERSION/,
     );
+  });
+
+  it.each([
+    ["a role the domain does not have", { RELAY_DEV_ROLE: "superuser" }],
+    ["a role in the wrong case", { RELAY_DEV_ROLE: "Owner" }],
+    [
+      "a role while the dev user is on",
+      { NODE_ENV: "development", RELAY_DEV_ACTOR: "1", RELAY_DEV_ROLE: "root" },
+    ],
+  ])("refuses %s and names RELAY_DEV_ROLE", (_label, variables) => {
+    expect(() => parseEnv({ DATABASE_URL, ...variables })).toThrow(EnvError);
+    expect(() => parseEnv({ DATABASE_URL, ...variables })).toThrow(/RELAY_DEV_ROLE/);
+  });
+
+  it("refuses a RELAY_DEV_ACTOR other than 1, so a mistyped value fails at startup", () => {
+    expect(() => parseEnv({ DATABASE_URL, RELAY_DEV_ACTOR: "true" })).toThrow(/RELAY_DEV_ACTOR/);
   });
 });

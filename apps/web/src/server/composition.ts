@@ -7,6 +7,7 @@ import { logToConsole } from "./log.ts";
 
 /** Every long-lived object the application has. This file is the only one that builds any. */
 export interface Composition {
+  readonly env: Env;
   readonly store: Store;
   readonly metaWebhook: WebhookHandlers;
   readonly webForm: WebFormEndpoint;
@@ -18,6 +19,7 @@ function compose(env: Env): Composition {
   const log = logToConsole;
 
   return {
+    env,
     store,
     metaWebhook: createMetaWebhook(
       env.meta && {

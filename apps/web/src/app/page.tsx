@@ -1,7 +1,7 @@
 import type { LeadState } from "@relay/domain";
 import { connection } from "next/server";
 import { composition } from "@/server/composition.ts";
-import { devActor } from "@/server/dev-actor.ts";
+import { requireActor } from "@/server/actor.ts";
 
 const PAGE_SIZE = 100;
 
@@ -28,7 +28,7 @@ function describeState(state: LeadState): string {
 export default async function LeadsPage() {
   // The list reads the database, so it renders per request and never at build time.
   await connection();
-  const leads = await composition().store.listLeads(devActor(), { limit: PAGE_SIZE });
+  const leads = await composition().store.listLeads(requireActor(), { limit: PAGE_SIZE });
 
   return (
     <main>

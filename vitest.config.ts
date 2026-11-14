@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 
 const TESTS = ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.ts"];
 const INTEGRATION_TESTS = ["packages/*/test/**/*.int.test.ts", "apps/*/test/**/*.int.test.ts"];
+const PRODUCTION_TESTS = ["apps/*/test/**/*.prod.test.ts"];
 
 export default defineConfig({
   test: {
@@ -10,7 +11,7 @@ export default defineConfig({
         test: {
           name: "unit",
           include: TESTS,
-          exclude: INTEGRATION_TESTS,
+          exclude: [...INTEGRATION_TESTS, ...PRODUCTION_TESTS],
         },
       },
       {
@@ -20,6 +21,13 @@ export default defineConfig({
           globalSetup: ["packages/store/src/testing/global-setup.ts"],
           testTimeout: 30_000,
           hookTimeout: 30_000,
+        },
+      },
+      {
+        test: {
+          name: "production",
+          include: PRODUCTION_TESTS,
+          testTimeout: 30_000,
         },
       },
     ],

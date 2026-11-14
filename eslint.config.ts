@@ -32,6 +32,11 @@ const LEADS_TABLE = {
   message: "Only leads.ts queries the leads table, so every lead read sits beside the scope rule.",
 };
 
+const STORE_TESTING = {
+  name: "@relay/store/testing",
+  message: "The test database fixture is for test files only.",
+};
+
 export default defineConfig(
   globalIgnores(["**/node_modules/", "**/.next/", "**/generated/", "**/next-env.d.ts"]),
   eslint.configs.recommended,
@@ -69,13 +74,20 @@ export default defineConfig(
   {
     ignores: ["**/test/**"],
     rules: {
+      "no-restricted-imports": ["error", { paths: [STORE_TESTING] }],
+    },
+  },
+  {
+    files: ["apps/web/src/app/**"],
+    rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: [
+          paths: [STORE_TESTING],
+          patterns: [
             {
-              name: "@relay/store/testing",
-              message: "The test database fixture is for test files only.",
+              regex: "dev-actor",
+              message: "Pages and routes get the actor from requireActor() in @/server/actor.ts.",
             },
           ],
         },
@@ -116,7 +128,11 @@ export default defineConfig(
     rules: { "no-restricted-syntax": ["error", OWN_TRANSACTION, LEADS_TABLE] },
   },
   {
-    files: ["packages/store/prisma.config.ts", "apps/web/src/server/env.ts"],
+    files: [
+      "packages/store/prisma.config.ts",
+      "apps/web/src/server/env.ts",
+      "apps/web/test/production.prod.test.ts",
+    ],
     rules: { "no-restricted-syntax": "off" },
   },
 );
