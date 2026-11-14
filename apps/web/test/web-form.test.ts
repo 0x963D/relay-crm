@@ -65,7 +65,7 @@ describe("a valid submission", () => {
       {
         source: "webForm",
         externalId: SUBMISSION_ID,
-        email: { asTyped: "Ana@Example.com", key: "ana@example.com" },
+        email: "ana@example.com",
         name: "Ana Silva",
         phone: "+44 20 7946 0958",
         attribution: { campaign: "spring", adSet: null, ad: null, form: "contact" },
@@ -134,9 +134,24 @@ describe("a submission a person can fix", () => {
     [
       "an email that is not an address",
       { email: "ana at example" },
-      "Enter a valid email address.",
+      "Enter an email address in the form name@example.com.",
     ],
-    ["an empty email", { email: "  " }, "Enter a valid email address."],
+    ["an empty email", { email: "  " }, "Enter an email address in the form name@example.com."],
+    [
+      "a local part that is too long",
+      { email: `${"a".repeat(65)}@example.com` },
+      "Use a shorter email address, with at most 64 characters before the @ sign and 254 in all.",
+    ],
+    [
+      "a lookalike letter before the @ sign",
+      { email: "\u212Aim@example.com" },
+      "Use only ASCII letters, digits and symbols before the @ sign.",
+    ],
+    [
+      "a domain that is not a domain name",
+      { email: "ana@example" },
+      "Check the part after the @ sign. It must be a domain name, such as example.com.",
+    ],
     ["no email", { name: "Ana" }, "Enter an email address."],
   ])("gets 422 that names the field for %s", async (_label, fields, message) => {
     const { form, received } = setup();

@@ -147,12 +147,12 @@ model Account {
   @@map("accounts")
 }
 
-// One row per person, open or closed. The state columns are one flattened LeadState, and the
-// leads_state_shape CHECK admits exactly the combinations the union has.
+// One row per person, open or closed. The email is the canonical address that parseEmail produces,
+// and the leads_email_canonical CHECK holds it to that form. The state columns are one flattened
+// LeadState, and the leads_state_shape CHECK admits exactly the combinations the union has.
 model Lead {
   id              String      @id @default(uuid(7)) @db.Uuid
-  emailKey        String      @unique @map("email_key")
-  email           String
+  email           String      @unique
   name            String?
   phone           String?
   status          LeadStatus

@@ -15,6 +15,10 @@ The name is a working title.
   redeliver a webhook and a person can double-click a form. Each submission is recorded once.
 - **One lead per person.** Two submissions for one email that arrive at the same moment end as one
   lead and two recorded events. The integration tests force that collision and check the rows.
+- **One address per person.** An email is stored and sent in one canonical form, with ASCII
+  before the @ sign, the domain in punycode and every ASCII letter in lowercase. So
+  `Ana@Example.COM` and `ana@example.com` are one lead. An address with a lookalike character,
+  such as the Kelvin sign in place of a K, is refused instead of matched to someone else.
 - **A lead state machine.** One table holds every status and every event. A new status does not
   compile until each of its transitions is decided.
 - **Scoped reads.** One function maps a user to the leads they may read or edit. The lead list
@@ -46,7 +50,7 @@ writes the result, all inside one `SERIALIZABLE` transaction.
 
 When two transactions decide on the same stale snapshot, PostgreSQL fails one of them. The store
 runs that one again from the start, up to 10 times with a random delay, and the second run sees
-the first one's rows. Unique indexes on the email key and on the source and external ID still
+the first one's rows. Unique indexes on the email address and on the source and external ID still
 apply to a writer that bypasses the store.
 
 The alternative was READ COMMITTED with a lock per email. That needs every later feature that
@@ -144,8 +148,8 @@ because leads that were already recorded replay.
 | `form`         | No       | A label for the form                                           |
 | `campaign`     | No       | A label for the campaign                                       |
 
-The endpoint answers 202 for every recorded submission, 422 with the field name for an invalid
-email, and 503 with `Retry-After` when the database could not record the submission.
+The endpoint answers 202 for every recorded submission, 422 for an invalid email with a message
+that says what to fix, and 503 with `Retry-After` when the database could not record the submission.
 
 ### CSV
 

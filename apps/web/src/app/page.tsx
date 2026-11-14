@@ -50,7 +50,7 @@ export default async function LeadsPage() {
           <tbody>
             {leads.map((lead) => (
               <tr key={lead.id}>
-                <td>{lead.email.asTyped}</td>
+                <td>{lead.email}</td>
                 <td>{lead.name}</td>
                 <td>{describeState(lead.lifecycle.state)}</td>
                 <td>{lead.origin?.source}</td>

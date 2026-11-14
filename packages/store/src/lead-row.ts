@@ -1,12 +1,12 @@
 import {
   AccountId,
-  isEmailKey,
+  isEmailAddress,
   LeadId,
   TeamId,
   UserId,
   type Assignment,
   type DeadReason,
-  type EmailKey,
+  type EmailAddress,
   type IntakeOutcome,
   type IntakeSource,
   type Lead,
@@ -150,8 +150,8 @@ function branded<T extends string>(
   return parsed;
 }
 
-function emailKey(value: string): EmailKey {
-  if (!isEmailKey(value)) throw new InvariantError("leads.email_key is not a normalized email");
+function emailAddress(value: string): EmailAddress {
+  if (!isEmailAddress(value)) throw new InvariantError("leads.email is not a canonical address");
   return value;
 }
 
@@ -215,11 +215,11 @@ export function lifecycleFromRow(row: LifecycleColumns): LeadLifecycle {
   };
 }
 
-/** Rows are boundary data, so IDs and the email key are checked again on the way in. */
+/** Rows are boundary data, so IDs and the email are checked again on the way in. */
 export function leadFromRow(row: LeadRow): Lead {
   return {
     id: branded(LeadId, row.id, "id"),
-    email: { asTyped: row.email, key: emailKey(row.emailKey) },
+    email: emailAddress(row.email),
     name: row.name,
     phone: row.phone,
     lifecycle: lifecycleFromRow(row),

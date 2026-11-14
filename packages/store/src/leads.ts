@@ -2,8 +2,7 @@ import {
   LeadId,
   leadScope,
   type Actor,
-  type Email,
-  type EmailKey,
+  type EmailAddress,
   type IntakeSource,
   type Lead,
   type LeadLifecycle,
@@ -22,7 +21,7 @@ export interface LeadListItem extends Lead {
 /**
  * The SQL reading of a scope, and the only place a scope becomes a query. It stays private:
  * every read exported from this file takes an Actor, so no caller can skip scoping.
- * test/lead-scope.int.test.ts proves it selects exactly the rows `scopeAdmits` accepts.
+ * test/leads.int.test.ts proves it selects exactly the rows `scopeAdmits` accepts.
  */
 function leadScopeWhere(scope: LeadScope): Prisma.LeadWhereInput {
   switch (scope.kind) {
@@ -70,14 +69,14 @@ function leadId(value: string): LeadId {
  */
 export async function findLeadIdentity(
   tx: Tx,
-  key: EmailKey,
+  email: EmailAddress,
 ): Promise<{ readonly id: LeadId; readonly lifecycle: LeadLifecycle } | null> {
-  const row = await tx.lead.findUnique({ where: { emailKey: key } });
+  const row = await tx.lead.findUnique({ where: { email } });
   return row === null ? null : { id: leadId(row.id), lifecycle: lifecycleFromRow(row) };
 }
 
 export interface NewLead {
-  readonly email: Email;
+  readonly email: EmailAddress;
   readonly name: string | null;
   readonly phone: string | null;
   readonly lifecycle: LeadLifecycle;
@@ -87,8 +86,7 @@ export interface NewLead {
 export async function insertLead(tx: Tx, lead: NewLead): Promise<LeadId> {
   const row = await tx.lead.create({
     data: {
-      emailKey: lead.email.key,
-      email: lead.email.asTyped,
+      email: lead.email,
       name: lead.name,
       phone: lead.phone,
       createdAt: lead.createdAt,

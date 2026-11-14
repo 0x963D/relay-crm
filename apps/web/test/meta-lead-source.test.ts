@@ -58,7 +58,7 @@ describe("a fetched lead", () => {
     expect(submission).toEqual({
       source: "metaLeadAds",
       externalId: "444",
-      email: { asTyped: "Ana@Example.com", key: "ana@example.com" },
+      email: "ana@example.com",
       name: "Ana Silva",
       phone: "+44 20 7946 0958",
       attribution: { campaign: "Spring sale", adSet: "Lookalikes", ad: "Video 2", form: "f-1" },

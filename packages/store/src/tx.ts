@@ -29,7 +29,7 @@ const UNIQUE_VIOLATION = "23505";
  * these is retried. A violation of any other unique index is a bug and is not.
  */
 export const RACE_CONSTRAINTS: readonly string[] = [
-  "leads_email_key_key",
+  "leads_email_key",
   "intake_events_source_external_id_key",
 ];
 

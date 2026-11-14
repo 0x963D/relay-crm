@@ -67,14 +67,14 @@ export function submissionExample(fields: SubmissionFields = {}): IntakeSubmissi
   if (externalId === null) throw new Error("submissionExample needs a usable external ID");
 
   const email = fields.email === null ? null : parseEmail(fields.email ?? "ana@example.com");
-  if (fields.email !== null && email === null) {
+  if (email !== null && !email.ok) {
     throw new Error("submissionExample needs a valid email, or null for none");
   }
 
   return {
     source: fields.source ?? "webForm",
     externalId,
-    email,
+    email: email?.value ?? null,
     name: fields.name === undefined ? "Ana Silva" : fields.name,
     phone: fields.phone ?? null,
     attribution: normalizeAttribution({ campaign: fields.campaign }),

@@ -94,7 +94,8 @@ export async function importCsv(
   const failures: { line: number; message: string }[] = [];
 
   for (const { info, record } of records) {
-    const email = parseEmail(record.email ?? "");
+    const parsed = parseEmail(record.email ?? "");
+    const email = parsed.ok ? parsed.value : null;
     const name = normalizeName(record.name);
     const phone = normalizePhone(record.phone);
     const attribution = normalizeAttribution({
@@ -106,7 +107,7 @@ export async function importCsv(
     const externalId = parseExternalId(
       record.external_id === undefined || record.external_id === ""
         ? contentKey([
-            email?.key ?? record.email ?? null,
+            email ?? record.email ?? null,
             name,
             phone,
             attribution.campaign,

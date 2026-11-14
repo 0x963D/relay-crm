@@ -1,4 +1,4 @@
-import type { Email } from "./email.ts";
+import type { EmailAddress } from "./email.ts";
 import type { AccountId, LeadId, TeamId, UserId } from "./ids.ts";
 import { err, ok, type Result } from "./result.ts";
 
@@ -54,7 +54,7 @@ export interface LeadLifecycle {
 /** The record of one person. Phone is contact data, never identity. */
 export interface Lead {
   readonly id: LeadId;
-  readonly email: Email;
+  readonly email: EmailAddress;
   readonly name: string | null;
   readonly phone: string | null;
   readonly lifecycle: LeadLifecycle;

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseEmail } from "@relay/domain";
 import { submissionExample } from "@relay/domain/testing";
 import { describe, expect } from "vitest";
 import { test, type TestDatabase } from "../src/testing/index.ts";
@@ -28,7 +29,6 @@ interface People {
 function lead(columns: Row): Row {
   return {
     id: randomUUID(),
-    email_key: "ana@example.com",
     email: "ana@example.com",
     status: "new",
     created_at: AT,
@@ -147,22 +147,46 @@ const REJECTED: readonly (readonly [
     (p) => lead({ status: "assigned", owner_id: p.owner, team_id: p.team }),
   ],
   [
-    "an email key with an uppercase letter",
-    "leads_email_key_normalized",
+    "an email with an uppercase letter",
+    "leads_email_canonical",
     "leads",
-    () => lead({ email_key: "Ana@example.com" }),
+    () => lead({ email: "Ana@example.com" }),
   ],
   [
-    "an email key with a space",
-    "leads_email_key_normalized",
+    "an email with a space",
+    "leads_email_canonical",
     "leads",
-    () => lead({ email_key: "ana @example.com" }),
+    () => lead({ email: "ana @example.com" }),
   ],
   [
-    "an email key with no at sign",
-    "leads_email_key_normalized",
+    "an email with a non-ASCII local part",
+    "leads_email_canonical",
     "leads",
-    () => lead({ email_key: "ana.example.com" }),
+    () => lead({ email: "josé@example.com" }),
+  ],
+  [
+    "an email whose domain is not punycode",
+    "leads_email_canonical",
+    "leads",
+    () => lead({ email: "ana@bücher.example" }),
+  ],
+  [
+    "an email with no at sign",
+    "leads_email_canonical",
+    "leads",
+    () => lead({ email: "ana.example.com" }),
+  ],
+  [
+    "an email at an IPv4 address",
+    "leads_email_canonical",
+    "leads",
+    () => lead({ email: "ana@127.0.0.1" }),
+  ],
+  [
+    "an email with a local part longer than 64 characters",
+    "leads_email_canonical",
+    "leads",
+    () => lead({ email: `${"a".repeat(65)}@example.com` }),
   ],
   [
     "a created-lead event that points at no lead",
@@ -256,6 +280,30 @@ describe("what the database refuses by itself", () => {
       code: CHECK_VIOLATION,
       constraint: "leads_state_shape",
     });
+  });
+});
+
+describe("the canonical email constraint", () => {
+  const LONGEST = `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(57)}.com`;
+
+  test("admits every address parseEmail produces", async ({ db }) => {
+    const inputs = [
+      "Ana.Silva@Example.COM",
+      "a!#$%&'*+-/=?^_`{|}~z@example.com",
+      "ana+crm@mail-2.example9.co.uk",
+      "ana@BÜCHER.example",
+      "ana@例え.テスト",
+      LONGEST,
+    ];
+    expect(LONGEST).toHaveLength(254);
+
+    for (const input of inputs) {
+      const parsed = parseEmail(input);
+      if (!parsed.ok) throw new Error(`Expected ${input} to parse`);
+      await insert(db, "leads", lead({ email: parsed.value }));
+    }
+
+    expect(await db.counts()).toMatchObject({ leads: inputs.length });
   });
 });
 

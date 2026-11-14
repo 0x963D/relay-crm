@@ -33,7 +33,7 @@ describe("importCsv", () => {
       {
         source: "csv",
         externalId: "row-1",
-        email: { asTyped: "Ana@Example.com", key: "ana@example.com" },
+        email: "ana@example.com",
         name: "Ana Silva",
         phone: "+44 20 7946 0958",
         attribution: { campaign: "Spring", adSet: "Lookalikes", ad: "Video 2", form: "contact" },
@@ -52,7 +52,7 @@ describe("importCsv", () => {
       },
       expect.objectContaining({
         externalId: "row-2",
-        email: { asTyped: "ben@example.com", key: "ben@example.com" },
+        email: "ben@example.com",
         name: "Ben Okoro",
         phone: null,
         attribution: { campaign: null, adSet: null, ad: null, form: null },
@@ -71,7 +71,7 @@ describe("importCsv", () => {
     expect(fake.received).toMatchObject([
       {
         externalId: "row-1",
-        email: { key: "ana@example.com" },
+        email: "ana@example.com",
         name: "Ana Silva",
         attribution: { adSet: "Lookalikes" },
       },

@@ -32,7 +32,7 @@ describe("resolveIntake", () => {
     const submission = submissionExample({ email: "Ana@Example.com" });
     expect(resolveIntake(EMPTY, submission)).toEqual({
       kind: "createLead",
-      email: { asTyped: "Ana@Example.com", key: "ana@example.com" },
+      email: "ana@example.com",
     });
   });
 

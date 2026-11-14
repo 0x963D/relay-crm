@@ -5,6 +5,7 @@ import {
   normalizeName,
   normalizePhone,
   parseEmail,
+  type EmailProblem,
   type ExternalId,
   type Intake,
   type JsonValue,
@@ -34,6 +35,14 @@ const Fields = z.object({
   form: z.string().optional(),
   campaign: z.string().optional(),
 });
+
+const EMAIL_PROBLEMS: Readonly<Record<EmailProblem, string>> = {
+  malformed: "Enter an email address in the form name@example.com.",
+  tooLong:
+    "Use a shorter email address, with at most 64 characters before the @ sign and 254 in all.",
+  nonAsciiLocalPart: "Use only ASCII letters, digits and symbols before the @ sign.",
+  invalidDomain: "Check the part after the @ sign. It must be a domain name, such as example.com.",
+};
 
 type Body =
   | { readonly kind: "parsed"; readonly value: JsonValue }
@@ -96,14 +105,14 @@ export function createWebFormEndpoint({ intake, now, log }: WebFormDeps): WebFor
         );
       }
       const email = parseEmail(fields.data.email);
-      if (email === null) return invalid({ email: "Enter a valid email address." });
+      if (!email.ok) return invalid({ email: EMAIL_PROBLEMS[email.error] });
       const externalId = externalIdFor(fields.data.submissionId);
 
       try {
         await intake({
           source: "webForm",
           externalId,
-          email,
+          email: email.value,
           name: normalizeName(fields.data.name),
           phone: normalizePhone(fields.data.phone),
           attribution: normalizeAttribution({

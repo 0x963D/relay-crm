@@ -98,6 +98,7 @@ export function createMetaLeadSource(config: MetaGraphConfig): MetaLeadSource {
       }
 
       const answers = new Map(lead.data.field_data.map((field) => [field.name, field.values[0]]));
+      const email = parseEmail(answers.get("email") ?? "");
       const fullName =
         answers.get("full_name") ??
         [answers.get("first_name"), answers.get("last_name")].filter(Boolean).join(" ");
@@ -105,7 +106,7 @@ export function createMetaLeadSource(config: MetaGraphConfig): MetaLeadSource {
       return {
         source: "metaLeadAds",
         externalId,
-        email: parseEmail(answers.get("email") ?? ""),
+        email: email.ok ? email.value : null,
         name: normalizeName(fullName),
         phone: normalizePhone(answers.get("phone_number")),
         attribution: normalizeAttribution({

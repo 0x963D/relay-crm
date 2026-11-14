@@ -1,5 +1,5 @@
 import { tidyText } from "./contact.ts";
-import type { Email } from "./email.ts";
+import type { EmailAddress } from "./email.ts";
 import type { AccountId, Brand, IntakeEventId, LeadId } from "./ids.ts";
 import {
   isOpen,
@@ -57,7 +57,7 @@ export interface IntakeSubmission {
   readonly source: IntakeSource;
   readonly externalId: ExternalId;
   /** null when the record has no usable email. Intake still records it, as `rejectedNoEmail`. */
-  readonly email: Email | null;
+  readonly email: EmailAddress | null;
   readonly name: string | null;
   readonly phone: string | null;
   readonly attribution: Attribution;
@@ -97,7 +97,7 @@ export interface IntakeSnapshot {
 export type IntakeDecision =
   | { readonly kind: "replay"; readonly eventId: IntakeEventId; readonly outcome: IntakeOutcome }
   | { readonly kind: "reject" }
-  | { readonly kind: "createLead"; readonly email: Email }
+  | { readonly kind: "createLead"; readonly email: EmailAddress }
   | { readonly kind: "linkAccount"; readonly accountId: AccountId }
   | { readonly kind: "attach"; readonly leadId: LeadId }
   | {

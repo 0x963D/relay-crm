@@ -10,7 +10,7 @@ export {
   type TeamKind,
 } from "./access.ts";
 export { normalizeName, normalizePhone } from "./contact.ts";
-export { isEmailKey, parseEmail, type Email, type EmailKey } from "./email.ts";
+export { isEmailAddress, parseEmail, type EmailAddress, type EmailProblem } from "./email.ts";
 export { AccountId, ActivityId, IntakeEventId, LeadId, TeamId, UserId, type Brand } from "./ids.ts";
 export {
   isExternalId,

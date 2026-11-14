@@ -50,7 +50,9 @@ function timeline(db: TestDatabase) {
 }
 
 describe("a new person", () => {
-  test("becomes a pooled lead, with the original record in the ledger", async ({ db }) => {
+  test("becomes a pooled lead at its canonical address, with the original record in the ledger", async ({
+    db,
+  }) => {
     const raw = { email: "Ana@Example.com", utm: { campaign: "spring" }, consent: true };
     const result = await db.store.intake(
       submissionExample({
@@ -70,7 +72,7 @@ describe("a new person", () => {
     expect(await db.store.listLeads(await ownerOf(db), { limit: 10 })).toEqual([
       {
         id: leadId,
-        email: { asTyped: "Ana@Example.com", key: "ana@example.com" },
+        email: "ana@example.com",
         name: "Ana Silva",
         phone: null,
         lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
@@ -82,7 +84,7 @@ describe("a new person", () => {
       {
         source: "webForm",
         external_id: "form-1",
-        email: "Ana@Example.com",
+        email: "ana@example.com",
         name: "Ana Silva",
         campaign: "spring",
         outcome: "leadCreated",

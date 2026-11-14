@@ -48,3 +48,38 @@ describe("a CSV import over a real database", () => {
     expect(await db.counts()).toEqual({ leads: 3, intakeEvents: 4, activities: 3 });
   });
 });
+
+const POOLED = { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null } as const;
+
+describe("a row whose address matches a lead's only through a lookalike letter", () => {
+  test("is recorded with no email and never attaches to that lead", async ({ db }) => {
+    const leadId = await db.seedLead({ email: "kim@kelvin.example", lifecycle: POOLED });
+    const typed = ["\u212Aim@kelvin.example", "kim@\u212Aelvin.example"];
+
+    const report = await run(db, ["email", ...typed, ""].join("\n"));
+
+    expect(report.byOutcome).toMatchObject({ rejectedNoEmail: 2, attachedToOpenLead: 0 });
+    expect(await db.rows("SELECT email, outcome, lead_id FROM intake_events")).toEqual([
+      { email: null, outcome: "rejectedNoEmail", lead_id: null },
+      { email: null, outcome: "rejectedNoEmail", lead_id: null },
+    ]);
+    expect(await db.rows("SELECT id, email FROM leads")).toEqual([
+      { id: leadId, email: "kim@kelvin.example" },
+    ]);
+    const kept = await db.rows("SELECT raw->>'email' AS email FROM intake_events");
+    expect(kept.map((row) => row.email).sort()).toEqual([...typed].sort());
+  });
+});
+
+describe("a row whose address differs from a lead's only in ASCII case", () => {
+  test("attaches to that lead", async ({ db }) => {
+    const leadId = await db.seedLead({ email: "kim@kelvin.example", lifecycle: POOLED });
+
+    const report = await run(db, ["email", "KIM@Kelvin.Example", ""].join("\n"));
+
+    expect(report.byOutcome).toMatchObject({ attachedToOpenLead: 1 });
+    expect(await db.rows("SELECT email, lead_id FROM intake_events")).toEqual([
+      { email: "kim@kelvin.example", lead_id: leadId },
+    ]);
+  });
+});

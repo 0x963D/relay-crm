@@ -130,8 +130,14 @@ async function createTestDatabase(): Promise<{
     },
     seedLead: async ({ email, lifecycle, createdAt = new Date() }) => {
       const parsed = parseEmail(email);
-      if (parsed === null) throw new Error(`Cannot seed a lead with the email ${email}`);
-      return insertLead(prisma, { email: parsed, name: null, phone: null, lifecycle, createdAt });
+      if (!parsed.ok) throw new Error(`Cannot seed a lead with the email ${email}`);
+      return insertLead(prisma, {
+        email: parsed.value,
+        name: null,
+        phone: null,
+        lifecycle,
+        createdAt,
+      });
     },
   };
 

@@ -45,7 +45,7 @@ async function loadSnapshot(tx: Tx, submission: IntakeSubmission): Promise<Intak
     },
     select: { id: true, outcome: true, leadId: true, accountId: true },
   });
-  const lead = submission.email === null ? null : await findLeadIdentity(tx, submission.email.key);
+  const lead = submission.email === null ? null : await findLeadIdentity(tx, submission.email);
   return {
     priorEvent:
       prior === null
@@ -119,7 +119,7 @@ async function record(
     data: {
       source: submission.source,
       externalId: submission.externalId,
-      email: submission.email?.asTyped ?? null,
+      email: submission.email,
       name: submission.name,
       phone: submission.phone,
       campaign: submission.attribution.campaign,

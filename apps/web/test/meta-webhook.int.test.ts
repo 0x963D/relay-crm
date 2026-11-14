@@ -56,7 +56,7 @@ describe("the Meta webhook over a real database", () => {
     expect(response.status).toBe(200);
     expect(await db.store.listLeads(await ownerOf(db), { limit: 10 })).toMatchObject([
       {
-        email: { asTyped: "Ana@Example.com", key: "ana@example.com" },
+        email: "ana@example.com",
         name: "Ana Silva",
         lifecycle: { state: { status: "new" } },
         createdAt: NOW,
