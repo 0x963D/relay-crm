@@ -9,10 +9,10 @@ const ACCEPTED: readonly (readonly [label: string, input: string, key: string])[
   ["Gmail dots, which stay", "a.n.a@gmail.com", "a.n.a@gmail.com"],
   ["a subdomain", "ana@mail.example.co.uk", "ana@mail.example.co.uk"],
   ["a non-ASCII local part", "JOSÉ@example.com", "josé@example.com"],
-  ["a decomposed accent", "josé@example.com", "josé@example.com"],
+  ["a decomposed accent", "jose\u0301@example.com", "jos\u00e9@example.com"],
   ["an internationalized domain", "ana@BÜCHER.example", "ana@bücher.example"],
-  ["a letter that only composes once lowercased", "J̌an@example.com", "ǰan@example.com"],
-  ["a capital dotted I", "İlker@example.com", "i̇lker@example.com"],
+  ["a letter that only composes once lowercased", "J\u030Can@example.com", "\u01F0an@example.com"],
+  ["a capital dotted I", "\u0130lker@example.com", "i\u0307lker@example.com"],
   ["a final sigma", "ΟΔΟΣ@example.gr", "οδος@example.gr"],
 ];
 
@@ -41,8 +41,8 @@ describe("parseEmail", () => {
     ["a doubled dot in the domain", "ana@example..com"],
     ["a trailing dot on the domain", "ana@example.com."],
     ["inner whitespace", "ana silva@example.com"],
-    ["a non-breaking space", "ana silva@example.com"],
-    ["a zero-width space", "ana​@example.com"],
+    ["a non-breaking space", "ana\u00a0silva@example.com"],
+    ["a zero-width space", "ana\u200b@example.com"],
     ["a NUL character", "ana\u0000@example.com"],
     ["a quoted local part", '"ana"@example.com'],
     ["a display name", "Ana <ana@example.com>"],
@@ -57,7 +57,7 @@ describe("parseEmail", () => {
 describe("isEmailKey", () => {
   it.each([
     ["an uppercase letter", "Ana@example.com"],
-    ["a decomposed accent", "josé@example.com"],
+    ["a decomposed accent", "jose\u0301@example.com"],
     ["something that is not an address", "ana"],
   ])("refuses a key with %s", (_label, value) => {
     expect(isEmailKey(value)).toBe(false);
