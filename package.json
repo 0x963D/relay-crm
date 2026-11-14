@@ -16,6 +16,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --project tsconfig.json && pnpm --recursive typecheck",
     "test": "vitest run --project unit",
+    "test:int": "dotenv -- vitest run --project integration",
     "db:generate": "pnpm --filter @relay/store generate",
     "db:migrate": "dotenv -- pnpm --filter @relay/store migrate"
   },
