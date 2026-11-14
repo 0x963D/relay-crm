@@ -1,6 +1,8 @@
 import {
   AccountId,
   assigneeOf,
+  IntakeEventId,
+  LeadId,
   TeamId,
   UserId,
   type Assignment,
@@ -35,6 +37,8 @@ export const ben: Assignment = {
 export const anaOnOtherTeam: Assignment = { ownerId: ana.ownerId, teamId: otherTeam };
 
 export const accountId = must(AccountId.parse("019a8e2c-0000-7000-8000-0000000000ac"));
+export const leadId = must(LeadId.parse("019a8e2c-0000-7000-8000-0000000001ea"));
+export const eventId = must(IntakeEventId.parse("019a8e2c-0000-7000-8000-0000000000e1"));
 
 export const STATE_EXAMPLES = leadStateExamples({ assignee: ana, accountId, callBackAt: LATER });
 export const ALL_STATES: readonly LeadState[] = Object.values(STATE_EXAMPLES).flat();

@@ -9,7 +9,24 @@ export {
   type Role,
   type TeamKind,
 } from "./access.ts";
+export { normalizeName, normalizePhone } from "./contact.ts";
+export { isEmailKey, parseEmail, type Email, type EmailKey } from "./email.ts";
 export { AccountId, ActivityId, IntakeEventId, LeadId, TeamId, UserId, type Brand } from "./ids.ts";
+export {
+  isExternalId,
+  normalizeAttribution,
+  parseExternalId,
+  resolveIntake,
+  type Attribution,
+  type ExternalId,
+  type Intake,
+  type IntakeDecision,
+  type IntakeOutcome,
+  type IntakeResult,
+  type IntakeSnapshot,
+  type IntakeSubmission,
+  type JsonValue,
+} from "./intake.ts";
 export {
   assigneeOf,
   DEAD_REASONS,
@@ -22,6 +39,7 @@ export {
   type EventOf,
   type InboundReopen,
   type IntakeSource,
+  type Lead,
   type LeadEvent,
   type LeadEventType,
   type LeadLifecycle,

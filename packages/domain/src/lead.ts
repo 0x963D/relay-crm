@@ -1,4 +1,5 @@
-import type { AccountId, TeamId, UserId } from "./ids.ts";
+import type { Email } from "./email.ts";
+import type { AccountId, LeadId, TeamId, UserId } from "./ids.ts";
 import { err, ok, type Result } from "./result.ts";
 
 export const INTAKE_SOURCES = ["metaLeadAds", "webForm", "csv", "manual"] as const;
@@ -48,6 +49,16 @@ export interface LeadLifecycle {
   readonly state: LeadState;
   readonly firstAssignedAt: Date | null;
   readonly previousOwnerId: UserId | null;
+}
+
+/** The record of one person. Phone is contact data, never identity. */
+export interface Lead {
+  readonly id: LeadId;
+  readonly email: Email;
+  readonly name: string | null;
+  readonly phone: string | null;
+  readonly lifecycle: LeadLifecycle;
+  readonly createdAt: Date;
 }
 
 export interface InboundReopen {
