@@ -2,12 +2,14 @@ import { openStore, type Store } from "@relay/store";
 import { readEnv, type Env } from "./env.ts";
 import { createMetaLeadSource } from "./intake/meta/lead-source.ts";
 import { createMetaWebhook, type WebhookHandlers } from "./intake/meta/webhook.ts";
+import { createWebFormEndpoint, type WebFormEndpoint } from "./intake/web-form.ts";
 import { logToConsole } from "./log.ts";
 
 /** Every long-lived object the application has. This file is the only one that builds any. */
 export interface Composition {
   readonly store: Store;
   readonly metaWebhook: WebhookHandlers;
+  readonly webForm: WebFormEndpoint;
 }
 
 function compose(env: Env): Composition {
@@ -33,6 +35,7 @@ function compose(env: Env): Composition {
         log,
       },
     ),
+    webForm: createWebFormEndpoint({ intake: store.intake, now, log }),
   };
 }
 
