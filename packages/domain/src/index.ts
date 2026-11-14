@@ -1,3 +1,14 @@
+export {
+  leadScope,
+  ROLES,
+  scopeAdmits,
+  TEAM_KINDS,
+  type Actor,
+  type LeadAccess,
+  type LeadScope,
+  type Role,
+  type TeamKind,
+} from "./access.ts";
 export { AccountId, ActivityId, IntakeEventId, LeadId, TeamId, UserId, type Brand } from "./ids.ts";
 export {
   assigneeOf,
