@@ -1,37 +1,39 @@
 # Relay CRM
 
-Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone. The
-build has nine steps, and steps 1 and 2 are done. Today it takes leads in from Meta Lead Ads, a web
-form and CSV files, decides what each submission means, and shows the leads in a list.
-
-The name is a working title.
+Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone.
+It is a local build. Nothing has been published. The name is a working title.
 
 ## Status
 
-Steps 1 and 2 are done. Work on steps 3 to 5 is paused, and none of it is in the code yet. The app
-has no sign-in, no lead assignment, no work queue and no payments.
+Lead intake, email code sign-in, scoped access and lead assignment work through the API.
+The only screen is the existing lead list. The work queue, payments and their screens are not built.
 
 What works today:
 
-- **One intake path.** Every source builds a submission and calls the same function. The function
-  creates a lead, attaches the submission to an open lead, reopens a closed lead, links a
-  customer's account, or records why it did none of those.
-- **Idempotent delivery.** A source's ID for a submission is its idempotency key. Meta can
-  redeliver a webhook and a person can double-click a form. Each submission is recorded once.
-- **One lead per person.** Two submissions for one email that arrive at the same moment end as one
-  lead and two recorded events. The integration tests force that collision and check the rows.
-- **One address per person.** An email is stored and sent in one canonical form, with ASCII
-  before the @ sign, the domain in punycode and every ASCII letter in lowercase. So
-  `Ana@Example.COM` and `ana@example.com` are one lead. An address with a lookalike character,
-  such as the Kelvin sign in place of a K, is refused instead of matched to someone else.
-- **A lead state machine.** One table holds every status and every event. A new status does not
-  compile until each of its transitions is decided.
-- **Scoped reads.** One function maps a user to the leads they may read or edit. The lead list
-  already goes through it.
+- Intake from Meta Lead Ads, a web form and CSV uses one race-safe, idempotent operation.
+  It creates, attaches, reopens or links a submission without creating duplicate leads.
+- Existing staff sign in with an expiring email code. There is no sign-up. Unknown addresses
+  receive the same response, get no mail and cannot obtain a session. Codes have limited guesses,
+  and PostgreSQL stores request limits across application processes.
+- A session selects one current team. The server loads the current role and membership.
+  One domain function decides lead and account scope. Agents read and edit their own records.
+  Sales team leads read their team's leads and the pool, assign within that team, and edit only
+  their own records. Managers, admins and owners see and edit everything. Accountants read every
+  account and no leads, and cannot edit or assign.
+- Team leads and management manually assign pool leads, individually or in a batch.
+  Round-robin has an immutable preview and a fingerprint. Changed leads invalidate the preview,
+  even if a lead returns to its earlier state. An idempotency key replays the first result.
+  The planner can exclude previous owners. Reassignment preserves status and follow-up detail.
+- Every assignment commits ownership, an activity and an append-only audit row together.
+  Writes reload permissions and scope within the same serializable transaction.
+- A typed tRPC API parses inputs and uses superjson for dates.
 
-There is no sign-in yet, so the lead list answers 401 to everyone. Only `pnpm dev` can act as a
-built-in user, and only when `.env` turns it on. The form endpoint has no rate limit. Do not put
-this build on the public internet.
+`pnpm test` reports 506 passing unit tests. `pnpm test:int` reports 97 passing integration tests
+against real PostgreSQL, including forced assignment races that check the persisted rows.
+`pnpm test:prod` reports 5 passing production tests. It checks unauthenticated behavior, the
+development grant, SMTP sign-in and scoped API errors after visiting the lead page.
+
+The form intake endpoint still has no rate limit. This build is not ready for public hosting.
 
 ## How it is built
 
@@ -55,7 +57,7 @@ submission and returns one decision. `store.intake` loads that snapshot, calls t
 writes the result, all inside one `SERIALIZABLE` transaction.
 
 When two transactions decide on the same stale snapshot, PostgreSQL fails one of them. The store
-runs that one again from the start, up to 10 times with a random delay, and the second run sees
+retries it from the start with a random delay, and the next run sees
 the first one's rows. Unique indexes on the email address and on the source and external ID still
 apply to a writer that bypasses the store.
 
@@ -78,26 +80,23 @@ You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
    pnpm db:generate
    ```
 
-2. Copy `.env.example` to `.env`, set `DATABASE_URL`, and set `RELAY_DEV_ACTOR=1` to act as the
-   built-in dev user. To start a matching database with Docker:
+2. Copy `.env.example` to `.env` and set `DATABASE_URL`. Use a dedicated database:
 
    ```sh
-   docker run --name relay-pg -e POSTGRES_USER=relay -e POSTGRES_PASSWORD=relay \
-     -e POSTGRES_DB=relay -p 5432:5432 -d postgres:17
+   docker run --name relay-crm-pg -e POSTGRES_USER=relay -e POSTGRES_PASSWORD=relay \
+     -e POSTGRES_DB=relay -p 127.0.0.1:54329:5432 -d postgres:17
    ```
 
-3. Apply the migrations and start the app.
+3. Apply migrations and start the app.
 
    ```sh
    pnpm db:migrate
    pnpm dev
    ```
 
-   The lead list is at <http://localhost:3000>. Without `RELAY_DEV_ACTOR=1` it answers 401 with a
-   not-signed-in page. With it, `pnpm dev` acts as the dev user with the `agent` role, which sees
-   only the leads assigned to it, so the list starts empty. Set `RELAY_DEV_ROLE=owner` to see
-   every lead. The dev user exists only when `NODE_ENV` is `development`, which `pnpm dev` sets and
-   `pnpm start` does not, so the built app answers 401.
+   The lead list is at <http://localhost:3000>. Without a session it shows the not-signed-in page.
+   To use the existing development grant, set `RELAY_DEV_ACTOR=1`. Its role defaults to agent.
+   Set `RELAY_DEV_ROLE=owner` to see the pool. The grant works only under `pnpm dev`.
 
 4. Send a lead through the web form endpoint.
 
@@ -122,13 +121,42 @@ You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
 | `pnpm import:csv <file>` | Imports a CSV file through intake and prints a report           |
 | `pnpm test`              | Runs the unit tests. They need no database                      |
 | `pnpm test:int`          | Runs the integration tests against the server in `DATABASE_URL` |
-| `pnpm test:prod`         | Builds the app, serves it and checks that nobody is signed in   |
+| `pnpm test:prod`         | Builds and tests the production server against PostgreSQL       |
 | `pnpm lint`              | Runs ESLint with type-aware rules                               |
 | `pnpm format:check`      | Checks formatting with Prettier                                 |
 | `pnpm typecheck`         | Typechecks every package and its tests                          |
 
 The integration tests create a template database and one database per test, and drop each test's
 database when the test ends. The database user needs the `CREATEDB` privilege.
+
+## Sign in and assign through the API
+
+Staff users and their memberships must already exist. There is no provisioning screen.
+Set `AUTH_SECRET` and `AUTH_URL` to enable sign-in. Set `SMTP_URL` and `SMTP_FROM` to deliver codes
+through SMTP. Without SMTP, only development can enable sign-in and print a code to the console.
+Production refuses that configuration. A build reads no auth configuration and needs no database.
+
+Request a code at `POST /api/auth/email-otp/send-verification-otp` with
+`{"email":"staff@example.com","type":"sign-in"}`. Submit it to `POST /api/auth/sign-in/email-otp`
+with `{"email":"staff@example.com","otp":"123456"}`, then keep the session cookie.
+Send JSON and an `Origin` header matching `AUTH_URL` on auth and tRPC mutations.
+`POST /api/auth/sign-out` ends the session. Other auth endpoints are closed except session read.
+Mail delivery runs after the response and has no durable retry until an outbox is built.
+
+The tRPC router is exported as `AppRouter` from `apps/web/src/server/rpc.ts`.
+It serves these operations under `/api/trpc`:
+
+- `leads.list`, `leads.get` and `leads.edit` read or update contact fields within scope.
+- `accounts.list` and `accounts.get` read accounts within scope. Account writes are not exposed yet.
+- `leads.assign` assigns pool lead IDs to an agent's sales team. `leads.reassign` keeps the lead's status.
+- `distribution.preview` takes lead IDs, chosen agents and `excludePreviousOwner`.
+- `distribution.submit` takes `previewId`, `fingerprint` and an idempotency `key`.
+  Keys belong to the authenticated user. A replay uses the first result, even if its new input differs.
+  Current scope must still permit access to that result.
+- `session.selectTeam` selects a current membership for the session, or clears it.
+
+Out-of-scope records return access denied. A changed preview returns a typed conflict.
+The API error includes `data.accessFailure` for these domain refusals.
 
 ## Intake sources
 
@@ -172,21 +200,26 @@ the same file records nothing new. If you correct one row and import again, only
 
 ## Roadmap
 
-Steps 3 to 5 build the backend and a typed API. The screens come after them, in a step of their
-own.
+The agreed v0.1 has three journeys:
 
-3. Sign-in with a one-time code sent by email, or with Google when it is configured. Scoped access
-   on every lead and account query. Lead distribution from the pool, where a preview is refused if
-   the leads changed hands after it was made.
-4. The work queue, with today's follow-ups, overdue callbacks, status changes, notes, and logged
-   call and WhatsApp attempts. A daily job returns exhausted leads to the pool.
-5. Payments with two-person approval. Two different approvers must approve, and neither of them can
-   be the person who recorded the payment. Conflicting payments are refused under concurrency, and
-   a reversal runs exactly once.
-6. The screens for the work queue, distribution and payments.
-7. Reports and the audit viewer.
-8. The outbox and email.
-9. Whitelabel settings, seed data, Docker and a demo.
+1. A lead arrives, a manager or team lead assigns it from the pool, and it lands in an agent's queue.
+   Intake, sign-in, scope and assignment work now. The queue and assignment screens are not built.
+2. The agent works the lead to won or lost. The domain state machine exists. The work API and screens
+   are not built.
+3. A payment is recorded, two different people approve it, and a conflicting payment is refused.
+   Payment storage, operations and screens are not built.
+
+Not built and cut from v0.1:
+
+- The outbox and email connector beyond sign-in code delivery.
+- The audit viewer.
+- Quota distribution.
+- Whitelabel theming.
+- CSV export. CSV intake already works.
+- Google sign-in.
+- The daily pool job.
+- Payment reversal.
+- Tasks.
 
 ## License
 
