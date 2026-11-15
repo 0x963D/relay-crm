@@ -1,0 +1,38 @@
+import type { LeadId, UserId } from "./ids.ts";
+import type { Assignment, LeadLifecycle } from "./lead.ts";
+
+export interface DistributionRequest {
+  readonly leadIds: readonly LeadId[];
+  readonly agents: readonly Assignment[];
+  readonly excludePreviousOwner: boolean;
+}
+
+export interface DistributionItem {
+  readonly leadId: LeadId;
+  readonly to: Assignment;
+}
+
+export interface DistributionPreview {
+  readonly id: string;
+  readonly fingerprint: string;
+  readonly items: readonly DistributionItem[];
+}
+
+export interface DistributionResult {
+  readonly items: readonly DistributionItem[];
+}
+
+export interface DistributionLead {
+  readonly id: LeadId;
+  readonly version: number;
+  readonly lifecycle: LeadLifecycle;
+}
+
+export type AccessFailure =
+  "accessDenied" | "conflict" | "stalePreview" | "invalidAgent" | "noEligibleAgent";
+
+export interface DistributionReceipt {
+  readonly actorId: UserId;
+  readonly preview: DistributionPreview;
+  readonly leads: readonly DistributionLead[];
+}
