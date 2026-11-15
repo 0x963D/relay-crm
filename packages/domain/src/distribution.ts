@@ -28,8 +28,14 @@ export interface DistributionLead {
   readonly lifecycle: LeadLifecycle;
 }
 
-export type AccessFailure =
-  "accessDenied" | "conflict" | "stalePreview" | "invalidAgent" | "noEligibleAgent";
+export const ACCESS_FAILURES = [
+  "accessDenied",
+  "conflict",
+  "stalePreview",
+  "invalidAgent",
+  "noEligibleAgent",
+] as const;
+export type AccessFailure = (typeof ACCESS_FAILURES)[number];
 
 export interface DistributionReceipt {
   readonly actorId: UserId;

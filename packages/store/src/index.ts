@@ -28,7 +28,7 @@ import {
 import { connect } from "./tx.ts";
 
 export type { LeadListItem };
-export { AccessError } from "./errors.ts";
+export { AccessError, isAccessError } from "./errors.ts";
 export type Store = ReturnType<typeof openStore>;
 
 export function openStore(config: { readonly connectionString: string }) {

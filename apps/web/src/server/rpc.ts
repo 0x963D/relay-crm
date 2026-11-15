@@ -7,7 +7,7 @@ import {
   normalizePhone,
   type SessionPrincipal,
 } from "@relay/domain";
-import { AccessError, type Store } from "@relay/store";
+import { isAccessError, type Store } from "@relay/store";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
@@ -23,7 +23,7 @@ const t = initTRPC.context<RpcContext>().create({
     ...shape,
     data: {
       ...shape.data,
-      accessFailure: error.cause instanceof AccessError ? error.cause.code : null,
+      accessFailure: isAccessError(error.cause) ? error.cause.code : null,
     },
   }),
 });
@@ -33,10 +33,10 @@ const authenticated = t.procedure.use(async ({ ctx, next }) => {
     const result = await next({
       ctx: { ...ctx, principal: ctx.principal, actor: ctx.principal.actor },
     });
-    if (!result.ok && result.error.cause instanceof AccessError) throw result.error.cause;
+    if (!result.ok && isAccessError(result.error.cause)) throw result.error.cause;
     return result;
   } catch (cause) {
-    if (!(cause instanceof AccessError)) throw cause;
+    if (!isAccessError(cause)) throw cause;
     const code =
       cause.code === "accessDenied"
         ? "FORBIDDEN"

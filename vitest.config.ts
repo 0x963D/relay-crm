@@ -26,6 +26,7 @@ export default defineConfig({
       {
         test: {
           name: "production",
+          globalSetup: ["packages/store/src/testing/global-setup.ts"],
           include: PRODUCTION_TESTS,
           testTimeout: 30_000,
         },

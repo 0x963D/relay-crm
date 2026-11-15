@@ -1,3 +1,6 @@
+import { setTimeout as sleep } from "node:timers/promises";
+import { test as databaseTest } from "@relay/store/testing";
+import { openSmtpInbox } from "./support/smtp.ts";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
@@ -24,14 +27,21 @@ async function freePort(): Promise<number> {
  * NODE_ENV is left for Next to set, so the server runs as production and not as the test runner's
  * "test".
  */
-async function serve(variables: Readonly<Record<string, string>>) {
+async function serve(
+  variables:
+    Readonly<Record<string, string>> | ((origin: string) => Readonly<Record<string, string>>),
+  databaseUrl = UNREACHABLE_DATABASE,
+) {
   const port = await freePort();
+  const origin = `http://127.0.0.1:${String(port)}`;
+  const configured = typeof variables === "function" ? variables(origin) : variables;
   const inherited = Object.entries(process.env).filter(
-    ([name]) => name !== "NODE_ENV" && name !== "DATABASE_URL" && !/^(META|RELAY)_/.test(name),
+    ([name]) =>
+      name !== "NODE_ENV" && name !== "DATABASE_URL" && !/^(META|RELAY|AUTH|SMTP)_/.test(name),
   );
   const server = spawn(process.execPath, [NEXT, "start", "--port", String(port)], {
     cwd: APP,
-    env: { ...Object.fromEntries(inherited), DATABASE_URL: UNREACHABLE_DATABASE, ...variables },
+    env: { ...Object.fromEntries(inherited), DATABASE_URL: databaseUrl, ...configured },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -50,6 +60,7 @@ async function serve(variables: Readonly<Record<string, string>>) {
   });
 
   return {
+    output: () => output,
     url: (path: string) => `http://127.0.0.1:${String(port)}${path}`,
     stop: async () => {
       const exited = once(server, "exit");
@@ -99,3 +110,83 @@ describe("the production server with no session", () => {
     }
   });
 });
+
+databaseTest(
+  "a page-created store returns typed scope errors through the production API",
+  async ({ db }) => {
+    const userId = await db.seedUser("agent");
+    const otherId = await db.seedUser("agent");
+    const teamId = await db.seedTeam("sales");
+    const id = await db.seedLead({
+      email: "outside@example.com",
+      lifecycle: {
+        state: { status: "assigned", assignee: { ownerId: otherId, teamId } },
+        firstAssignedAt: new Date(),
+        previousOwnerId: null,
+      },
+    });
+    const inbox = await openSmtpInbox();
+    const server = await serve(
+      (origin) => ({
+        AUTH_URL: origin,
+        AUTH_SECRET: "fake-production-test-secret-at-least-thirty-two-characters",
+        SMTP_URL: inbox.url,
+        SMTP_FROM: "relay@sender.example",
+      }),
+      db.connectionString,
+    );
+    try {
+      expect((await fetch(server.url("/"))).status).toBe(401);
+      const origin = new URL(server.url("/")).origin;
+      const post = (path: string, body: unknown, cookie = "") =>
+        fetch(server.url(path), {
+          method: "POST",
+          headers: { origin, "content-type": "application/json", cookie },
+          body: JSON.stringify(body),
+        });
+      expect(
+        (
+          await post("/api/auth/email-otp/send-verification-otp", {
+            email: "user-1@team.example",
+            type: "sign-in",
+          })
+        ).status,
+      ).toBe(200);
+      for (let attempt = 0; attempt < 100 && inbox.messages.length === 0; attempt += 1)
+        await sleep(50);
+      const code = inbox.messages[0]?.match(/Your sign-in code is (\d{6})/)?.[1];
+      if (!code) throw new Error("SMTP did not receive an issued code");
+      const signed = await post("/api/auth/sign-in/email-otp", {
+        email: "user-1@team.example",
+        otp: code,
+      });
+      expect(signed.status).toBe(200);
+      const cookie = signed.headers
+        .getSetCookie()
+        .find((value) => value.includes("relay.session_token="))
+        ?.split(";")[0];
+      if (!cookie) throw new Error("Sign-in issued no session cookie");
+      const input = encodeURIComponent(JSON.stringify({ json: { id } }));
+      const denied = await fetch(server.url(`/api/trpc/leads.get?input=${input}`), {
+        headers: { cookie },
+      });
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toMatchObject({
+        error: { json: { data: { code: "FORBIDDEN", accessFailure: "accessDenied" } } },
+      });
+      const assigning = await post(
+        "/api/trpc/leads.assign",
+        { json: { leadIds: [id], to: { ownerId: userId, teamId } } },
+        cookie,
+      );
+      expect(assigning.status).toBe(403);
+      expect(await assigning.json()).toMatchObject({
+        error: { json: { data: { accessFailure: "accessDenied" } } },
+      });
+      expect(server.output()).not.toContain(code);
+    } finally {
+      await server.stop();
+      await inbox.close();
+    }
+  },
+);

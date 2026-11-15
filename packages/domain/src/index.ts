@@ -76,3 +76,5 @@ export type {
 } from "./distribution.ts";
 
 export { planDistribution } from "./distribution-plan.ts";
+
+export { ACCESS_FAILURES } from "./distribution.ts";
