@@ -27,7 +27,7 @@ function describeState(state: LeadState): string {
 
 export default async function LeadsPage() {
   await connection();
-  const leads = await composition().store.listLeads(requireActor(), { limit: PAGE_SIZE });
+  const leads = await composition().store.listLeads(await requireActor(), { limit: PAGE_SIZE });
 
   return (
     <main>

@@ -2,6 +2,10 @@ import { ROLES, type Role } from "@relay/domain";
 import { z } from "zod";
 
 const Variables = z.object({
+  AUTH_SECRET: z.string().min(32).optional(),
+  AUTH_URL: z.url().optional(),
+  SMTP_URL: z.url().optional(),
+  SMTP_FROM: z.email().optional(),
   DATABASE_URL: z.string({ error: "is required, such as postgresql://user:pass@localhost/relay" }),
   META_VERIFY_TOKEN: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
@@ -26,7 +30,16 @@ export interface MetaEnv {
   readonly graphBaseUrl: string;
 }
 
+export interface AuthEnv {
+  readonly secret: string;
+  readonly baseUrl: string;
+  readonly delivery:
+    | { readonly kind: "smtp"; readonly url: string; readonly from: string }
+    | { readonly kind: "developmentConsole" };
+}
+
 export interface Env {
+  readonly auth: AuthEnv | null;
   readonly databaseUrl: string;
   readonly meta: MetaEnv | null;
   readonly devRole: Role | null;
@@ -83,6 +96,24 @@ function metaEnv(variables: z.infer<typeof Variables>): MetaEnv | null {
   };
 }
 
+function authEnv(v: z.infer<typeof Variables>): AuthEnv | null {
+  if (!v.AUTH_SECRET && !v.AUTH_URL && !v.SMTP_URL && !v.SMTP_FROM) return null;
+  if (!v.AUTH_SECRET || !v.AUTH_URL) throw new EnvError("Sign-in needs AUTH_SECRET and AUTH_URL.");
+  const smtp =
+    v.SMTP_URL && v.SMTP_FROM
+      ? ({ kind: "smtp", url: v.SMTP_URL, from: v.SMTP_FROM } as const)
+      : null;
+  if ((v.SMTP_URL || v.SMTP_FROM) && !smtp)
+    throw new EnvError("SMTP needs SMTP_URL and SMTP_FROM.");
+  if (!smtp && v.NODE_ENV !== "development")
+    throw new EnvError("Sign-in outside development needs SMTP.");
+  return {
+    secret: v.AUTH_SECRET,
+    baseUrl: v.AUTH_URL,
+    delivery: smtp ?? { kind: "developmentConsole" },
+  };
+}
+
 export function parseEnv(variables: Readonly<Record<string, string | undefined>>): Env {
   const parsed = Variables.safeParse(withoutEmpty(variables));
   if (!parsed.success) {
@@ -90,6 +121,7 @@ export function parseEnv(variables: Readonly<Record<string, string | undefined>>
   }
   const { DATABASE_URL, NODE_ENV, RELAY_DEV_ACTOR, RELAY_DEV_ROLE } = parsed.data;
   return {
+    auth: authEnv(parsed.data),
     databaseUrl: DATABASE_URL,
     meta: metaEnv(parsed.data),
     devRole: NODE_ENV === "development" && RELAY_DEV_ACTOR === "1" ? RELAY_DEV_ROLE : null,

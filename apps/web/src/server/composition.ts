@@ -1,3 +1,6 @@
+import { after } from "next/server";
+import { createAuthentication, type Authentication } from "./auth.ts";
+import { createMailer } from "./mailer.ts";
 import { openStore, type Store } from "@relay/store";
 import { readEnv, type Env } from "./env.ts";
 import { createMetaLeadSource } from "./intake/meta/lead-source.ts";
@@ -7,6 +10,7 @@ import { logToConsole } from "./log.ts";
 
 /** Every long-lived object the application has. This file is the only one that builds any. */
 export interface Composition {
+  readonly auth: Authentication | null;
   readonly env: Env;
   readonly store: Store;
   readonly metaWebhook: WebhookHandlers;
@@ -21,6 +25,18 @@ function compose(env: Env): Composition {
   return {
     env,
     store,
+    auth:
+      env.auth === null
+        ? null
+        : createAuthentication(store, env.auth, createMailer(env.auth.delivery), (task) => {
+            after(async () => {
+              try {
+                await task();
+              } catch {
+                log("signInMailFailed", {});
+              }
+            });
+          }),
     metaWebhook: createMetaWebhook(
       env.meta && {
         verifyToken: env.meta.verifyToken,

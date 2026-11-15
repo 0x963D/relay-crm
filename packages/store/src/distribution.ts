@@ -64,10 +64,11 @@ async function applyAssignment(
   tx: Tx,
   actor: Actor,
   item: DistributionItem,
-  poolOnly: boolean,
+  mode: "pool" | "owned",
 ): Promise<void> {
   const row = await scopedLead(tx, actor, item.leadId, "assign");
-  if (poolOnly && row.status !== "new") throw new AccessError("conflict");
+  if ((mode === "pool" && row.status !== "new") || (mode === "owned" && row.status === "new"))
+    throw new AccessError("conflict");
   await agentFor(tx, actor, item.to);
   const before = lifecycleFromRow(row);
   const at = new Date();
@@ -110,7 +111,7 @@ export async function assignPool(
     const current = await currentActor(tx, actor);
     const items = [...new Set(leadIds)].sort().map((leadId) => ({ leadId, to }));
     if (items.length === 0) throw new AccessError("conflict");
-    for (const item of items) await applyAssignment(tx, current, item, true);
+    for (const item of items) await applyAssignment(tx, current, item, "pool");
     return { items };
   });
 }
@@ -123,7 +124,7 @@ export async function reassignLead(
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const item = { leadId, to };
-    await applyAssignment(tx, current, item, false);
+    await applyAssignment(tx, current, item, "owned");
     return { items: [item] };
   });
 }
@@ -253,7 +254,7 @@ export async function submitDistribution(
     for (const to of agents) await agentFor(tx, current, to);
     const plan = planDistribution(leads, agents, request.excludePreviousOwner);
     if (!plan.ok) throw new AccessError(plan.error);
-    for (const item of plan.value) await applyAssignment(tx, current, item, true);
+    for (const item of plan.value) await applyAssignment(tx, current, item, "pool");
     await tx.distribution.create({
       data: {
         actorId: current.userId,

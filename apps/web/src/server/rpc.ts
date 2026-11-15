@@ -1,0 +1,155 @@
+import {
+  AccountId,
+  LeadId,
+  TeamId,
+  UserId,
+  normalizeName,
+  normalizePhone,
+  type SessionPrincipal,
+} from "@relay/domain";
+import { AccessError, type Store } from "@relay/store";
+import { initTRPC, TRPCError } from "@trpc/server";
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import superjson from "superjson";
+import { z } from "zod";
+
+export interface RpcContext {
+  readonly store: Store;
+  readonly principal: SessionPrincipal | null;
+}
+const t = initTRPC.context<RpcContext>().create({
+  transformer: superjson,
+  errorFormatter: ({ shape, error }) => ({
+    ...shape,
+    data: {
+      ...shape.data,
+      accessFailure: error.cause instanceof AccessError ? error.cause.code : null,
+    },
+  }),
+});
+const authenticated = t.procedure.use(async ({ ctx, next }) => {
+  if (!ctx.principal) throw new TRPCError({ code: "UNAUTHORIZED" });
+  try {
+    const result = await next({
+      ctx: { ...ctx, principal: ctx.principal, actor: ctx.principal.actor },
+    });
+    if (!result.ok && result.error.cause instanceof AccessError) throw result.error.cause;
+    return result;
+  } catch (cause) {
+    if (!(cause instanceof AccessError)) throw cause;
+    const code =
+      cause.code === "accessDenied"
+        ? "FORBIDDEN"
+        : cause.code === "conflict" || cause.code === "stalePreview"
+          ? "CONFLICT"
+          : "BAD_REQUEST";
+    throw new TRPCError({ code, message: cause.code, cause });
+  }
+});
+
+function identifier<T extends string>(guard: { parse(value: string): T | null }) {
+  return z.string().transform((value, ctx) => {
+    const parsed = guard.parse(value);
+    if (parsed !== null) return parsed;
+    ctx.addIssue({ code: "custom", message: "Expected a canonical UUID." });
+    return z.NEVER;
+  });
+}
+const LeadIdentifier = identifier(LeadId);
+const Agent = z.object({ ownerId: identifier(UserId), teamId: identifier(TeamId) }).strict();
+const LeadIds = z
+  .array(LeadIdentifier)
+  .min(1)
+  .max(100)
+  .refine((ids) => new Set(ids).size === ids.length, "Lead IDs must be unique.");
+const Page = z.object({ limit: z.int().min(1).max(100).default(100) }).strict();
+
+export const appRouter = t.router({
+  leads: t.router({
+    list: authenticated
+      .input(Page)
+      .query(({ ctx, input }) => ctx.store.listLeads(ctx.actor, input)),
+    get: authenticated
+      .input(z.object({ id: LeadIdentifier }).strict())
+      .query(({ ctx, input }) => ctx.store.getLead(ctx.actor, input.id)),
+    edit: authenticated
+      .input(
+        z
+          .object({
+            id: LeadIdentifier,
+            name: z.string().max(200).nullable(),
+            phone: z.string().max(40).nullable(),
+          })
+          .strict(),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.store.editLead(ctx.actor, input.id, {
+          name: normalizeName(input.name),
+          phone: normalizePhone(input.phone),
+        }),
+      ),
+    assign: authenticated
+      .input(z.object({ leadIds: LeadIds, to: Agent }).strict())
+      .mutation(({ ctx, input }) => ctx.store.assignPool(ctx.actor, input.leadIds, input.to)),
+    reassign: authenticated
+      .input(z.object({ leadId: LeadIdentifier, to: Agent }).strict())
+      .mutation(({ ctx, input }) => ctx.store.reassignLead(ctx.actor, input.leadId, input.to)),
+  }),
+  accounts: t.router({
+    list: authenticated
+      .input(Page)
+      .query(({ ctx, input }) => ctx.store.listAccounts(ctx.actor, input)),
+    get: authenticated
+      .input(z.object({ id: identifier(AccountId) }).strict())
+      .query(({ ctx, input }) => ctx.store.getAccount(ctx.actor, input.id)),
+  }),
+  distribution: t.router({
+    preview: authenticated
+      .input(
+        z
+          .object({
+            leadIds: LeadIds,
+            agents: z.array(Agent).min(1).max(100),
+            excludePreviousOwner: z.boolean(),
+          })
+          .strict(),
+      )
+      .mutation(({ ctx, input }) => ctx.store.previewDistribution(ctx.actor, input)),
+    submit: authenticated
+      .input(
+        z
+          .object({
+            previewId: z.uuid(),
+            fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+            key: z.string().min(1).max(200),
+          })
+          .strict(),
+      )
+      .mutation(({ ctx, input }) => ctx.store.submitDistribution(ctx.actor, input)),
+  }),
+  session: t.router({
+    selectTeam: authenticated
+      .input(z.object({ teamId: identifier(TeamId).nullable() }).strict())
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.principal.kind !== "session") throw new TRPCError({ code: "FORBIDDEN" });
+        await ctx.store.selectTeam(ctx.principal.session.id, input.teamId);
+        return { selected: true };
+      }),
+  }),
+});
+export type AppRouter = typeof appRouter;
+
+export function handleRpc(
+  request: Request,
+  context: () => Promise<RpcContext>,
+  origin: string,
+): Promise<Response> | Response {
+  if (request.method === "POST" && request.headers.get("origin") !== origin)
+    return new Response(null, { status: 403 });
+  return fetchRequestHandler({
+    endpoint: "/api/trpc",
+    req: request,
+    router: appRouter,
+    createContext: context,
+  });
+}

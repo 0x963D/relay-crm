@@ -12,6 +12,7 @@ const META = {
 describe("parseEnv", () => {
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
+      auth: null,
       databaseUrl: DATABASE_URL,
       meta: null,
       devRole: null,
