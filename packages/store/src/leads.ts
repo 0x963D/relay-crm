@@ -1,6 +1,7 @@
 import {
   LeadId,
-  leadScope,
+  scopeAdmits,
+  recordScope,
   type Actor,
   type EmailAddress,
   type IntakeSource,
@@ -11,16 +12,19 @@ import {
 import type { Prisma } from "./generated/client.ts";
 import { InvariantError, leadFromRow, lifecycleFromRow, lifecycleToColumns } from "./lead-row.ts";
 import type { Db, Tx } from "./tx.ts";
+import { AccessError } from "./errors.ts";
 
 export interface LeadListItem extends Lead {
   /** From the ledger row that created the lead. null for a lead no intake created. */
   readonly origin: { readonly source: IntakeSource; readonly campaign: string | null } | null;
 }
 
-function leadScopeWhere(scope: LeadScope): Prisma.LeadWhereInput {
+function recordScopeWhere(scope: LeadScope): Prisma.LeadWhereInput {
   switch (scope.kind) {
     case "all":
       return {};
+    case "team":
+      return { teamId: scope.teamId };
     case "teamAndPool":
       return { OR: [{ teamId: scope.teamId }, { status: "new" }] };
     case "own":
@@ -36,7 +40,7 @@ export async function listLeads(
   page: { readonly limit: number },
 ): Promise<readonly LeadListItem[]> {
   const rows = await db.lead.findMany({
-    where: leadScopeWhere(leadScope(actor, "read")),
+    where: recordScopeWhere(recordScope(actor, "lead", "read")),
     // UUID v7 ascends with time, so the ID breaks ties in the same direction.
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: page.limit,
@@ -92,5 +96,25 @@ export async function insertLead(tx: Tx, lead: NewLead): Promise<LeadId> {
 }
 
 export async function updateLifecycle(tx: Tx, id: LeadId, lifecycle: LeadLifecycle): Promise<void> {
-  await tx.lead.update({ where: { id }, data: lifecycleToColumns(lifecycle) });
+  await tx.lead.update({ where: { id }, data: { ...lifecycleToColumns(lifecycle) } });
+}
+
+export async function scopedLead(
+  tx: Tx,
+  actor: Actor,
+  id: LeadId,
+  access: "read" | "edit" | "assign",
+) {
+  const row = await tx.lead.findUnique({ where: { id } });
+  if (!row || !scopeAdmits(recordScope(actor, "lead", access), lifecycleFromRow(row).state)) {
+    throw new AccessError("accessDenied");
+  }
+  return row;
+}
+export async function editLeadFields(
+  tx: Tx,
+  id: LeadId,
+  fields: { readonly name: string | null; readonly phone: string | null },
+): Promise<Lead> {
+  return leadFromRow(await tx.lead.update({ where: { id }, data: { ...fields } }));
 }

@@ -1,13 +1,12 @@
 import type { TeamId, UserId } from "./ids.ts";
 import { assigneeOf, type LeadState } from "./lead.ts";
+import type { Account, RecordAccess, RecordKind, RecordScope } from "./account.ts";
 
 export const ROLES = ["owner", "admin", "manager", "teamLead", "agent", "accountant"] as const;
 export type Role = (typeof ROLES)[number];
-
 export const TEAM_KINDS = ["sales", "accounts"] as const;
 export type TeamKind = (typeof TEAM_KINDS)[number];
 
-/** A session works inside one current team, or none. */
 export interface Actor {
   readonly userId: UserId;
   readonly role: Role;
@@ -18,46 +17,56 @@ export interface Actor {
   } | null;
 }
 
-/** The pool is every lead with status `new`. */
-export type LeadScope =
-  | { readonly kind: "all" }
-  | { readonly kind: "teamAndPool"; readonly teamId: TeamId }
-  | { readonly kind: "own"; readonly userId: UserId }
-  | { readonly kind: "none" };
+export type LeadScope = RecordScope;
+export type LeadAccess = RecordAccess;
 
-export type LeadAccess = "read" | "edit";
+type Rule = "all" | "own" | "none" | "team";
+type Rules = Readonly<Record<RecordKind, Readonly<Record<RecordAccess, Rule>>>>;
+const management: Rules = {
+  lead: { read: "all", edit: "all", assign: "all" },
+  account: { read: "all", edit: "all", assign: "all" },
+};
+const RULES: Readonly<Record<Role, Rules>> = {
+  owner: management,
+  admin: management,
+  manager: management,
+  teamLead: {
+    lead: { read: "team", edit: "own", assign: "team" },
+    account: { read: "team", edit: "own", assign: "team" },
+  },
+  agent: {
+    lead: { read: "own", edit: "own", assign: "none" },
+    account: { read: "own", edit: "own", assign: "none" },
+  },
+  accountant: {
+    lead: { read: "none", edit: "none", assign: "none" },
+    account: { read: "all", edit: "none", assign: "none" },
+  },
+};
 
-/**
- * The one function that decides which leads an actor may read or edit. Role is the ceiling:
- * leading a sales team widens what a team lead reads, and widens nothing for any other role.
- * Edit is never wider than read.
- */
-export function leadScope(actor: Actor, access: LeadAccess): LeadScope {
-  switch (actor.role) {
-    case "owner":
-    case "admin":
-    case "manager":
-      return { kind: "all" };
-    case "teamLead":
-      return access === "read" && actor.team?.kind === "sales" && actor.team.isLead
-        ? { kind: "teamAndPool", teamId: actor.team.id }
-        : { kind: "own", userId: actor.userId };
-    case "agent":
-      return { kind: "own", userId: actor.userId };
-    case "accountant":
-      return { kind: "none" };
+export function recordScope(actor: Actor, record: RecordKind, access: RecordAccess): RecordScope {
+  const rule = RULES[actor.role][record][access];
+  if (rule === "all" || rule === "none") return { kind: rule };
+  if (rule === "team") {
+    if (actor.team?.kind === "sales" && actor.team.isLead) {
+      return { kind: record === "lead" ? "teamAndPool" : "team", teamId: actor.team.id };
+    }
+    if (access === "assign") return { kind: "none" };
   }
+  return { kind: "own", userId: actor.userId };
 }
 
-/** The in-memory reading of a scope, for re-checking a lead inside the transaction that edits it. */
-export function scopeAdmits(scope: LeadScope, state: LeadState): boolean {
+export function scopeAdmits(scope: RecordScope, record: LeadState | Account): boolean {
+  const owner = "status" in record ? assigneeOf(record) : record;
   switch (scope.kind) {
     case "all":
       return true;
     case "teamAndPool":
-      return state.status === "new" || assigneeOf(state)?.teamId === scope.teamId;
+      return ("status" in record && record.status === "new") || owner?.teamId === scope.teamId;
+    case "team":
+      return owner?.teamId === scope.teamId;
     case "own":
-      return assigneeOf(state)?.ownerId === scope.userId;
+      return owner !== null && "ownerId" in owner && owner.ownerId === scope.userId;
     case "none":
       return false;
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  leadScope,
+  recordScope,
   ROLES,
   scopeAdmits,
   type Actor,
@@ -68,15 +68,15 @@ const CASES = ROLES.flatMap((role) =>
   })),
 );
 
-describe("leadScope", () => {
+describe("recordScope", () => {
   it.each(CASES)("gives a $role in $situation the expected scopes", ({ actor, expected }) => {
-    expect(leadScope(actor, "read")).toEqual(expected.read);
-    expect(leadScope(actor, "edit")).toEqual(expected.edit);
+    expect(recordScope(actor, "lead", "read")).toEqual(expected.read);
+    expect(recordScope(actor, "lead", "edit")).toEqual(expected.edit);
   });
 
   it.each(CASES)("never lets a $role in $situation edit a lead they cannot read", ({ actor }) => {
-    const read = leadScope(actor, "read");
-    const edit = leadScope(actor, "edit");
+    const read = recordScope(actor, "lead", "read");
+    const edit = recordScope(actor, "lead", "edit");
     for (const state of ALL_STATES) {
       if (scopeAdmits(edit, state)) {
         expect(scopeAdmits(read, state), describeState(state)).toBe(true);

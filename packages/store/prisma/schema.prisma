@@ -87,6 +87,7 @@ enum IntakeOutcome {
 enum ActivityKind {
   intake
   statusChange
+  assignment
 
   @@map("activity_kind")
 }
@@ -97,6 +98,12 @@ model User {
   name      String
   role      Role
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  emailVerified Boolean       @default(false) @map("email_verified")
+  image         String?
+  updatedAt     DateTime      @default(now()) @map("updated_at") @db.Timestamptz(3)
+  sessions      AuthSession[]
+  authAccounts  AuthAccount[]
 
   memberships   Membership[]
   leads         Lead[]       @relation("LeadOwner")
@@ -112,6 +119,8 @@ model Team {
   kind      TeamKind
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
+  sessions    AuthSession[]
+  accounts    Account[]
   memberships Membership[]
   leads       Lead[]
 
@@ -132,6 +141,8 @@ model Membership {
 }
 
 model Account {
+  teamId    String?  @map("team_id") @db.Uuid
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   id        String   @id @default(uuid(7)) @db.Uuid
   ownerId   String?  @map("owner_id") @db.Uuid
   createdAt DateTime @map("created_at") @db.Timestamptz(3)
@@ -146,6 +157,7 @@ model Account {
 }
 
 model Lead {
+  version         Int         @default(0)
   id              String      @id @default(uuid(7)) @db.Uuid
   email           String      @unique
   name            String?
@@ -223,4 +235,95 @@ model Activity {
   @@index([accountId, id])
   @@index([intakeEventId])
   @@map("activities")
+}
+
+model AuthSession {
+  id            String   @id @db.Uuid
+  token         String   @unique
+  userId        String   @map("user_id") @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentTeamId String?  @map("current_team_id") @db.Uuid
+  currentTeam   Team?    @relation(fields: [currentTeamId], references: [id], onDelete: SetNull)
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+
+  @@index([userId])
+  @@map("auth_sessions")
+}
+
+model AuthAccount {
+  id                    String    @id @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@index([userId])
+  @@map("auth_accounts")
+}
+
+model AuthVerification {
+  id         String   @id
+  identifier String   @unique
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@map("auth_verifications")
+}
+
+model AuthRequestLimit {
+  key       String   @id
+  count     Int
+  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+
+  @@map("auth_request_limits")
+}
+
+model DistributionPreview {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  actorId     String   @map("actor_id") @db.Uuid
+  fingerprint String
+  request     Json
+  snapshot    Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("distribution_previews")
+}
+
+model Distribution {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  actorId   String   @map("actor_id") @db.Uuid
+  key       String
+  result    Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([actorId, key])
+  @@map("distributions")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  actorId   String   @map("actor_id") @db.Uuid
+  action    String
+  subjectId String   @map("subject_id") @db.Uuid
+  before    Json
+  after     Json
+  at        DateTime @db.Timestamptz(3)
+
+  @@index([subjectId, id])
+  @@map("audit_log")
 }

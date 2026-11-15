@@ -1,6 +1,6 @@
 import {
   assigneeOf,
-  leadScope,
+  recordScope,
   ROLES,
   scopeAdmits,
   type Actor,
@@ -92,7 +92,7 @@ describe("listLeads scoping", () => {
     for (const role of ROLES) {
       for (const team of teams) {
         const actor: Actor = { userId: world.ana.ownerId, role, team };
-        const scope = leadScope(actor, "read");
+        const scope = recordScope(actor, "lead", "read");
         const admitted = world.leads
           .filter((lead) => scopeAdmits(scope, lead.lifecycle.state))
           .map((lead) => lead.id);

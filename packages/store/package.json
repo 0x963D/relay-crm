@@ -18,6 +18,7 @@
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
     "@relay/domain": "workspace:*",
+    "better-auth": "1.7.25",
     "pg": "^8.23.1"
   },
   "devDependencies": {

@@ -1,5 +1,5 @@
 export {
-  leadScope,
+  recordScope,
   ROLES,
   scopeAdmits,
   TEAM_KINDS,
@@ -74,3 +74,5 @@ export type {
   DistributionReceipt,
   AccessFailure,
 } from "./distribution.ts";
+
+export { planDistribution } from "./distribution-plan.ts";
