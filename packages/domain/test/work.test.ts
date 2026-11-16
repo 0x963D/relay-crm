@@ -16,19 +16,87 @@ test.each([
   expect(queueGroup({ callbackAt: null, hasAttempt: null }, at, zone)).toBe("noCallbackSet");
 });
 
-test("every open lead belongs to exactly one queue group at any time", () => {
-  const groups = ["overdueCallbacks", "dueToday", "noCallbackSet", "notYetCalled", "later"];
+test("open leads match an independent partition across offsets, DST changes and midnight", () => {
+  const day = 86400000;
+  const fixtures = Array.from({ length: 26 }, (_, index) => {
+    const offset = index - 11;
+    const start = Date.parse("2027-06-01T00:00:00Z") - offset * 3600000;
+    return {
+      zone: offset === 0 ? "UTC" : `Etc/GMT${offset > 0 ? "-" : "+"}${String(Math.abs(offset))}`,
+      start,
+      end: start + day,
+    };
+  });
+  fixtures.push(
+    {
+      zone: "America/Los_Angeles",
+      start: Date.parse("2027-03-14T08:00:00Z"),
+      end: Date.parse("2027-03-15T07:00:00Z"),
+    },
+    {
+      zone: "America/Los_Angeles",
+      start: Date.parse("2027-11-07T07:00:00Z"),
+      end: Date.parse("2027-11-08T08:00:00Z"),
+    },
+    {
+      zone: "Europe/Bucharest",
+      start: Date.parse("2027-03-27T22:00:00Z"),
+      end: Date.parse("2027-03-28T21:00:00Z"),
+    },
+    {
+      zone: "Europe/Bucharest",
+      start: Date.parse("2027-10-30T21:00:00Z"),
+      end: Date.parse("2027-10-31T22:00:00Z"),
+    },
+  );
   let seed = 123456;
   const random = () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     return seed;
   };
-  for (let index = 0; index < 2000; index += 1) {
-    const at = new Date(random() * 1000);
-    const callbackAt = random() % 3 === 0 ? null : new Date(random() * 1000);
-    const hasAttempt = [true, false, null][random() % 3] ?? null;
-    const group = queueGroup({ callbackAt, hasAttempt }, at, "Europe/Bucharest");
-    expect(groups.filter((candidate) => candidate === group)).toHaveLength(1);
+  for (const { zone, start, end } of fixtures) {
+    for (const now of [start, start + 1, end - 1, start + (random() % (end - start))]) {
+      const callbacks = [
+        start - 1,
+        start,
+        now - 1,
+        now,
+        now + 1,
+        end - 1,
+        end,
+        end + 1,
+        start + (random() % (2 * day)),
+      ];
+      const leads = [
+        { kind: "untouched", callbackAt: null, hasAttempt: false },
+        { kind: "notes-only", callbackAt: null, hasAttempt: false },
+        { kind: "cleared-callback", callbackAt: null, hasAttempt: false },
+        { kind: "reassigned", callbackAt: null, hasAttempt: false },
+        { kind: "reopened", callbackAt: null, hasAttempt: false },
+        { kind: "unknown-attempts", callbackAt: null, hasAttempt: null },
+        ...callbacks.map((time) => ({
+          kind: "callback",
+          callbackAt: new Date(time),
+          hasAttempt: true,
+        })),
+      ];
+      for (const lead of leads) {
+        const callback = lead.callbackAt?.getTime();
+        const oracle = {
+          overdueCallbacks: callback !== undefined && callback < now,
+          dueToday:
+            callback !== undefined && callback >= now && callback >= start && callback < end,
+          later: callback !== undefined && callback >= now && callback >= end,
+          notYetCalled: callback === undefined && lead.hasAttempt === false,
+          noCallbackSet: callback === undefined && lead.hasAttempt !== false,
+        };
+        const memberships = Object.entries(oracle)
+          .filter(([, admitted]) => admitted)
+          .map(([group]) => group);
+        expect(memberships, `${zone} ${new Date(now).toISOString()} ${lead.kind}`).toHaveLength(1);
+        expect(queueGroup(lead, new Date(now), zone)).toBe(memberships[0]);
+      }
+    }
   }
 });
 

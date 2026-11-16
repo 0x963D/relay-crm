@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { ROLES, type Actor, type LeadId, type LeadWork, type Role } from "@relay/domain";
+import {
+  ROLES,
+  type Actor,
+  type LeadId,
+  type LeadWork,
+  type QueueGroup,
+  type Role,
+} from "@relay/domain";
 import { submissionExample } from "@relay/domain/testing";
 import { expect } from "vitest";
 import { test, type TestDatabase } from "../src/testing/index.ts";
@@ -66,6 +73,97 @@ async function world(db: TestDatabase) {
   return { agent, other, manager, makeActor, makeLead, work, team, otherTeam };
 }
 
+test("the agent queue partitions callbacks, notes, cleared callbacks, reassignments and reopened leads once", async ({
+  db,
+}) => {
+  const w = await world(db);
+  const at = new Date("2099-06-01T00:00:00Z");
+  const expected: Record<QueueGroup, LeadId[]> = {
+    overdueCallbacks: [],
+    dueToday: [],
+    noCallbackSet: [],
+    notYetCalled: [],
+    later: [],
+  };
+  for (const [group, callback] of [
+    ["overdueCallbacks", "2099-05-31T23:59:59.999Z"],
+    ["dueToday", "2099-06-01T00:00:00Z"],
+    ["dueToday", "2099-06-01T23:59:59.999Z"],
+    ["later", "2099-06-02T00:00:00Z"],
+  ] as const) {
+    const id = await w.makeLead();
+    await w.work(w.agent, id, {
+      kind: "callback",
+      change: { kind: "set", at: new Date(callback) },
+    });
+    expected[group].push(id);
+  }
+  const plain = await w.makeLead();
+  expected.notYetCalled.push(plain);
+  const note = await w.makeLead();
+  await w.work(w.agent, note, { kind: "note", note: "Only a note" });
+  expected.notYetCalled.push(note);
+  const cleared = await w.makeLead();
+  await w.work(w.agent, cleared, { kind: "callback", change: { kind: "set", at } });
+  await w.work(w.agent, cleared, { kind: "callback", change: { kind: "clear" } });
+  expected.notYetCalled.push(cleared);
+  const worked = await w.makeLead();
+  await w.work(w.agent, worked, noAnswer);
+  expected.noCallbackSet.push(worked);
+  const moved = await w.makeLead(w.other);
+  await w.work(w.other, moved, noAnswer);
+  await db.store.reassignLead(
+    w.manager,
+    moved,
+    { ownerId: w.agent.userId, teamId: w.team },
+    randomUUID(),
+  );
+  expected.notYetCalled.push(moved);
+  const reopened = await w.makeLead(w.agent, "reopened-partition@example.com");
+  await w.work(w.agent, reopened, noAnswer);
+  await w.work(w.agent, reopened, lost);
+  await db.store.intake(
+    submissionExample({
+      email: "reopened-partition@example.com",
+      externalId: "reopening-partition",
+    }),
+  );
+  await db.store.assignPool(
+    w.manager,
+    [reopened],
+    { ownerId: w.agent.userId, teamId: w.team },
+    randomUUID(),
+  );
+  expected.notYetCalled.push(reopened);
+  const away = await w.makeLead();
+  await db.store.reassignLead(
+    w.manager,
+    away,
+    { ownerId: w.other.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  const queue = await db.store.workQueue(w.agent, {
+    agentId: w.agent.userId,
+    at,
+    timeZone: "UTC",
+    limit: 100,
+  });
+  const seen = [];
+  for (const group of [
+    "overdueCallbacks",
+    "dueToday",
+    "noCallbackSet",
+    "notYetCalled",
+    "later",
+  ] as const) {
+    expect(queue[group].map((lead) => lead.id).sort()).toEqual(expected[group].sort());
+    expect(queue.counts[group]).toBe(expected[group].length);
+    seen.push(...queue[group].map((lead) => lead.id));
+  }
+  expect(new Set(seen).size).toBe(seen.length);
+  expect(seen).toHaveLength(Object.values(expected).flat().length);
+});
+
 test("only spoke to them records contact and no-answer history survives callbacks", async ({
   db,
 }) => {
@@ -97,6 +195,45 @@ test("only spoke to them records contact and no-answer history survives callback
   expect(detail.contactedAt).toBeInstanceOf(Date);
   expect(detail.noAnswerCount).toBe(2);
   expect((await db.store.campaignFunnel(w.manager)).rows[0]).toMatchObject({ contacted: 1 });
+});
+
+test("database credentials can change closed lead custody and fabricate a reopening intake", async ({
+  db,
+}) => {
+  const w = await world(db);
+  const closed = await w.makeLead();
+  await w.work(w.agent, closed, noAnswer);
+  await w.work(w.agent, closed, won);
+  const account = await db.seedAccount();
+  await db.rows("UPDATE leads SET owner_id=$2,account_id=$3 WHERE id=$1", [
+    closed,
+    w.other.userId,
+    account,
+  ]);
+  expect(
+    await db.rows("SELECT owner_id,account_id,status FROM leads WHERE id=$1", [closed]),
+  ).toEqual([{ owner_id: w.other.userId, account_id: account, status: "won" }]);
+  const reopened = await w.makeLead();
+  await w.work(w.agent, reopened, noAnswer);
+  await w.work(w.agent, reopened, lost);
+  await db.rows("BEGIN");
+  try {
+    await db.rows(
+      "INSERT INTO intake_events(id,source,external_id,received_at,raw,outcome,lead_id) VALUES(gen_random_uuid(),'manual','fake-origin',now(),'{}','leadReopened',$1)",
+      [reopened],
+    );
+    await db.rows(
+      "UPDATE leads SET status='new',previous_owner_id=owner_id,owner_id=NULL,team_id=NULL,lost_note=NULL WHERE id=$1",
+      [reopened],
+    );
+    await db.rows("COMMIT");
+  } catch (error) {
+    await db.rows("ROLLBACK");
+    throw error;
+  }
+  expect(await db.rows("SELECT status FROM leads WHERE id=$1", [reopened])).toEqual([
+    { status: "new" },
+  ]);
 });
 
 test("a work replay has one activity and audit with the acting user and request ID", async ({
