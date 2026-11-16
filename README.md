@@ -84,8 +84,10 @@ checks concurrent admission, saturation and expiry.
 `RELAY_TRUSTED_PROXY_COUNT` defaults to 0. `pnpm test -- apps/web/test/client-address.test.ts`
 checks that 0 ignores all forwarded headers and uses the TCP peer. A positive setting selects
 that many hops from the right of `X-Forwarded-For`. An invalid address or a shorter chain falls
-back to the TCP peer. Configure the exact proxy count and prevent direct access around those
-proxies. Each proxy must append the peer address or overwrite the header with a verified chain.
+back to the TCP peer. When `RELAY_TRUSTED_PROXY_COUNT` is above zero, the app's port must be
+reachable only through the proxy. A direct connection can forge the forwarded header, so enforce
+that restriction with the deployment's network rules. Configure the exact proxy count. Each proxy
+must append the peer address or overwrite the header with a verified chain.
 IPv4-mapped IPv6 and IPv6 spellings are canonicalized before counting.
 
 Use `pnpm dev` and `pnpm start`. Development always binds `127.0.0.1`. Production uses `HOST`,
