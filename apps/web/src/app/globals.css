@@ -2067,3 +2067,28 @@ textarea::placeholder {
     min-block-size: var(--size-44);
   }
 }
+
+.sign-brand .org {
+  padding: 0;
+}
+.sign-email {
+  color: var(--text);
+}
+.back-email {
+  font-size: var(--font-small);
+  line-height: var(--size-18);
+  gap: var(--size-4);
+}
+.resend-code {
+  padding: 0;
+  block-size: auto;
+  font-size: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: var(--size-3);
+}
+.input:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 var(--size-3) var(--ink-tint);
+}

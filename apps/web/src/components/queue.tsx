@@ -73,10 +73,12 @@ export function QueueScreen({
   profile,
   agents,
   zone,
+  onTotalChange,
 }: {
   profile: Profile;
   agents: Outputs["leads"]["agents"];
   zone: string;
+  onTotalChange: (total: number) => void;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -127,6 +129,9 @@ export function QueueScreen({
   const queue = remote.status === "ready" ? remote.value : null;
   const name = agents.find((a) => a.ownerId === agentId)?.name ?? "Agent";
   const total = queue ? Object.values(queue.counts).reduce((n, v) => n + v, 0) : 0;
+  useEffect(() => {
+    if (queue) onTotalChange(total);
+  }, [queue, total, onTotalChange]);
   const all = (key: Group) => (queue ? [...queue[key], ...more.flatMap((page) => page[key])] : []);
   const selectedId =
     params.get("lead") ?? selected ?? groups.flatMap((g) => all(g.key))[0]?.id ?? null;

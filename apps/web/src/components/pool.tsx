@@ -30,9 +30,11 @@ const assignmentKey = (a: { ownerId: string; teamId: string }) => `${a.ownerId}:
 export function PoolScreen({
   initialAgents,
   zone,
+  onTotalChange,
 }: {
   initialAgents: Outputs["leads"]["agents"];
   zone: string;
+  onTotalChange: (total: number) => void;
 }) {
   const [remote, setRemote] = useState<Remote<Pool>>({ status: "loading" });
   const [agents, setAgents] = useState(initialAgents);
@@ -68,6 +70,9 @@ export function PoolScreen({
     };
   }, [revision]);
   const pool = remote.status === "ready" ? remote.value : null;
+  useEffect(() => {
+    if (pool) onTotalChange(pool.total);
+  }, [pool, onTotalChange]);
   const rows = preview.kind === "stale" ? preview.rows : (pool?.rows ?? []);
   const recipients = agents.filter((a) => chosen.includes(assignmentKey(a)));
   function invalidate() {

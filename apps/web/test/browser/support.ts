@@ -36,8 +36,7 @@ export async function signIn(page: Page, role: "manager" | "agent" | "accountant
     .click();
   await expect(page.getByRole("radiogroup", { name: "View the demo as" })).toBeVisible();
 }
-export async function accessibility(page: Page, label: string) {
-  await expect(page.locator('[aria-busy="true"]:not([role="status"])')).toHaveCount(0);
+export async function settleFrame(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(
@@ -49,6 +48,10 @@ export async function accessibility(page: Page, label: string) {
         .map((animation) => animation.finished.catch(() => null)),
     );
   });
+}
+export async function accessibility(page: Page, label: string) {
+  await expect(page.locator('[aria-busy="true"]:not([role="status"])')).toHaveCount(0);
+  await settleFrame(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"])
     .analyze();

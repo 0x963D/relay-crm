@@ -43,6 +43,8 @@ export function Workspace({
   const defaultView = profile.role === "agent" ? "queue" : isManager ? "pool" : "payments";
   const view = params.get("view") ?? defaultView;
   const [pending, setPending] = useState(false);
+  const [poolTotal, setPoolTotal] = useState<number | null>(null);
+  const [queueTotal, setQueueTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const nav: Nav[] = [
     ...(isManager
@@ -109,6 +111,12 @@ export function Workspace({
         >
           <Icon name={item.icon} />
           <span>{item.label}</span>
+          {item.id === "pool" && poolTotal !== null && (
+            <span className="nav-count">{poolTotal}</span>
+          )}
+          {item.id === "queue" && profile.role === "agent" && queueTotal !== null && (
+            <span className="nav-count">{queueTotal}</span>
+          )}
         </a>
       ))}
     </nav>
@@ -230,9 +238,10 @@ export function Workspace({
             profile={profile}
             agents={agents}
             zone={zone}
+            onTotalChange={setQueueTotal}
           />
         ) : view === "pool" && isManager ? (
-          <PoolScreen initialAgents={agents} zone={zone} />
+          <PoolScreen initialAgents={agents} zone={zone} onTotalChange={setPoolTotal} />
         ) : (
           <>
             <header className="ph">

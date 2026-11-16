@@ -1,16 +1,19 @@
 import { connection } from "next/server";
+import { headers } from "next/headers";
 import { composition } from "@/server/composition.ts";
-import { requireActor } from "@/server/actor.ts";
+import { resolvePrincipal } from "@/server/actor.ts";
 import { appRouter } from "@/server/rpc.ts";
 import { Workspace } from "@/components/workspace";
+import { SignIn } from "@/components/sign-in";
 
 export default async function HomePage() {
   await connection();
-  const actor = await requireActor();
   const app = composition();
+  const principal = await resolvePrincipal(app, await headers());
+  if (!principal) return <SignIn demo={app.env.demo} />;
   const caller = appRouter.createCaller({
     store: app.store,
-    principal: { kind: "development", actor },
+    principal,
   });
   const profile = await caller.session.profile();
   const agents =

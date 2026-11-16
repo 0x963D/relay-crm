@@ -1,14 +1,14 @@
 import { test, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { accessibility, rpc, signIn } from "./support.ts";
+import { accessibility, rpc, settleFrame, signIn } from "./support.ts";
 import { browserState, captureDirectory } from "./paths.ts";
 test.use({ deviceScaleFactor: 2 });
 test("@capture approved lead-work frames", async ({ page, context }) => {
   await mkdir(captureDirectory, { recursive: true });
   const captures: string[] = [];
   async function capture(name: string) {
-    await page.evaluate(() => document.fonts.ready);
+    await settleFrame(page);
     await page.screenshot({ path: join(captureDirectory, `${name}.png`) });
     captures.push(name);
   }

@@ -114,7 +114,8 @@ export function SignIn({ demo }: { demo: boolean }) {
             "Enter your work email and we will send you a 6-digit code. There is no password to remember."
           ) : (
             <>
-              We sent a 6-digit code to <strong>{email}</strong>. It works once.
+              We sent a 6-digit code to <span className="b sign-email">{email}</span>. It works
+              once.
             </>
           )}
         </p>
@@ -192,6 +193,7 @@ export function SignIn({ demo }: { demo: boolean }) {
             <Button
               variant="ghost"
               size="sm"
+              className="resend-code"
               onClick={() => {
                 void send();
               }}

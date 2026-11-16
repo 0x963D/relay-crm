@@ -80,7 +80,7 @@ test.describe.serial("lead work journeys", () => {
     await accessibility(page, "lead-won");
   });
 });
-test("emailed-code sign-in and an expired-code refusal", async ({ page }) => {
+test("emailed-code sign-in and a refused reused code", async ({ page }) => {
   await page.goto(browserState().url);
   await accessibility(page, "sign-in-email");
   await page.getByLabel("Work email").fill("priya.raman@tidewell.example");

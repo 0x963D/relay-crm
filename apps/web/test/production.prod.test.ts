@@ -47,7 +47,7 @@ databaseTest(
           });
         const signedOut = await fetch(server.url("/"));
         const firstPage = await signedOut.text();
-        expect(signedOut.status).toBe(401);
+        expect(signedOut.status).toBe(200);
         expect(firstPage).not.toContain("RELAY_DEV_ACTOR");
         if (demo) {
           for (const person of Object.values(DEMO_PEOPLE)) expect(firstPage).toContain(person.name);
@@ -503,11 +503,11 @@ databaseTest(
 );
 
 describe("the production server with no session", () => {
-  test("answers the lead list and RPC with 401 without a session", async () => {
+  test("serves public sign-in and refuses RPC with 401 without a session", async () => {
     const server = await serve({});
     try {
       const response = await fetch(server.url("/"));
-      expect(response.status).toBe(401);
+      expect(response.status).toBe(200);
       expect(await response.text()).toContain("Send me a code");
       expect(
         (await fetch(server.url("/api/trpc/leads.list?input=%7B%22json%22%3A%7B%7D%7D"))).status,
@@ -564,7 +564,7 @@ databaseTest(
       db.connectionString,
     );
     try {
-      expect((await fetch(server.url("/"))).status).toBe(401);
+      expect((await fetch(server.url("/"))).status).toBe(200);
       const origin = new URL(server.url("/")).origin;
       const post = (path: string, body: unknown, cookie = "", client = "192.0.2.2") =>
         fetch(server.url(path), {

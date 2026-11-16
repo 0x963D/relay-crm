@@ -78,7 +78,7 @@ function timelineEntry(
     title: entry.kind === "intake" ? "Lead received" : "Status changed",
     body:
       entry.kind === "intake"
-        ? `${sourceLabel(lead.source)}${lead.attribution?.campaign ? ` � ${lead.attribution.campaign}` : ""}`
+        ? `${sourceLabel(lead.source)}${lead.attribution?.campaign ? ` · ${lead.attribution.campaign}` : ""}`
         : "",
     icon: entry.kind === "intake" ? "inbox" : "history",
   };
