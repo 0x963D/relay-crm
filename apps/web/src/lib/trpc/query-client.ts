@@ -4,6 +4,7 @@ export function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+      mutations: { networkMode: "always", retry: false },
       dehydrate: {
         serializeData: superjson.serialize,
         shouldDehydrateQuery: (query) =>
