@@ -120,7 +120,7 @@ test("@capture every lead-work screen in both themes", async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await capture(`pool-${String(width)}`);
   }
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 996 });
   for (const role of ["Manager", "Agent", "Accountant"]) {
     await page.getByRole("radio", { name: role, exact: true }).click();
     await expect(page.getByRole("radio", { name: role, exact: true })).toBeChecked();
