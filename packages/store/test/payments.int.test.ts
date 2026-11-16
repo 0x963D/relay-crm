@@ -277,3 +277,21 @@ test.for(["failed", "expired"] as const)(
     });
   },
 );
+
+test.for(["webhook", "reconciler"] as const)(
+  "%s observation precedes its settlement",
+  async (source, { db }) => {
+    const { id, event, manager } = await setup(db);
+    if (source === "webhook") await db.store.receivePaymentWebhook(event);
+    else {
+      const token = await db.store.claimPaymentCheck(id, new Date(), 300000);
+      if (!token) throw new Error("No claim");
+      await db.store.finishPaymentCheck(id, token, observed);
+    }
+    expect((await db.store.getPayment(manager, id)).events.map((e) => e.kind)).toEqual([
+      "checkoutCreated",
+      source === "webhook" ? "webhookDelivery" : "reconcilerCheck",
+      "settlement",
+    ]);
+  },
+);

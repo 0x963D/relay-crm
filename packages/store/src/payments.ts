@@ -225,6 +225,7 @@ async function settlePayment(
   event: PaymentEvent,
   requestId: string,
   at: Date,
+  recordObservation?: (outcome: SettlementResult) => Promise<void>,
 ): Promise<SettlementResult> {
   const by =
     event.type === "approve" ? "manualApproval" : event.type === "provider" ? event.by : null;
@@ -238,7 +239,9 @@ async function settlePayment(
     throw new AccessError("accessDenied");
   const before = stateOf(row);
   const next = transitionPayment(before, event, money(row.amount, row.currency), at);
-  if (next === before) return { status: before.status, changed: false };
+  const outcome = { status: next.status, changed: next !== before };
+  await recordObservation?.(outcome);
+  if (next === before) return outcome;
   const updated = await tx.payment.update({ where: { id: row.id }, data: columns(next) });
   const cause = { kind: "request", id: requestId } as const;
   await writeAudit(tx, principal, {
@@ -345,16 +348,21 @@ export async function receivePaymentWebhook(db: Db, event: ProviderEvent) {
       throw new AccessError("conflict");
     const row = required(await tx.payment.findUnique({ where: { id: event.paymentId } }));
     const late = row.status !== "checkoutCreated";
-    const outcome = prior
-      ? { status: stateOf(row).status, changed: false }
-      : await settlePayment(
-          tx,
-          { kind: "system", name: "providerWebhook" },
-          row.id,
-          { type: "provider", result: event.observed, by: "providerWebhook" },
-          randomUUID(),
+    const recordDelivery = async (outcome: SettlementResult) => {
+      await tx.paymentEvent.create({
+        data: {
+          paymentId: row.id,
+          kind: "webhookDelivery",
           at,
-        );
+          detail: {
+            ...observationDetail(event.observed, outcome),
+            eventId: event.eventId,
+            duplicate: prior !== null,
+            late,
+          },
+        },
+      });
+    };
     if (!prior)
       await tx.webhookInbox.create({
         data: {
@@ -364,19 +372,18 @@ export async function receivePaymentWebhook(db: Db, event: ProviderEvent) {
           receivedAt: at,
         },
       });
-    await tx.paymentEvent.create({
-      data: {
-        paymentId: row.id,
-        kind: "webhookDelivery",
-        at,
-        detail: {
-          ...observationDetail(event.observed, outcome),
-          eventId: event.eventId,
-          duplicate: prior !== null,
-          late,
-        },
-      },
-    });
+    const outcome = prior
+      ? { status: stateOf(row).status, changed: false }
+      : await settlePayment(
+          tx,
+          { kind: "system", name: "providerWebhook" },
+          row.id,
+          { type: "provider", result: event.observed, by: "providerWebhook" },
+          randomUUID(),
+          at,
+          recordDelivery,
+        );
+    if (prior) await recordDelivery(outcome);
     return { ...outcome, duplicate: prior !== null };
   });
 }
@@ -412,6 +419,19 @@ export async function finishPaymentCheck(
     const row = required(await tx.payment.findUnique({ where: { id } }));
     if (row.checkToken !== token) return { status: stateOf(row).status, changed: false };
     const at = new Date();
+    const recordCheck = async (outcome: SettlementResult) => {
+      await tx.paymentEvent.create({
+        data: {
+          paymentId: id,
+          kind: "reconcilerCheck",
+          at,
+          detail:
+            observed === null
+              ? { ...outcome, error: "Provider status unavailable", checkId: token }
+              : { ...observationDetail(observed, outcome), checkId: token },
+        },
+      });
+    };
     const outcome =
       observed === null
         ? { status: stateOf(row).status, changed: false }
@@ -422,18 +442,9 @@ export async function finishPaymentCheck(
             { type: "provider", result: observed, by: "reconciler" },
             token,
             at,
+            recordCheck,
           );
-    await tx.paymentEvent.create({
-      data: {
-        paymentId: id,
-        kind: "reconcilerCheck",
-        at,
-        detail:
-          observed === null
-            ? { ...outcome, error: "Provider status unavailable", checkId: token }
-            : { ...observationDetail(observed, outcome), checkId: token },
-      },
-    });
+    if (observed === null) await recordCheck(outcome);
     return outcome;
   });
 }
