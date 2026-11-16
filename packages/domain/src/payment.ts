@@ -113,6 +113,7 @@ export type SandboxMode = (typeof SANDBOX_MODES)[number];
 export interface PaymentProvider {
   createCheckout(input: {
     readonly paymentId: string;
+    readonly creationToken?: string;
     readonly money: Money;
     readonly mode: SandboxMode;
   }): Promise<{ readonly id: string; readonly url: string | null }>;

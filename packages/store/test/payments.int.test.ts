@@ -492,3 +492,17 @@ test.for(["failed", "expired"] as const)(
     expect(await db.store.duePayments(new Date(), 100)).toEqual([]);
   },
 );
+
+test("an expired creator cannot clear or use a newer creation claim", async ({ db }) => {
+  const { id, actor } = await setup(db, true);
+  const old = await db.store.checkoutTerms(actor, id);
+  await db.rows(
+    "UPDATE payments SET creation_pending_until=now()-interval '1 second' WHERE id=$1",
+    [id],
+  );
+  const fresh = await db.store.checkoutTerms(actor, id);
+  await db.store.finishCheckoutCreation(id, old.creationToken);
+  expect(await db.store.duePayments(new Date(), 100)).toEqual([]);
+  await expect(db.store.createSandboxCheckout(old)).rejects.toMatchObject({ code: "conflict" });
+  expect((await db.store.createSandboxCheckout(fresh)).token).not.toBeNull();
+});

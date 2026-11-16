@@ -381,6 +381,7 @@ model AuditLog {
 
 
 model Payment {
+  creationToken String? @map("creation_token") @db.Uuid
   providerFinal Boolean @default(false) @map("provider_final")
   creationPendingUntil DateTime? @map("creation_pending_until") @db.Timestamptz(3)
   version Int @default(0)

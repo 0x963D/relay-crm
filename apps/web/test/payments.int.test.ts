@@ -681,3 +681,43 @@ test("staff close a checkout while payments are disabled and reconciliation resu
   });
   expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
 });
+
+test("an overlapping create retry cannot clear the active provider request", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const entered: PromiseWithResolvers<void> = Promise.withResolvers();
+  const release: PromiseWithResolvers<void> = Promise.withResolvers();
+  const adapter = sandboxProvider(db.store, env);
+  let calls = 0;
+  const provider: PaymentProvider = {
+    ...adapter,
+    createCheckout: async (input) => {
+      if (++calls > 1) throw new Error("Second provider call must not start");
+      entered.resolve();
+      await release.promise;
+      return adapter.createCheckout(input);
+    },
+  };
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor },
+    payments: { provider, firstCheckMs: 0 },
+  });
+  const input = {
+    key: "overlapping-create",
+    accountId: await db.seedAccount(),
+    amount: "100",
+    currency: "GBP",
+    kind: "first" as const,
+    mode: "drop" as const,
+  };
+  const first = caller.payments.createCheckout(input);
+  try {
+    await entered.promise;
+    await expect(caller.payments.createCheckout(input)).rejects.toThrow();
+    expect(await db.store.duePayments(new Date(), 100)).toEqual([]);
+  } finally {
+    release.resolve();
+    await first;
+  }
+  expect(calls).toBe(1);
+});

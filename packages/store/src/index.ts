@@ -100,7 +100,8 @@ export function openStore(config: {
       editManualPayment(db, actor, input, requestId),
     createPayment: (actor: Actor, input: CreatePayment, firstCheckMs: number, requestId: string) =>
       createPayment(db, actor, input, firstCheckMs, requestId),
-    finishCheckoutCreation: (id: string) => finishCheckoutCreation(db, id),
+    finishCheckoutCreation: (id: string, creationToken: string | null = null) =>
+      finishCheckoutCreation(db, id, creationToken),
     recordCheckoutCancellation: (
       id: string,
       observed: ProviderPayment | null,
@@ -129,6 +130,7 @@ export function openStore(config: {
       readonly money: Money;
       readonly mode: SandboxMode;
       readonly expiresAt?: Date;
+      readonly creationToken?: string;
     }) => createSandboxCheckout(db, input),
     getSandboxCheckout: (id: string) => getSandboxCheckout(db, id),
     getSandboxCheckoutByToken: (token: string) => getSandboxCheckoutByToken(db, token),

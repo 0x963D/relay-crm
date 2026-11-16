@@ -289,7 +289,7 @@ definitions.push(
 definitions.push(
   {
     name: "payments-close-reason",
-    file: "packages/store/prisma/migrations/0034_payment_review_reasons/migration.sql",
+    file: "packages/store/prisma/migrations/0036_checkout_creation_owner/migration.sql",
     before: " AND NEW.reason='paid after close'",
     after: "",
     test: "the SQL guard requires paid after close",
@@ -297,7 +297,7 @@ definitions.push(
   },
   {
     name: "payments-waiting-reason",
-    file: "packages/store/prisma/migrations/0034_payment_review_reasons/migration.sql",
+    file: "packages/store/prisma/migrations/0036_checkout_creation_owner/migration.sql",
     before: " AND NEW.reason IN ('amount mismatch','currency mismatch')",
     after: "",
     test: "the SQL guard permits only mismatch reasons",

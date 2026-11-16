@@ -19,18 +19,20 @@ export function createSandboxCheckout(
     readonly money: Money;
     readonly mode: SandboxMode;
     readonly expiresAt?: Date;
+    readonly creationToken?: string;
   },
 ) {
   return transact(db, async (tx) => {
     const payment = await tx.payment.findUnique({ where: { id: input.paymentId } });
     if (
       payment?.status !== "checkoutCreated" ||
+      payment.creationToken !== (input.creationToken ?? null) ||
       (payment.creationPendingUntil !== null && payment.creationPendingUntil <= new Date())
     )
       throw new AccessError("conflict");
     await tx.payment.update({
       where: { id: input.paymentId },
-      data: { creationPendingUntil: null, checkToken: null },
+      data: { creationPendingUntil: null, creationToken: null, checkToken: null },
     });
     const prior = await tx.sandboxCheckout.findUnique({ where: { paymentId: input.paymentId } });
     if (prior) return { id: prior.id, token: null };

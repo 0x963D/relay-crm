@@ -210,10 +210,21 @@ export async function checkoutTerms(db: Db, actor: Actor, id: PaymentId) {
       }))
     )
       throw new AccessError("accessDenied");
-    if (row.status !== "checkoutCreated") throw new AccessError("conflict");
+    if (
+      row.status !== "checkoutCreated" ||
+      (row.creationToken !== null &&
+        row.creationPendingUntil !== null &&
+        row.creationPendingUntil > new Date())
+    )
+      throw new AccessError("conflict");
+    const creationToken = randomUUID();
     await tx.payment.update({
       where: { id },
-      data: { creationPendingUntil: new Date(Date.now() + 30_000), checkToken: null },
+      data: {
+        creationPendingUntil: new Date(Date.now() + 30_000),
+        creationToken,
+        checkToken: null,
+      },
     });
     const mode = row.sandboxMode;
     if (
@@ -224,13 +235,21 @@ export async function checkoutTerms(db: Db, actor: Actor, id: PaymentId) {
       mode !== "differentAmount"
     )
       throw new InvariantError("Invalid sandbox mode");
-    return { paymentId: row.id, money: money(row.amount, row.currency), mode } as const;
+    return {
+      paymentId: row.id,
+      money: money(row.amount, row.currency),
+      mode,
+      creationToken,
+    } as const;
   });
 }
 
-export async function finishCheckoutCreation(db: Db, id: string) {
+export async function finishCheckoutCreation(db: Db, id: string, creationToken: string | null) {
   await transact(db, (tx) =>
-    tx.payment.update({ where: { id }, data: { creationPendingUntil: null } }),
+    tx.payment.updateMany({
+      where: { id, creationToken },
+      data: { creationPendingUntil: null, creationToken: null },
+    }),
   );
 }
 export async function recordCheckoutCancellation(

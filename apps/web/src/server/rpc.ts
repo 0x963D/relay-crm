@@ -290,7 +290,7 @@ export const appRouter = t.router({
             checkout: await ctx.payments.provider.createCheckout(terms),
           };
         } finally {
-          await ctx.store.finishCheckoutCreation(created.id);
+          await ctx.store.finishCheckoutCreation(created.id, terms.creationToken);
         }
       }),
   }),
