@@ -666,6 +666,24 @@ export async function getPayment(
       where: { paymentId: id },
       orderBy: { sequence: "asc" },
     });
+    const actorId = (detail: Prisma.JsonValue) =>
+      detail &&
+      typeof detail === "object" &&
+      !Array.isArray(detail) &&
+      typeof detail.actorId === "string"
+        ? detail.actorId
+        : null;
+    const actors = await tx.user.findMany({
+      where: {
+        id: {
+          in: events.flatMap((event) => {
+            const id = actorId(event.detail);
+            return id ? [id] : [];
+          }),
+        },
+      },
+      select: { id: true, name: true },
+    });
     const account = await tx.account.findUnique({
       where: { id: row.accountId },
       select: {
@@ -696,7 +714,10 @@ export async function getPayment(
     return {
       ...payment(row),
       ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
-      events,
+      events: events.map((event) => ({
+        ...event,
+        actor: actors.find((actor) => actor.id === actorId(event.detail)) ?? null,
+      })),
       account: account?.lead ? { name: account.lead.name, email: account.lead.email } : null,
       campaign: account?.lead?.intakeEvents[0]?.campaign ?? null,
       soldBy,

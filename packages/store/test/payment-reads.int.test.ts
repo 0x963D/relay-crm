@@ -8,6 +8,35 @@ import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
 
+test("payment events name the actor without exposing a payment outside its scope", async ({
+  db,
+}) => {
+  const manager = await person(db, "manager");
+  const agent = await person(db, "agent");
+  const stranger = await person(db, "agent");
+  await db.rows("UPDATE users SET name='Decision Maker' WHERE id=$1", [manager.userId]);
+  const accountId = await account(db, agent);
+  const created = await db.store.createPayment(
+    agent,
+    { key: randomUUID(), accountId, money, kind: "first", mode: "normal" },
+    0,
+    randomUUID(),
+  );
+  await db.store.closePaymentCheckout(
+    manager,
+    created.id,
+    "The customer chose a bank transfer.",
+    randomUUID(),
+  );
+  const detail = await db.store.getPayment(agent, created.id);
+  expect(detail.events.find((event) => event.kind === "checkoutClosed")).toMatchObject({
+    actor: { id: manager.userId, name: "Decision Maker" },
+  });
+  await expect(db.store.getPayment(stranger, created.id)).rejects.toMatchObject({
+    code: "accessDenied",
+  });
+});
+
 test("account detail returns scoped customer metadata and the payment in progress", async ({
   db,
 }) => {
