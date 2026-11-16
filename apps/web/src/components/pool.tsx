@@ -92,6 +92,7 @@ export function PoolScreen({
       const next = await client.fetchQuery(reads.pool({ limit: 14, offset: pool.rows.length }));
       client.setQueryData(reads.pool().queryKey, {
         total: next.total,
+        oldestAt: next.oldestAt,
         rows: [...pool.rows, ...next.rows],
       });
     } catch (error) {
@@ -221,7 +222,9 @@ export function PoolScreen({
         <div>
           <h1>Lead pool</h1>
           <div className="ph-sub">
-            {pool ? `${String(pool.total)} leads have no owner` : "New leads waiting for an owner"}
+            {pool
+              ? `${String(pool.total)} ${pool.total === 1 ? "lead has" : "leads have"} no owner${pool.oldestAt ? ` � the oldest has waited since ${shortDate(pool.oldestAt, zone)}` : ""}`
+              : "New leads waiting for an owner"}
           </div>
         </div>
       </header>
@@ -522,6 +525,21 @@ export function PoolScreen({
                     </>
                   ))}
                 {previewCard}
+                {preview.kind === "preview" &&
+                  exclude &&
+                  preview.preview.items.some(
+                    (item) =>
+                      preview.rows.find((row) => row.id === item.leadId)?.previousOwner &&
+                      recipients.some(
+                        (agent) =>
+                          agent.ownerId ===
+                          preview.rows.find((row) => row.id === item.leadId)?.previousOwner?.id,
+                      ),
+                  ) && (
+                    <p className="help">
+                      Each lead skips its previous owner and goes to the next eligible agent.
+                    </p>
+                  )}
                 {preview.kind !== "stale" && (
                   <p className="help">
                     {method === "hand"

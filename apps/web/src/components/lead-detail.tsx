@@ -283,6 +283,10 @@ export function LeadDetail({
   const isOpen =
     state.status === "new" || state.status === "assigned" || state.status === "working";
   const canEdit = isOpen && scopeAdmits(recordScope(profile, "lead", "edit"), state);
+  const earlierCount = Math.max(
+    0,
+    lead.timeline.length - (mode === "rest" || expanded ? visible : 1),
+  );
   const callbackAt =
     state.status === "working" && state.stage.kind === "callBack" ? state.stage.at : null;
   return (
@@ -654,8 +658,8 @@ export function LeadDetail({
                         ? "Closing is saved to the timeline and cannot be undone here."
                         : mode === "attempt"
                           ? outcome === "noAnswer"
-                            ? "Saves an attempt. This does not mark the lead as contacted."
-                            : "Saves an attempt and marks the lead as contacted."
+                            ? `Saves as ${channel === "call" ? "call" : "WhatsApp"} attempt, no answer �${String(lead.noAnswerCount + 1)}${callback && localCallback(`${day}T${time}`, zone) ? `, callback ${callbackDate(localCallback(`${day}T${time}`, zone), zone)}` : ""}. The lead moves to ${callback ? (day === callbackFields(new Date(), zone).day ? "Due today" : "Later") : "No callback set"} in the queue. This does not mark the lead as contacted.`
+                            : `Saves a ${channel === "call" ? "call" : "WhatsApp"} attempt and marks the lead as contacted. The lead moves to ${callback ? (day === callbackFields(new Date(), zone).day ? "Due today" : "Later") : "No callback set"} in the queue.`
                           : "Saved entries cannot be edited or deleted."}
                     </span>
                     <Button
@@ -699,6 +703,17 @@ export function LeadDetail({
         <div className="row timeline-heading">
           <h3 className="h3">Timeline</h3>
           <span className="cap">Saved entries cannot be edited or deleted</span>
+          {lead.timeline.length > (mode === "rest" || expanded ? visible : 1) && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (mode !== "rest" && !expanded) setExpanded(true);
+                else setVisible((n) => n + 20);
+              }}
+            >
+              Show {earlierCount} earlier {earlierCount === 1 ? "entry" : "entries"}
+            </Button>
+          )}
           {canEdit && (
             <div className="tl-actions" hidden={mode !== "rest"}>
               <Button
@@ -769,17 +784,6 @@ export function LeadDetail({
             );
           })}
         </ul>
-        {lead.timeline.length > (mode === "rest" || expanded ? visible : 1) && (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              if (mode !== "rest" && !expanded) setExpanded(true);
-              else setVisible((n) => n + 20);
-            }}
-          >
-            Show earlier entries
-          </Button>
-        )}
       </div>
     </>
   );

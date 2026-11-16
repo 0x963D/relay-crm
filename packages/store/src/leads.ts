@@ -43,8 +43,10 @@ export async function leadPool(db: Db, actor: Actor, page: { limit: number; offs
         },
       },
     });
+    const summary = await tx.lead.aggregate({ where, _count: true, _min: { createdAt: true } });
     return {
-      total: await tx.lead.count({ where }),
+      total: summary._count,
+      oldestAt: summary._min.createdAt,
       rows: rows.map((row) => ({
         ...leadFromRow(row, row.intakeEvents[0]?.source),
         origin: row.intakeEvents[0] ?? null,
