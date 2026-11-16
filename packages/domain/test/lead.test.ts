@@ -104,7 +104,10 @@ const MATRIX: Readonly<
   },
 };
 
-const REFUSALS = ["new + markDead(wrongNumber): wrongNumberNeedsAnAttempt"];
+const REFUSALS = [
+  "new + markDead(wrongNumber): wrongNumberNeedsAnAttempt",
+  "assigned + markDead(wrongNumber): wrongNumberNeedsAnAttempt",
+];
 
 const CASES = ALL_STATES.flatMap((state) =>
   ALL_EVENTS.map((event) => ({
@@ -248,16 +251,18 @@ describe("closing a lead", () => {
     });
   });
 
-  it.each<[string, LeadState]>([
-    ["an assigned lead", { status: "assigned", assignee: ana }],
-    ["a lead being worked", working],
-  ])("accepts a wrong number for %s and keeps the assignee", (_label, state) => {
-    expect(apply(state, { type: "markDead", reason: "wrongNumber" }).state).toEqual({
-      status: "dead",
-      assignee: ana,
-      reason: "wrongNumber",
-    });
-  });
+  it.each<[string, LeadState]>([["a lead being worked", working]])(
+    "accepts a wrong number for %s and keeps the assignee",
+    (_label, state) => {
+      expect(
+        apply(state, { type: "markDead", reason: "wrongNumber", hasAttempt: true }).state,
+      ).toEqual({
+        status: "dead",
+        assignee: ana,
+        reason: "wrongNumber",
+      });
+    },
+  );
 });
 
 describe("ownership history", () => {

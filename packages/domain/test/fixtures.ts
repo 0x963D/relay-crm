@@ -54,7 +54,7 @@ export const EVENT_EXAMPLES: { readonly [E in LeadEventType]: readonly EventOf<E
   lose: [{ type: "lose", reason: "noBudget" }],
   markDead: [
     { type: "markDead", reason: "duplicate" },
-    { type: "markDead", reason: "wrongNumber" },
+    { type: "markDead", reason: "wrongNumber", hasAttempt: true },
     { type: "markDead", reason: "doNotContact" },
   ],
   reopen: [{ type: "reopen", reason: { kind: "inbound", source: "webForm" } }],

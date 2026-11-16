@@ -296,6 +296,7 @@ test("notes, callback moves and clearing, and all closing decisions keep their h
   ]);
   for (const reason of ["duplicate", "wrongNumber", "doNotContact"] as const) {
     const deadId = await w.makeLead();
+    if (reason === "wrongNumber") await w.work(w.agent, deadId, noAnswer);
     await w.work(w.agent, deadId, { kind: "close", closing: { kind: "dead", reason } });
     expect((await db.store.getLead(w.agent, deadId)).lifecycle.state).toMatchObject({
       status: "dead",
@@ -584,4 +585,27 @@ test("queue rows return intake source and the current assignment time", async ({
     source: "webForm",
     assignedAt: detail.custody.heldBy?.since,
   });
+});
+
+test("wrong number requires an attempt in the current assignment", async ({ db }) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  const dead: LeadWork = { kind: "close", closing: { kind: "dead", reason: "wrongNumber" } };
+  await expect(w.work(w.agent, id, dead)).rejects.toMatchObject({
+    code: "wrongNumberNeedsAnAttempt",
+    message:
+      "Try contacting this lead in its current assignment before marking it as a wrong number.",
+  });
+  await w.work(w.agent, id, noAnswer);
+  await db.store.reassignLead(
+    w.manager,
+    id,
+    { ownerId: w.other.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  await expect(w.work(w.other, id, dead)).rejects.toMatchObject({
+    code: "wrongNumberNeedsAnAttempt",
+  });
+  await w.work(w.other, id, noAnswer);
+  await expect(w.work(w.other, id, dead)).resolves.toMatchObject({ id });
 });

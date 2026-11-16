@@ -64,8 +64,10 @@ function nextState(before: LeadLifecycle, event: LeadEvent, at: Date): LeadLifec
   const next = transition(before, event, at);
   if (!next.ok)
     throw new AccessError(
-      next.error.kind === "refused" && next.error.reason === "callBackInPast"
-        ? "callbackInPast"
+      next.error.kind === "refused"
+        ? next.error.reason === "callBackInPast"
+          ? "callbackInPast"
+          : next.error.reason
         : "invalidTransition",
     );
   return next.value;
@@ -149,9 +151,21 @@ export async function workLead(
           case "close": {
             const closing = work.closing;
             switch (closing.kind) {
-              case "dead":
-                next = nextState(before, { type: "markDead", reason: closing.reason }, at);
+              case "dead": {
+                const activities = await tx.activity.findMany({
+                  where: { leadId: input.id },
+                  orderBy: { sequence: "desc" },
+                });
+                const hasAttempt = attemptSummary(
+                  currentAssignmentActivities(activities),
+                ).hasAttempt;
+                next = nextState(
+                  before,
+                  { type: "markDead", reason: closing.reason, hasAttempt },
+                  at,
+                );
                 break;
+              }
               case "lost":
                 next = nextState(before, { type: "lose", reason: closing.note }, at);
                 lostNote = closing.note;
@@ -266,6 +280,13 @@ function attemptSummary(activities: readonly Activity[]) {
   return { hasAttempt, noAnswerCount };
 }
 
+function currentAssignmentActivities(activities: readonly Activity[]) {
+  const assignment = activities.find((activity) => activity.kind === "assignment");
+  return activities.filter(
+    (activity) => assignment === undefined || activity.sequence > assignment.sequence,
+  );
+}
+
 function queueItem(
   row: Lead & {
     activities: Activity[];
@@ -273,10 +294,7 @@ function queueItem(
   },
 ) {
   const assignment = row.activities.find((activity) => activity.kind === "assignment");
-  const currentActivities = row.activities.filter(
-    (activity) => assignment === undefined || activity.sequence > assignment.sequence,
-  );
-  const summary = attemptSummary(currentActivities);
+  const summary = attemptSummary(currentAssignmentActivities(row.activities));
   const last = row.activities.find(
     (activity) => activity.kind === "note" || activity.kind === "attempt",
   );

@@ -61,7 +61,7 @@ export type LeadEvent =
   | { readonly type: "clearCallBack" }
   | { readonly type: "win"; readonly accountId: AccountId }
   | { readonly type: "lose"; readonly reason: string }
-  | { readonly type: "markDead"; readonly reason: DeadReason }
+  | { readonly type: "markDead"; readonly reason: DeadReason; readonly hasAttempt?: boolean }
   | { readonly type: "reopen"; readonly reason: ReopenReason };
 
 export type LeadEventType = LeadEvent["type"];
@@ -134,7 +134,9 @@ const RULES: Rules = {
     win: illegal,
     lose: illegal,
     markDead: (from, event) =>
-      ok({ status: "dead", assignee: from.assignee, reason: event.reason }),
+      event.reason === "wrongNumber"
+        ? err("wrongNumberNeedsAnAttempt")
+        : ok({ status: "dead", assignee: from.assignee, reason: event.reason }),
     reopen: illegal,
   },
   working: {
@@ -153,7 +155,9 @@ const RULES: Rules = {
       ok({ status: "won", assignee: from.assignee, accountId: event.accountId }),
     lose: (from, event) => ok({ status: "lost", assignee: from.assignee, reason: event.reason }),
     markDead: (from, event) =>
-      ok({ status: "dead", assignee: from.assignee, reason: event.reason }),
+      event.reason === "wrongNumber" && event.hasAttempt !== true
+        ? err("wrongNumberNeedsAnAttempt")
+        : ok({ status: "dead", assignee: from.assignee, reason: event.reason }),
     reopen: illegal,
   },
   won: {

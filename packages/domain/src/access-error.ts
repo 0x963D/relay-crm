@@ -7,6 +7,8 @@ export class AccessError extends Error {
     const messages: Partial<Record<AccessFailure, string>> = {
       accessDenied: "You do not have access to this record.",
       leadClosed: "This lead is closed. Refresh to see its history.",
+      wrongNumberNeedsAnAttempt:
+        "Try contacting this lead in its current assignment before marking it as a wrong number.",
       callbackInPast: "Choose a callback time in the future.",
       invalidTransition: "Work this lead before closing it as won or lost.",
       pendingPayment: "This account already has a payment in progress.",
