@@ -315,3 +315,12 @@ A refusal stops those checks, so it cannot consume the later budgets.
 `RELAY_AUTH_GLOBAL_LIMIT` defaults to 10,000 requests per window across both operations.
 `pnpm test -- apps/web/test/env.test.ts` verifies that its configured value is an integer from
 21 to 1,000,000. Its minimum stays above a single client's budget.
+
+## Error responses
+
+`pnpm test:int -- apps/web/test/rpc.int.test.ts apps/web/test/auth.int.test.ts` verifies that
+unexpected failures return `Something went wrong.` and a generated `requestId`. The server
+logs the original error with that ID. The tRPC formatter preserves typed domain failures in
+`data.accessFailure` and their messages. It removes stack traces from every error response.
+The auth and intake HTTP boundaries catch unexpected exceptions. The form keeps its retryable
+503 response for intake failures, with the same fixed message and a logged request ID.

@@ -218,6 +218,42 @@ databaseTest(
       expect(await assigning.json()).toMatchObject({
         error: { json: { data: { accessFailure: "accessDenied" } } },
       });
+      const editable = await db.seedLead({
+        email: "editable@example.com",
+        lifecycle: {
+          state: { status: "assigned", assignee: { ownerId: userId, teamId } },
+          firstAssignedAt: new Date(),
+          previousOwnerId: null,
+        },
+      });
+      await db.rows(`CREATE FUNCTION force_internal_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'database password leaked in this message'; END $$;
+        CREATE TRIGGER force_edit_failure BEFORE UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION force_internal_failure();`);
+      const broken = await post(
+        "/api/trpc/leads.edit",
+        { json: { id: editable, name: "New name", phone: null } },
+        cookie,
+      );
+      expect(broken.status).toBe(500);
+      const internalBody = await broken.text();
+      expect(internalBody).toContain("Something went wrong.");
+      expect(internalBody).not.toContain("database password leaked in this message");
+      const requestId = /"requestId":"([^"]+)"/.exec(internalBody)?.[1];
+      if (!requestId) throw new Error("Internal error returned no request ID");
+      expect(server.output()).toContain(requestId);
+      expect(server.output()).toContain("database password leaked in this message");
+      await db.rows(
+        "CREATE TRIGGER force_limit_failure BEFORE INSERT ON auth_request_limits FOR EACH ROW EXECUTE FUNCTION force_internal_failure()",
+      );
+      for (const path of ["/api/auth/email-otp/send-verification-otp", "/api/intake/form"]) {
+        const failed = await post(path, { email: "failure@example.com", type: "sign-in" });
+        expect(failed.status).toBe(500);
+        const body = await failed.text();
+        expect(body).toContain("Something went wrong.");
+        expect(body).not.toContain("database password leaked in this message");
+        const id = /"requestId":"([^"]+)"/.exec(body)?.[1];
+        if (!id) throw new Error("HTTP failure returned no request ID");
+        expect(server.output()).toContain(id);
+      }
       expect(server.output()).not.toContain(code);
     } finally {
       await server.stop();

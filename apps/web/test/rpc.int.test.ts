@@ -1,4 +1,4 @@
-import { expect, describe } from "vitest";
+import { expect, describe, vi } from "vitest";
 import { test } from "@relay/store/testing";
 import type { Actor, SessionPrincipal } from "@relay/domain";
 import superjson from "superjson";
@@ -127,4 +127,41 @@ describe("typed RPC", () => {
       assignee: { ownerId: agentId, teamId },
     });
   });
+});
+
+test("production RPC errors hide internal messages and correlate the server log", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("owner"), role: "owner", team: null };
+  const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.stubEnv("NODE_ENV", "production");
+  try {
+    const response = await rpc(
+      {
+        store: {
+          ...db.store,
+          listLeads: () => {
+            throw new Error("database password leaked in this message");
+          },
+        },
+        principal: principal(actor),
+      },
+      "leads.list",
+      { limit: 10 },
+    );
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(body).not.toContain("database password leaked in this message");
+    expect(body).toContain("Something went wrong.");
+    const requestId = /"requestId":"([^"]+)"/.exec(body)?.[1];
+    expect(requestId).toMatch(/^[a-f0-9-]{36}$/);
+    if (!requestId) throw new Error("No request ID");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(requestId));
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("database password leaked in this message"),
+    );
+  } finally {
+    log.mockRestore();
+    vi.unstubAllEnvs();
+  }
 });

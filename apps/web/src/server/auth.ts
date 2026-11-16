@@ -5,6 +5,7 @@ import type { Store } from "@relay/store";
 import { betterAuth } from "better-auth";
 import { emailOTP } from "better-auth/plugins";
 import { z } from "zod";
+import { failureResponse, protectHttp } from "./errors.ts";
 import { clientAddress } from "./client-address.ts";
 import { allowRequest, limitKey, rateLimited } from "./rate-limit.ts";
 import type { AuthEnv } from "./env.ts";
@@ -69,6 +70,13 @@ export function createAuthentication(
     ],
   });
 
+  async function dispatch(request: Request): Promise<Response> {
+    const response = await auth.handler(request);
+    return response.status < 500
+      ? response
+      : failureResponse("auth.failed", new Error(await response.text()));
+  }
+
   async function principal(headers: Headers) {
     if (!headers.has("cookie")) return null;
     const session = await auth.api.getSession({ headers });
@@ -77,8 +85,8 @@ export function createAuthentication(
 
   async function handle(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname.replace(/^\/api\/auth/, "");
-    if (path === "/get-session" && request.method === "GET") return auth.handler(request);
-    if (path === "/sign-out" && request.method === "POST") return auth.handler(request);
+    if (path === "/get-session" && request.method === "GET") return dispatch(request);
+    if (path === "/sign-out" && request.method === "POST") return dispatch(request);
     const sending = path === "/email-otp/send-verification-otp";
     if (request.method !== "POST" || (!sending && path !== "/sign-in/email-otp")) {
       return new Response(null, { status: 404 });
@@ -101,7 +109,7 @@ export function createAuthentication(
         ]))
       )
         return rateLimited();
-      const response = await auth.handler(
+      const response = await dispatch(
         new Request(request.url, {
           method: "POST",
           headers: request.headers,
@@ -114,6 +122,9 @@ export function createAuthentication(
     }
   }
 
-  return { handle, principal };
+  return {
+    handle: (request: Request) => protectHttp("auth.failed", () => handle(request)),
+    principal,
+  };
 }
 export type Authentication = ReturnType<typeof createAuthentication>;

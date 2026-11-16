@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Intake } from "@relay/domain";
 import { z } from "zod";
+import { reportFailure } from "../../errors.ts";
 import { readBody, status } from "../../http.ts";
 import type { Log } from "../../log.ts";
 import type { MetaLeadSource } from "./lead-source.ts";
@@ -114,16 +115,15 @@ export function createMetaWebhook(config: MetaWebhookConfig | null): WebhookHand
       }
 
       const receivedAt = now();
-      let failed = false;
+      let failure: ReturnType<typeof reportFailure> | null = null;
       for (const leadgenId of ids) {
         try {
           await intake(await leads.fetchSubmission(leadgenId, receivedAt));
         } catch (error) {
-          failed = true;
-          log("meta.lead.failed", { leadgenId, error });
+          failure = reportFailure("meta.lead.failed", error, log, failure?.requestId);
         }
       }
-      return status(failed ? 500 : 200);
+      return failure ? Response.json(failure, { status: 500 }) : status(200);
     },
   };
 }

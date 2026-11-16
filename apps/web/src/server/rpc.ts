@@ -12,6 +12,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
 import { z } from "zod";
+import { reportFailure } from "./errors.ts";
 
 export interface RpcContext {
   readonly store: Store;
@@ -19,13 +20,20 @@ export interface RpcContext {
 }
 const t = initTRPC.context<RpcContext>().create({
   transformer: superjson,
-  errorFormatter: ({ shape, error }) => ({
-    ...shape,
-    data: {
-      ...shape.data,
-      accessFailure: isAccessError(error.cause) ? error.cause.code : null,
-    },
-  }),
+  errorFormatter: ({ shape, error }) => {
+    const accessFailure = isAccessError(error.cause) ? error.cause.code : null;
+    const failure = accessFailure ? null : reportFailure("rpc.failed", error.cause ?? error);
+    return {
+      ...shape,
+      message: failure?.message ?? shape.message,
+      data: {
+        ...shape.data,
+        stack: undefined,
+        accessFailure,
+        ...(failure ? { requestId: failure.requestId } : {}),
+      },
+    };
+  },
 });
 const authenticated = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.principal) throw new TRPCError({ code: "UNAUTHORIZED" });

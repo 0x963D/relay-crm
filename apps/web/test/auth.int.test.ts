@@ -1,4 +1,4 @@
-import { expect, describe } from "vitest";
+import { expect, describe, vi } from "vitest";
 import { test } from "@relay/store/testing";
 import { connections } from "../src/server/client-address.ts";
 import { appRouter } from "../src/server/rpc.ts";
@@ -370,4 +370,30 @@ test("known and unknown emails have identical refusals at the global circuit bre
     responses.push(await response.json());
   }
   expect(responses[0]).toEqual(responses[1]);
+});
+
+test("auth hides a store exception and logs it with the response request ID", async ({ db }) => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    const { post } = setup({
+      ...db.store,
+      takeRequestLimit: () => {
+        throw new Error("fake auth database password");
+      },
+    });
+    const { response } = await post("/email-otp/send-verification-otp", {
+      email: "unknown@example.com",
+      type: "sign-in",
+    });
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(body).not.toContain("fake auth database password");
+    expect(body).toContain("Something went wrong.");
+    const requestId = /"requestId":"([^"]+)"/.exec(body)?.[1];
+    if (!requestId) throw new Error("No request ID");
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining(requestId));
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("fake auth database password"));
+  } finally {
+    logged.mockRestore();
+  }
 });
