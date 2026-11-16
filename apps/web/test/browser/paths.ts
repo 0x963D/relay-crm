@@ -1,8 +1,10 @@
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 export const evidenceDirectory =
-  process.env.RELAY_EVIDENCE_DIR ?? join(process.cwd(), "test-results", "evidence");
+  process.env.RELAY_EVIDENCE_DIR ??
+  fileURLToPath(new URL("../../../../test-results/evidence/", import.meta.url));
 export const legacyStyles = process.env.RELAY_LEGACY_CSS;
 export const browserDirectory = join(evidenceDirectory, "playwright");
 export const captureDirectory = join(evidenceDirectory, "built");
