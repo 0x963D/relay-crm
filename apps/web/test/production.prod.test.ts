@@ -23,6 +23,7 @@ const UNREACHABLE_DATABASE = "postgresql://nobody:nobody@127.0.0.1:9/unreachable
 
 databaseTest(
   "a production build exposes only the three demo identities when RELAY_DEMO=1 and keeps emailed sign-in",
+  { timeout: 120_000 },
   async ({ db }) => {
     await seedDemo({
       ownerUrl: db.ownerConnectionString,

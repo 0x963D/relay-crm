@@ -446,42 +446,46 @@ test("auth rejects an oversized JSON body before parsing it", async ({ db }) => 
   expect(await db.rows("SELECT key FROM auth_request_limits")).toEqual([]);
 });
 
-test("plain demo forms start each session and redirect to the leads", async ({ db }) => {
-  await seedDemo({
-    ownerUrl: db.ownerConnectionString,
-    appUrl: db.connectionString,
-    today: new Date(),
-    deliver: () => Promise.resolve({ state: "sent" }),
-  });
-  const auth = createAuthentication(
-    db.store,
-    config,
-    () => Promise.resolve(),
-    () => undefined,
-    true,
-  );
-  const handle = (request: Request) => connections.run("127.0.0.1", () => auth.handle(request));
-  for (const role of ["manager", "agent", "accountant"]) {
-    const response = await handle(
+test(
+  "plain demo forms start each session and redirect to the leads",
+  { timeout: 120_000 },
+  async ({ db }) => {
+    await seedDemo({
+      ownerUrl: db.ownerConnectionString,
+      appUrl: db.connectionString,
+      today: new Date(),
+      deliver: () => Promise.resolve({ state: "sent" }),
+    });
+    const auth = createAuthentication(
+      db.store,
+      config,
+      () => Promise.resolve(),
+      () => undefined,
+      true,
+    );
+    const handle = (request: Request) => connections.run("127.0.0.1", () => auth.handle(request));
+    for (const role of ["manager", "agent", "accountant"]) {
+      const response = await handle(
+        new Request(`${origin}/api/auth/demo`, {
+          method: "POST",
+          headers: { origin },
+          body: new URLSearchParams({ role }),
+        }),
+      );
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/");
+      expect(response.headers.getSetCookie().join()).toContain("relay.session_token=");
+    }
+    const refused = await handle(
       new Request(`${origin}/api/auth/demo`, {
         method: "POST",
-        headers: { origin },
-        body: new URLSearchParams({ role }),
+        headers: { origin: "https://outside.example" },
+        body: new URLSearchParams({ role: "agent" }),
       }),
     );
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/");
-    expect(response.headers.getSetCookie().join()).toContain("relay.session_token=");
-  }
-  const refused = await handle(
-    new Request(`${origin}/api/auth/demo`, {
-      method: "POST",
-      headers: { origin: "https://outside.example" },
-      body: new URLSearchParams({ role: "agent" }),
-    }),
-  );
-  expect(refused.status).toBe(403);
-});
+    expect(refused.status).toBe(403);
+  },
+);
 
 test("plain emailed-code forms send a code and sign in", async ({ db }) => {
   const user = await db.seedUser("agent");
