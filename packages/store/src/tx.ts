@@ -24,16 +24,34 @@ const DEADLOCK_DETECTED = "40P01";
 const UNIQUE_VIOLATION = "23505";
 
 /**
- * The unique indexes two concurrent intakes can collide on. PostgreSQL may report such a collision
- * as a unique violation where a serialization failure was expected, so a violation of one of
- * these is retried. A violation of any other unique index is a bug and is not.
+ * PostgreSQL can report a race as a unique violation instead of a serialization failure.
+ * Only collisions that a fresh snapshot can resolve retry. The catalog test requires an explicit
+ * decision for every unique index.
  */
-export const RACE_CONSTRAINTS: readonly string[] = [
-  "leads_email_key",
-  "idempotency_records_scope_key_key",
-  "auth_request_limits_pkey",
-  "intake_events_source_external_id_key",
-];
+export const RACE_CONSTRAINTS: Readonly<Record<string, "retry" | "reject">> = {
+  _prisma_migrations_pkey: "reject",
+  accounts_pkey: "reject",
+  activities_pkey: "reject",
+  audit_log_pkey: "reject",
+  auth_accounts_pkey: "reject",
+  auth_request_limits_pkey: "retry",
+  auth_sessions_pkey: "reject",
+  auth_sessions_token_key: "reject",
+  auth_verifications_identifier_key: "reject",
+  auth_verifications_pkey: "reject",
+  distribution_previews_pkey: "reject",
+  idempotency_records_pkey: "reject",
+  idempotency_records_scope_key_key: "retry",
+  intake_events_pkey: "reject",
+  intake_events_source_external_id_key: "retry",
+  leads_account_id_key: "reject",
+  leads_email_key: "retry",
+  leads_pkey: "reject",
+  memberships_pkey: "reject",
+  teams_pkey: "reject",
+  users_email_key: "reject",
+  users_pkey: "reject",
+};
 
 export interface TransactionReport {
   readonly attempts: number;
@@ -82,7 +100,7 @@ export function isStaleSnapshot(error: unknown): boolean {
   return (
     failure.sqlState === UNIQUE_VIOLATION &&
     failure.constraint !== null &&
-    RACE_CONSTRAINTS.includes(failure.constraint)
+    RACE_CONSTRAINTS[failure.constraint] === "retry"
   );
 }
 

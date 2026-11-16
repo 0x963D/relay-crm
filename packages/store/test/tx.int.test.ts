@@ -158,7 +158,7 @@ describe("how a stale snapshot surfaces", () => {
           },
         },
       });
-      expect(RACE_CONSTRAINTS).not.toContain("users_email_key");
+      expect(RACE_CONSTRAINTS.users_email_key).toBe("reject");
       expect(isStaleSnapshot(error)).toBe(false);
     });
   });
@@ -255,8 +255,19 @@ describe("race constraints", () => {
       `SELECT indexname FROM pg_indexes
        WHERE schemaname = 'public' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexname = ANY($1)
        ORDER BY indexname`,
-      [RACE_CONSTRAINTS],
+      [Object.keys(RACE_CONSTRAINTS)],
     );
-    expect(indexes.map((row) => row.indexname)).toEqual([...RACE_CONSTRAINTS].sort());
+    expect(indexes.map((row) => row.indexname)).toEqual(Object.keys(RACE_CONSTRAINTS).sort());
   });
+});
+
+test("every PostgreSQL unique index has an explicit race classification", async ({ db }) => {
+  const indexes = await db.rows(`SELECT c.relname AS name FROM pg_index i
+    JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE i.indisunique AND n.nspname='public' ORDER BY c.relname`);
+  expect(
+    indexes
+      .map((row) => row.name)
+      .filter((name) => typeof name === "string" && !Object.hasOwn(RACE_CONSTRAINTS, name)),
+  ).toEqual([]);
 });
