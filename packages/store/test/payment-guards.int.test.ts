@@ -38,6 +38,46 @@ async function refusesCompletion(db: TestDatabase, id: string) {
   }
 }
 
+test("database credentials can name two eligible approvers without their sessions", async ({
+  db,
+}) => {
+  const w = await waiting(db);
+  await db.rows("BEGIN");
+  try {
+    for (const person of [w.a, w.b]) {
+      await db.rows(
+        "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES(gen_random_uuid(),$1,$2,0,0,now(),$3)",
+        [w.id, person.userId, requestId],
+      );
+    }
+    await db.rows(
+      "UPDATE payments SET status='completed',completed_by='manualApproval',decided_at=now() WHERE id=$1",
+      [w.id],
+    );
+    await db.rows(
+      `WITH customer AS (
+      INSERT INTO ledger_accounts(id,account_id,kind,currency) VALUES(gen_random_uuid(),$1,'customer','GBP') RETURNING id
+    ), bank AS (
+      INSERT INTO ledger_accounts(id,kind,currency) VALUES(gen_random_uuid(),'bankTransfersCash','GBP') RETURNING id
+    ), posting AS (
+      INSERT INTO ledger_transactions(id,payment_id,at) VALUES(gen_random_uuid(),$2,now()) RETURNING id
+    ) INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,side,amount)
+      SELECT gen_random_uuid(),posting.id,customer.id,'credit',48000 FROM posting,customer
+      UNION ALL SELECT gen_random_uuid(),posting.id,bank.id,'debit',48000 FROM posting,bank`,
+      [w.terms.accountId, w.id],
+    );
+    await db.rows(
+      "INSERT INTO outbox(id,payment_id,topic,payload,created_at,next_attempt_at) VALUES(gen_random_uuid(),$1,'paymentCompleted','{}',now(),now())",
+      [w.id],
+    );
+    await db.rows("COMMIT");
+  } catch (error) {
+    await db.rows("ROLLBACK");
+    throw error;
+  }
+  expect((await db.store.getPayment(w.recorder, w.id)).state.status).toBe("completed");
+});
+
 test("completion independently excludes the recorder when another person last edited", async ({
   db,
 }) => {

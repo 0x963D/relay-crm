@@ -73,6 +73,60 @@ test("a worker stopped after leasing is recovered after expiry", async ({ db }) 
   expect(await db.store.runOutbox(send, { at: new Date(at.getTime() + 60_000) })).toHaveLength(1);
   expect(calls).toBe(1);
 });
+
+test.for([-120000, 120000])(
+  "receipt leases use the database clock with a worker offset of %s ms",
+  async (offset, { db }) => {
+    const w = await receipt(db);
+    await db.rows("UPDATE outbox SET next_attempt_at=now()-interval '10 minutes' WHERE id=$1", [
+      w.outboxId,
+    ]);
+    const clock = new Date(Date.now() + offset);
+    expect(await db.store.leaseReceipt(w.outboxId, clock, 60000)).not.toBeNull();
+    expect(
+      await db.store.leaseReceipt(w.outboxId, new Date(Date.now() + 120000), 60000),
+    ).toBeNull();
+    const [lease] = await db.rows(
+      "SELECT extract(epoch FROM lease_until-now())::int AS seconds FROM outbox WHERE id=$1",
+      [w.outboxId],
+    );
+    expect(lease?.seconds).toBeGreaterThan(50);
+    expect(lease?.seconds).toBeLessThanOrEqual(60);
+    await db.rows("UPDATE outbox SET lease_until=now()-interval '1 second' WHERE id=$1", [
+      w.outboxId,
+    ]);
+    expect(
+      await db.store.leaseReceipt(w.outboxId, new Date(Date.now() - 120000), 60000),
+    ).not.toBeNull();
+  },
+);
+
+test("the app role must insert the next lifetime receipt attempt", async ({ db }) => {
+  const w = await receipt(db);
+  const insert = (number: number) =>
+    db.rows(
+      "INSERT INTO receipt_attempts(id,outbox_id,number,state,started_at) VALUES(gen_random_uuid(),$1,$2,'unknown',now())",
+      [w.outboxId, number],
+    );
+  await expect(insert(5)).rejects.toMatchObject({
+    code: "23514",
+    constraint: "receipt_attempt_counter",
+  });
+  await insert(1);
+  await expect(insert(3)).rejects.toMatchObject({
+    code: "23514",
+    constraint: "receipt_attempt_counter",
+  });
+  await insert(2);
+  expect(await db.rows("SELECT attempts FROM outbox WHERE id=$1", [w.outboxId])).toEqual([
+    { attempts: 2 },
+  ]);
+  expect(
+    await db.rows("SELECT number FROM receipt_attempts WHERE outbox_id=$1 ORDER BY number", [
+      w.outboxId,
+    ]),
+  ).toEqual([{ number: 1 }, { number: 2 }]);
+});
 test("an unexpired lease excludes requeue and another sender after database sessions close", async ({
   db,
 }) => {

@@ -314,7 +314,9 @@ export async function settlePayment(
   await recordObservation?.(outcome);
   const providerFinal =
     row.providerFinal ||
-    (event.type === "provider" && ["completed", "failed", "expired"].includes(event.result.status));
+    (event.type === "provider" &&
+      (["completed", "failed", "expired"].includes(event.result.status) ||
+        (event.result.status === "missing" && next.status !== "checkoutCreated")));
   if (next === before) {
     if (providerFinal !== row.providerFinal)
       await tx.payment.update({ where: { id: row.id }, data: { providerFinal } });

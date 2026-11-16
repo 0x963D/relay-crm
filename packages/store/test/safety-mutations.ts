@@ -389,6 +389,32 @@ definitions.push(
   },
 );
 const filter = process.argv[3];
+definitions.push(
+  {
+    name: "receipt-database-clock",
+    file: "packages/store/src/outbox.ts",
+    before: "lease_until <= now()",
+    after: "lease_until <= ${at}",
+    test: "receipt leases use the database clock",
+    testFile: "packages/store/test/outbox.int.test.ts",
+  },
+  {
+    name: "receipt-next-lifetime-attempt",
+    file: "packages/store/prisma/migrations/0004_outbox_and_receipts/migration.sql",
+    before: "WHERE id=$1 AND attempts=$2",
+    after: "WHERE id=$1",
+    test: "the app role must insert the next lifetime receipt attempt",
+    testFile: "packages/store/test/outbox.int.test.ts",
+  },
+  {
+    name: "payments-missing-final",
+    file: "packages/store/src/payments.ts",
+    before: '(event.result.status === "missing" && next.status !== "checkoutCreated")',
+    after: "false",
+    test: "a never-created checkout leaves the scan after one check across five reconciler runs",
+    testFile: "apps/web/test/payments.int.test.ts",
+  },
+);
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));
 if (!mutations.length) throw new Error("No matching mutations.");
 const files = [

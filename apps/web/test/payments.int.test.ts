@@ -20,6 +20,38 @@ const env = {
   checkoutTtlMs: 86400000,
 };
 
+test("a never-created checkout leaves the scan after one check across five reconciler runs", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const { id } = await db.store.createPayment(
+    actor,
+    {
+      key: "never-created",
+      accountId: await db.seedAccount(),
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      mode: "drop",
+    },
+    0,
+    randomUUID(),
+  );
+  await db.store.finishCheckoutCreation(id);
+  const provider = sandboxProvider(db.store, env);
+  for (let run = 0; run < 5; run += 1) {
+    await db.rows("UPDATE payments SET next_check_at=now()-interval '1 second' WHERE id=$1", [id]);
+    await reconcilePayments(db.store, provider, env.intervalMs);
+  }
+  expect((await db.store.getPayment(actor, id)).state).toMatchObject({ status: "failed" });
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS n FROM payment_events WHERE payment_id=$1 AND kind='reconcilerCheck'",
+      [id],
+    ),
+  ).toEqual([{ n: 1 }]);
+  expect(await db.store.duePayments(new Date(Date.now() + 86400000), 100)).toEqual([]);
+});
+
 test("the receiver rejects forged and stale signatures, replays event IDs, and records no event on failure", async ({
   db,
 }) => {
