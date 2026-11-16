@@ -42,6 +42,11 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   const link = page.getByRole("textbox", { name: "Pay link", exact: true });
   await expect(link).toBeVisible();
+  const created = page.getByRole("region", { name: "Checkout created", exact: true });
+  await expect(created).toContainText("Checkout expires");
+  await expect(created).toContainText("Dele Akinwale");
+  await expect(created).toContainText("Sandbox");
+  await expect(created).toContainText("Only one payment can be in progress for this account.");
   const capability = await link.inputValue();
   for (const response of [
     await page.request.get(capability),

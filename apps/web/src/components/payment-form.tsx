@@ -2,13 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { CURRENCIES } from "@relay/domain";
 import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
 import { parseAmount, amountInput, type PaymentView } from "@/lib/payments";
 import { formatMoney, shortDate } from "@/lib/display";
 import { failureCode, failureMessage } from "@/lib/failures";
-import { Refusal } from "./pieces";
+import { Refusal, Slip } from "./pieces";
 import { Button } from "./ui/button";
 import { Field } from "./ui/field";
 import { Input } from "./ui/input";
@@ -46,6 +46,9 @@ export function PaymentForm({
   const [reference, setReference] = useState(editing?.reference ?? "");
   const [validation, setValidation] = useState("");
   const [created, setCreated] = useState<{ paymentId: string; url: string | null } | null>(null);
+  const createdPayment = useQuery(
+    trpc.payments.get.queryOptions({ id: created?.paymentId ?? "" }, { enabled: created !== null }),
+  );
   const [copied, setCopied] = useState("");
   const result = useRef<HTMLDivElement>(null);
   const request = useRef<{ terms: string; key: string } | null>(null);
@@ -135,9 +138,31 @@ export function PaymentForm({
         className="space-y-4 rounded-lg border p-4"
       >
         <h2 className="text-panel font-bold">Card checkout created</h2>
+        <Slip kind="outline" icon="payments">
+          Sandbox
+        </Slip>
         <p>
           {formatMoney(parseAmount(amount, currency) ?? { minor: 0n, currency: "GBP" })} ·{" "}
           {kind === "first" ? "First" : "Repeat"} payment
+        </p>
+        {createdPayment.data ? (
+          <dl className="grid grid-cols-label-value gap-x-4 gap-y-2 text-caption">
+            <dt>Created by</dt>
+            <dd>{createdPayment.data.recordedBy?.name ?? "Staff member"}</dd>
+            <dt>Created at</dt>
+            <dd>{shortDate(createdPayment.data.createdAt, zone)}</dd>
+            <dt>Checkout expires</dt>
+            <dd>{shortDate(createdPayment.data.expiresAt, zone)}</dd>
+          </dl>
+        ) : createdPayment.error ? (
+          <Refusal retry={() => void createdPayment.refetch()}>
+            {failureMessage(createdPayment.error, "read")}
+          </Refusal>
+        ) : (
+          <p role="status">Loading checkout details</p>
+        )}
+        <p className="text-caption text-secondary-foreground">
+          Only one payment can be in progress for this account.
         </p>
         {created.url ? (
           <>
