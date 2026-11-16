@@ -176,7 +176,7 @@ export function PoolScreen({
   let previewCard: ReactNode = null;
   if (preview.kind !== "editing")
     previewCard = (
-      <Card>
+      <Card data-stale={preview.kind === "stale"}>
         <div className="row preview-header">
           <h3 className="h3">Preview</h3>
           <span className="sm t2">made {shortDate(preview.at, zone)}</span>
@@ -351,8 +351,9 @@ export function PoolScreen({
               </Table>
               <div className="row sm t2 pool-pager">
                 <span>
-                  Showing {rows.length} {preview.kind === "stale" ? "preview rows" : "leads"}
-                  {pool && ` of ${String(pool.total)} in the pool`}, newest first
+                  {preview.kind === "stale"
+                    ? `Showing ${String(rows.length)} rows from the refused preview. ${String(pool?.total ?? 0)} leads remain in the pool.`
+                    : `Showing ${String(rows.length)} of ${String(pool?.total ?? 0)} leads in the pool, newest first`}
                 </span>
                 <span className="sp" />
                 {pool && pool.rows.length < pool.total && preview.kind !== "stale" && (
@@ -413,96 +414,113 @@ export function PoolScreen({
                     {failureMessage(people.error, "read")}
                   </Refusal>
                 )}
-                {error && <Refusal title="Nothing was assigned">{error}</Refusal>}
-                {preview.kind === "stale" ? (
-                  <Refusal title="Nothing was assigned">
-                    <p>
-                      {preview.changed.length
-                        ? `${String(preview.changed.length)} of these ${String(selected.length)} leads changed hands after your preview.`
-                        : "These leads changed or are no longer visible after your preview."}
-                    </p>
-                    {preview.changed.map((lead) => (
-                      <p key={lead.id}>
-                        {lead.custody.assignedBy?.name ?? "A staff member"} assigned{" "}
-                        {lead.name ?? "this lead"}
-                        {lead.custody.heldBy ? ` to ${lead.custody.heldBy.name}` : ""}
-                        {lead.custody.assignedBy?.at
-                          ? ` at ${shortDate(lead.custody.assignedBy.at, zone)}`
-                          : ""}
-                        .
+                <div role="alert" aria-live="assertive" aria-atomic="true">
+                  {error && (
+                    <Refusal announce={false} title="Nothing was assigned">
+                      {error}
+                    </Refusal>
+                  )}
+                  {preview.kind === "stale" ? (
+                    <Refusal announce={false} title="Nothing was assigned">
+                      <p>
+                        {preview.changed.length
+                          ? `${String(preview.changed.length)} of these ${String(selected.length)} leads changed hands after your preview.`
+                          : "These leads changed or are no longer visible after your preview."}
                       </p>
-                    ))}
-                    <p>
-                      {preview.remaining.length} still have no owner. Make a new preview to share
-                      them out.
-                    </p>
-                  </Refusal>
-                ) : method === "hand" ? (
-                  <div className="field">
-                    <span className="label" id="recipient-label">
-                      Who gets them?
-                    </span>
-                    <RadioGroup
-                      className="pool-people"
-                      aria-labelledby="recipient-label"
-                      value={chosen[0] ?? ""}
-                      onValueChange={(v) => {
-                        invalidate();
-                        setChosen([v]);
-                      }}
-                    >
-                      {agents.map((agent) => (
-                        <label
-                          className="opt"
-                          data-checked={chosen.includes(assignmentKey(agent))}
-                          key={assignmentKey(agent)}
-                        >
-                          <RadioGroupItem value={assignmentKey(agent)} disabled={pending} />
-                          <Avatar name={agent.name} />
-                          <span className="b">{agent.name}</span>
-                          <span className="sm t2">{agent.openCount} in queue</span>
-                        </label>
-                      ))}
-                    </RadioGroup>
-                  </div>
-                ) : (
-                  <>
+                      {[
+                        ...Map.groupBy(
+                          preview.changed,
+                          (lead) =>
+                            `${lead.custody.assignedBy?.name ?? "A staff member"}|${lead.custody.heldBy?.name ?? ""}|${lead.custody.assignedBy?.at ? shortDate(lead.custody.assignedBy.at, zone) : ""}`,
+                        ).entries(),
+                      ].map(([key, leads]) => {
+                        const [by, to, at] = key.split("|");
+                        return (
+                          <p key={key}>
+                            {by} assigned{" "}
+                            {new Intl.ListFormat("en-GB", {
+                              style: "long",
+                              type: "conjunction",
+                            }).format(leads.map((lead) => lead.name ?? "an unnamed lead"))}
+                            {to ? ` to ${to}` : ""}
+                            {at ? ` at ${at}` : ""}.
+                          </p>
+                        );
+                      })}
+                      <p>
+                        {preview.remaining.length} still have no owner. Make a new preview to share
+                        them out.
+                      </p>
+                    </Refusal>
+                  ) : null}
+                </div>
+                {preview.kind !== "stale" &&
+                  (method === "hand" ? (
                     <div className="field">
-                      <span className="label">Share between</span>
-                      <div className="share-agents">
+                      <span className="label" id="recipient-label">
+                        Who gets them?
+                      </span>
+                      <RadioGroup
+                        className="pool-people"
+                        aria-labelledby="recipient-label"
+                        value={chosen[0] ?? ""}
+                        onValueChange={(v) => {
+                          invalidate();
+                          setChosen([v]);
+                        }}
+                      >
                         {agents.map((agent) => (
-                          <label className="row" key={assignmentKey(agent)}>
-                            <Checkbox
-                              disabled={pending}
-                              checked={chosen.includes(assignmentKey(agent))}
-                              onCheckedChange={(v) => {
-                                invalidate();
-                                setChosen((ids) =>
-                                  v === true
-                                    ? [...ids, assignmentKey(agent)]
-                                    : ids.filter((id) => id !== assignmentKey(agent)),
-                                );
-                              }}
-                            />
+                          <label
+                            className="opt"
+                            data-checked={chosen.includes(assignmentKey(agent))}
+                            key={assignmentKey(agent)}
+                          >
+                            <RadioGroupItem value={assignmentKey(agent)} disabled={pending} />
                             <Avatar name={agent.name} />
                             <span className="b">{agent.name}</span>
+                            <span className="sm t2">{agent.openCount} in queue</span>
                           </label>
                         ))}
-                      </div>
+                      </RadioGroup>
                     </div>
-                    <label className="row">
-                      <Checkbox
-                        disabled={pending}
-                        checked={exclude}
-                        onCheckedChange={(v) => {
-                          invalidate();
-                          setExclude(v === true);
-                        }}
-                      />
-                      <span className="b">Skip a lead's previous owner</span>
-                    </label>
-                  </>
-                )}
+                  ) : (
+                    <>
+                      <div className="field">
+                        <span className="label">Share between</span>
+                        <div className="share-agents">
+                          {agents.map((agent) => (
+                            <label className="row" key={assignmentKey(agent)}>
+                              <Checkbox
+                                disabled={pending}
+                                checked={chosen.includes(assignmentKey(agent))}
+                                onCheckedChange={(v) => {
+                                  invalidate();
+                                  setChosen((ids) =>
+                                    v === true
+                                      ? [...ids, assignmentKey(agent)]
+                                      : ids.filter((id) => id !== assignmentKey(agent)),
+                                  );
+                                }}
+                              />
+                              <Avatar name={agent.name} />
+                              <span className="b">{agent.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <label className="row">
+                        <Checkbox
+                          disabled={pending}
+                          checked={exclude}
+                          onCheckedChange={(v) => {
+                            invalidate();
+                            setExclude(v === true);
+                          }}
+                        />
+                        <span className="b">Skip a lead's previous owner</span>
+                      </label>
+                    </>
+                  ))}
                 {previewCard}
                 {preview.kind !== "stale" && (
                   <p className="help">
@@ -524,7 +542,8 @@ export function PoolScreen({
                         }}
                       >
                         <Icon name="refresh" />
-                        Preview the remaining {preview.remaining.length} leads
+                        Preview the remaining {preview.remaining.length}{" "}
+                        {preview.remaining.length === 1 ? "lead" : "leads"}
                       </Button>
                       <Button
                         variant="ghost"
@@ -546,7 +565,7 @@ export function PoolScreen({
                         void makePreview();
                       }}
                     >
-                      Preview {selected.length} leads
+                      Preview {selected.length} {selected.length === 1 ? "lead" : "leads"}
                     </Button>
                   ) : (
                     <Button

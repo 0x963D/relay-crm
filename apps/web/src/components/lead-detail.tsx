@@ -398,11 +398,16 @@ export function LeadDetail({
             </div>
           )}
         </div>
-        {error && (
-          <Refusal title={mode === "close" ? "The lead was not closed" : "This was not saved"}>
-            {error}
-          </Refusal>
-        )}
+        <div role="alert" aria-live="assertive" aria-atomic="true">
+          {error && (
+            <Refusal
+              announce={false}
+              title={mode === "close" ? "The lead was not closed" : "This was not saved"}
+            >
+              {error}
+            </Refusal>
+          )}
+        </div>
         {mode !== "rest" && canEdit && (
           <Card className="composer">
             <Tabs

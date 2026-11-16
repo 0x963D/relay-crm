@@ -67,13 +67,15 @@ export function Refusal({
   title = "This could not be completed",
   children,
   retry,
+  announce = true,
 }: {
   title?: string;
   children: ReactNode;
   retry?: () => void;
+  announce?: boolean;
 }) {
   return (
-    <Alert className="alert--refused">
+    <Alert className="alert--refused" role={announce ? "alert" : undefined}>
       <Icon name="error" size="large" />
       <div className="form-message">
         <p className="alert-title">{title}</p>
