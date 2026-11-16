@@ -1,4 +1,4 @@
-import { ROLES, type Role } from "@relay/domain";
+import { RECEIPT_LEASE_MS, RECEIPT_SEND_TIMEOUT_MS, ROLES, type Role } from "@relay/domain";
 import { z } from "zod";
 
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
@@ -10,6 +10,13 @@ const Secret = z
   .refine((value) => value !== EXAMPLE_AUTH_SECRET, "must not use the secret from .env.example");
 
 const Variables = z.object({
+  RELAY_RECEIPT_LEASE_MS: z.coerce.number().int().min(1).max(3600000).default(RECEIPT_LEASE_MS),
+  RELAY_RECEIPT_SEND_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(3600000)
+    .default(RECEIPT_SEND_TIMEOUT_MS),
   RELAY_OUTBOX_SECRET: z.string().min(32).optional(),
   RELAY_DEMO: z.literal("1").optional(),
   RELAY_SANDBOX: z.literal("1").optional(),
@@ -72,6 +79,7 @@ export interface PaymentEnv {
 
 export interface Env {
   readonly demo: boolean;
+  readonly receipts: { readonly leaseMs: number; readonly sendTimeoutMs: number };
   readonly outboxSecret: string | null;
   readonly payments: PaymentEnv | null;
   readonly trustedProxyCount: number;
@@ -160,6 +168,8 @@ export function parseEnv(
   if (!parsed.success) {
     throw new EnvError(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
   }
+  if (parsed.data.RELAY_RECEIPT_SEND_TIMEOUT_MS >= parsed.data.RELAY_RECEIPT_LEASE_MS)
+    throw new EnvError("Receipt send timeout must be shorter than the lease.");
   const { DATABASE_URL, NODE_ENV, RELAY_DEV_ACTOR, RELAY_DEV_ROLE } = parsed.data;
   const secrets = [
     parsed.data.AUTH_SECRET,
@@ -178,6 +188,10 @@ export function parseEnv(
     );
   return {
     demo: parsed.data.RELAY_DEMO === "1",
+    receipts: {
+      leaseMs: parsed.data.RELAY_RECEIPT_LEASE_MS,
+      sendTimeoutMs: parsed.data.RELAY_RECEIPT_SEND_TIMEOUT_MS,
+    },
     outboxSecret: parsed.data.RELAY_OUTBOX_SECRET ?? null,
     payments: paymentEnv(parsed.data),
     trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,

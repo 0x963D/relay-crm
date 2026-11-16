@@ -109,5 +109,7 @@ export {
   type ReceiptMessage,
   RECEIPT_RETRY_MINUTES,
   RECEIPT_MAX_ATTEMPTS,
+  RECEIPT_LEASE_MS,
+  RECEIPT_SEND_TIMEOUT_MS,
   receiptRetryAt,
 } from "./receipt.ts";

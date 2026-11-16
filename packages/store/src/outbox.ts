@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import pg from "pg";
 import {
   type PaymentId,
   recordScope,
   receiptRetryAt,
   RECEIPT_MAX_ATTEMPTS,
+  RECEIPT_LEASE_MS,
+  RECEIPT_SEND_TIMEOUT_MS,
   type Actor,
   type DeliveryOutcome,
   type ReceiptMessage,
@@ -22,6 +23,7 @@ export type ReceiptDelivery = (
 export interface OutboxOptions {
   readonly at?: Date;
   readonly leaseMs?: number;
+  readonly sendTimeoutMs?: number;
   readonly limit?: number;
 }
 export async function leaseReceipt(db: Db, id: string, at: Date, leaseMs: number) {
@@ -113,55 +115,53 @@ async function finishDelivery(
     return true;
   });
 }
-export async function runOutbox(
-  db: Db,
-  connectionString: string,
-  deliver: ReceiptDelivery,
-  options: OutboxOptions = {},
-) {
+export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: OutboxOptions = {}) {
+  const leaseMs = options.leaseMs ?? RECEIPT_LEASE_MS;
+  const sendTimeoutMs = options.sendTimeoutMs ?? RECEIPT_SEND_TIMEOUT_MS;
+  if (
+    !Number.isSafeInteger(leaseMs) ||
+    !Number.isSafeInteger(sendTimeoutMs) ||
+    sendTimeoutMs <= 0 ||
+    sendTimeoutMs >= leaseMs
+  )
+    throw new Error("Receipt send timeout must be positive and shorter than the lease.");
   const now = () => options.at ?? new Date();
   const candidates = await db.outbox.findMany({
     where: {
       state: { in: ["pending", "failed"] },
       cycleAttempts: { lt: RECEIPT_MAX_ATTEMPTS },
       nextAttemptAt: { lte: now() },
+      OR: [{ leaseUntil: null }, { leaseUntil: { lte: now() } }],
     },
     orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
     take: options.limit ?? 100,
     select: { id: true },
   });
-  const session = new pg.Client({ connectionString });
-  const controller = new AbortController();
-  session.on("error", () => {
-    controller.abort();
-  });
-  await session.connect();
-  const results: { id: string; state: DeliveryOutcome["state"] }[] = [];
-  try {
-    for (const { id } of candidates) {
-      controller.signal.throwIfAborted();
-      // The session lock outlives the lease while SMTP is running, without holding a transaction open.
-      const locked = await session.query<{ locked: boolean }>(
-        "SELECT pg_try_advisory_lock(hashtextextended('receipt:' || $1,0)) AS locked",
-        [id],
-      );
-      if (!locked.rows[0]?.locked) continue;
+  const results: { id: string; state: DeliveryOutcome["state"] | "superseded" }[] = [];
+  for (const { id } of candidates) {
+    const deadline = performance.now() + sendTimeoutMs;
+    const lease = await leaseReceipt(db, id, now(), leaseMs);
+    if (!lease?.leaseToken) continue;
+    const started = await beginDelivery(db, id, lease.leaseToken, now());
+    if (!started) continue;
+    if (started.suppressed) {
+      results.push({ id, state: "suppressed" });
+      continue;
+    }
+    const payment = await db.payment.findUnique({ where: { id: lease.paymentId } });
+    if (!payment) throw new InvariantError("A receipt has no payment");
+    const controller = new AbortController();
+    const timeout: DeliveryOutcome = {
+      state: "unknown",
+      reason: "Delivery exceeded its send timeout. The receipt may have arrived.",
+    };
+    const remaining = deadline - performance.now();
+    let outcome: DeliveryOutcome = timeout;
+    if (remaining > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const lease = await leaseReceipt(db, id, now(), options.leaseMs ?? 60_000);
-        if (!lease?.leaseToken) continue;
-        controller.signal.throwIfAborted();
-        const started = await beginDelivery(db, id, lease.leaseToken, now());
-        if (!started) continue;
-        if (started.suppressed) {
-          results.push({ id, state: "suppressed" });
-          continue;
-        }
-        const payment = await db.payment.findUnique({ where: { id: lease.paymentId } });
-        if (!payment) throw new InvariantError("A receipt has no payment");
-        let outcome: DeliveryOutcome;
-        try {
-          controller.signal.throwIfAborted();
-          outcome = await deliver(
+        outcome = await Promise.race([
+          deliver(
             {
               id,
               paymentId: payment.id,
@@ -170,24 +170,32 @@ export async function runOutbox(
               currency: payment.currency,
             },
             controller.signal,
-          );
-        } catch {
-          outcome = {
-            state: "unknown",
-            reason: "Delivery stopped before a confirmed outcome was recorded.",
-          };
-        }
-        await finishDelivery(db, id, lease.leaseToken, started.attempt.id, outcome, now());
-        results.push({ id, state: outcome.state });
+          ),
+          new Promise<DeliveryOutcome>((resolve) => {
+            timer = setTimeout(() => {
+              controller.abort();
+              resolve(timeout);
+            }, remaining);
+          }),
+        ]);
+      } catch {
+        outcome = {
+          state: "unknown",
+          reason: "Delivery stopped before a confirmed outcome was recorded.",
+        };
       } finally {
-        if (!controller.signal.aborted)
-          await session.query("SELECT pg_advisory_unlock(hashtextextended('receipt:' || $1,0))", [
-            id,
-          ]);
+        clearTimeout(timer);
       }
     }
-  } finally {
-    await session.end();
+    const recorded = await finishDelivery(
+      db,
+      id,
+      lease.leaseToken,
+      started.attempt.id,
+      outcome,
+      now(),
+    );
+    results.push({ id, state: recorded ? outcome.state : "superseded" });
   }
   return results;
 }
@@ -217,10 +225,6 @@ export async function requeueReceipt(db: Db, actor: Actor, id: PaymentId, reques
     const at = new Date();
     const row = await tx.outbox.findUnique({ where: { paymentId: id } });
     if (!row) throw new AccessError("accessDenied");
-    const locks = await tx.$queryRaw<
-      { locked: boolean }[]
-    >`SELECT pg_try_advisory_xact_lock(hashtextextended('receipt:' || ${row.id}::text,0)) AS locked`;
-    if (!locks[0]?.locked) throw new AccessError("refreshConflict");
     if (
       !["failed", "unknown"].includes(row.state) ||
       (row.leaseUntil !== null && row.leaseUntil > at)

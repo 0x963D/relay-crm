@@ -15,6 +15,7 @@ describe("parseEnv", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
       demo: false,
       outboxSecret: null,
+      receipts: { leaseMs: 60000, sendTimeoutMs: 30000 },
       payments: null,
       trustedProxyCount: 0,
       auth: null,
@@ -213,4 +214,14 @@ it("development always binds loopback and production honors its configured host"
     port: 3002,
     dev: false,
   });
+});
+
+it.each(["60000", "60001"])("refuses receipt send timeout %s at or beyond its lease", (timeout) => {
+  expect(() =>
+    parseEnv({
+      DATABASE_URL,
+      RELAY_RECEIPT_LEASE_MS: "60000",
+      RELAY_RECEIPT_SEND_TIMEOUT_MS: timeout,
+    }),
+  ).toThrow("shorter than");
 });

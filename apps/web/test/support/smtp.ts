@@ -2,7 +2,7 @@ import { once } from "node:events";
 import { createServer, type Socket } from "node:net";
 
 export async function openSmtpInbox(
-  outcome: (message: string) => "sent" | "failed" | "unknown" = () => "sent",
+  outcome: (message: string) => "sent" | "failed" | "unknown" | "stall" = () => "sent",
   fault?: "greeting" | "recipient",
 ) {
   const messages: string[] = [];
@@ -29,7 +29,7 @@ export async function openSmtpInbox(
             message = "";
             data = false;
             if (result === "unknown") socket.destroy();
-            else
+            else if (result !== "stall")
               socket.write(
                 result === "failed" ? "550 mailbox refused message\r\n" : "250 accepted\r\n",
               );
@@ -53,6 +53,7 @@ export async function openSmtpInbox(
   return {
     url: `smtp://127.0.0.1:${String(address.port)}`,
     messages,
+    activeConnections: () => sockets.size,
     close: async () => {
       for (const socket of sockets) socket.destroy();
       const closed = once(server, "close");

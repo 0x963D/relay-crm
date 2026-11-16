@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import type { Actor, DeliveryOutcome } from "@relay/domain";
+import { openStore } from "../src/index.ts";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 const latch = (): PromiseWithResolvers<void> => Promise.withResolvers();
 const at = new Date("2030-01-01T00:00:00Z");
@@ -69,30 +70,60 @@ test("a worker stopped after leasing is recovered after expiry", async ({ db }) 
   expect(await db.store.runOutbox(send, { at: new Date(at.getTime() + 60_000) })).toHaveLength(1);
   expect(calls).toBe(1);
 });
-test("an expired lease still refuses requeue while the sender is active", async ({ db }) => {
+test("an unexpired lease excludes requeue and another sender after database sessions close", async ({
+  db,
+}) => {
   const w = await receipt(db);
-  const entered = latch(),
-    release = latch();
-  let calls = 0;
-  const send = async (): Promise<DeliveryOutcome> => {
-    calls++;
-    entered.resolve();
-    await release.promise;
-    return { state: "sent" };
-  };
-  const first = db.store.runOutbox(send, { at: new Date(), leaseMs: 1 });
-  await entered.promise;
-  await db.rows("UPDATE outbox SET lease_until=now()-interval '1 second'");
-  await expect(db.store.requeueReceipt(w.actor, w.id, requestId)).rejects.toMatchObject({
-    code: "refreshConflict",
-  });
+  const entered = latch();
+  let active = 0;
+  let maximum = 0;
+  const workerUrl = new URL(db.connectionString);
+  workerUrl.searchParams.set("application_name", "receipt-worker-test");
+  const worker = openStore({ connectionString: workerUrl.toString() });
+  const first = worker.runOutbox(
+    async (_message, signal) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      entered.resolve();
+      await new Promise<void>((resolve) => {
+        signal.addEventListener(
+          "abort",
+          () => {
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      active--;
+      return { state: "unknown", reason: "Send aborted" };
+    },
+    { leaseMs: 2000, sendTimeoutMs: 1000 },
+  );
   try {
-    expect(await db.store.runOutbox(send, { at })).toEqual([]);
+    await entered.promise;
+    const closed = await db.rows(
+      "SELECT pg_terminate_backend(pid) AS closed FROM pg_stat_activity WHERE datname=current_database() AND usename='relay_app' AND state='idle' AND application_name='receipt-worker-test'",
+    );
+    expect(closed.length).toBeGreaterThan(0);
+    expect(closed.every((row) => row.closed === true)).toBe(true);
+    await expect(db.store.requeueReceipt(w.actor, w.id, requestId)).rejects.toMatchObject({
+      code: "refreshConflict",
+    });
+    expect(await db.store.runOutbox(() => Promise.resolve({ state: "sent" }))).toEqual([]);
+    expect(await first).toEqual([{ id: w.outboxId, state: "unknown" }]);
+    expect(active).toBe(0);
+    await db.store.requeueReceipt(w.actor, w.id, requestId);
+    await db.store.runOutbox(() => {
+      active++;
+      maximum = Math.max(maximum, active);
+      active--;
+      return Promise.resolve({ state: "sent" });
+    });
+    expect(maximum).toBe(1);
   } finally {
-    release.resolve();
+    await first;
+    await worker.close();
   }
-  await first;
-  expect(calls).toBe(1);
 });
 test("confirmed failures retry after 5, 10 and 20 minutes and stop at four attempts", async ({
   db,
@@ -178,4 +209,17 @@ test("a receipt without an address is suppressed without sending or retrying", a
   const detail = await db.store.getPayment(w.actor, w.id);
   expect(detail.receipt).toMatchObject({ state: "suppressed", attempts: 0, nextAttemptAt: null });
   expect(detail.receipt?.history[0]).toMatchObject({ state: "suppressed", reason: "no address" });
+});
+
+test("a lost lease token never reports an unrecorded send as sent", async ({ db }) => {
+  const w = await receipt(db);
+  const results = await db.store.runOutbox(
+    async () => {
+      await db.rows("UPDATE outbox SET lease_token=gen_random_uuid() WHERE id=$1", [w.outboxId]);
+      return { state: "sent" };
+    },
+    { at },
+  );
+  expect(results).toEqual([{ id: w.outboxId, state: "superseded" }]);
+  expect((await db.store.getPayment(w.actor, w.id)).receipt?.state).toBe("unknown");
 });

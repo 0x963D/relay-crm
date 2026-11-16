@@ -26,7 +26,7 @@ export interface Composition {
 }
 
 function compose(env: Env): Composition {
-  const store = openStore({ connectionString: env.databaseUrl });
+  const store = openStore({ connectionString: env.databaseUrl, receipts: env.receipts });
   const now = (): Date => new Date();
   const log = logToConsole;
 

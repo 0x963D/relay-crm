@@ -20,3 +20,6 @@ export function receiptRetryAt(
     ? new Date(at.getTime() + minutes * 60_000)
     : null;
 }
+
+export const RECEIPT_LEASE_MS = 60_000;
+export const RECEIPT_SEND_TIMEOUT_MS = 30_000;

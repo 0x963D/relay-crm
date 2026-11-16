@@ -177,3 +177,35 @@ it("retries a DNS timeout against a local DNS server", async () => {
     server.close();
   }
 });
+
+it("aborting a send after DATA closes its local SMTP connection", async () => {
+  const inbox = await openSmtpInbox(() => "stall");
+  try {
+    const send = createReceiptMailer({
+      kind: "smtp",
+      url: inbox.url,
+      from: "relay@sender.example",
+    });
+    const controller = new AbortController();
+    const result = send(
+      {
+        id: "fake-receipt",
+        paymentId: "fake-payment",
+        email: "recipient@example.com",
+        amount: "48000",
+        currency: "GBP",
+      },
+      controller.signal,
+    );
+    await vi.waitFor(() => {
+      expect(inbox.messages).toHaveLength(1);
+    });
+    controller.abort();
+    expect(await result).toMatchObject({ state: "unknown" });
+    await vi.waitFor(() => {
+      expect(inbox.activeConnections()).toBe(0);
+    });
+  } finally {
+    await inbox.close();
+  }
+});
