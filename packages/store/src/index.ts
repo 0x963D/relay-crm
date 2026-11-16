@@ -1,3 +1,10 @@
+import {
+  runOutbox,
+  leaseReceipt,
+  requeueReceipt,
+  type ReceiptDelivery,
+  type OutboxOptions,
+} from "./outbox.ts";
 import type {
   PaymentId,
   Actor,
@@ -59,6 +66,11 @@ export type Store = ReturnType<typeof openStore>;
 export function openStore(config: { readonly connectionString: string }) {
   const db = connect(config.connectionString);
   return {
+    runOutbox: (deliver: ReceiptDelivery, options?: OutboxOptions) =>
+      runOutbox(db, config.connectionString, deliver, options),
+    leaseReceipt: (id: string, at: Date, leaseMs: number) => leaseReceipt(db, id, at, leaseMs),
+    requeueReceipt: (actor: Actor, id: PaymentId, requestId: string) =>
+      requeueReceipt(db, actor, id, requestId),
     recordManualPayment: (actor: Actor, input: RecordManualPayment, requestId: string) =>
       recordManualPayment(db, actor, input, requestId),
     approveManualPayment: (

@@ -104,3 +104,10 @@ export {
   type PaymentProvider,
   type SandboxMode,
 } from "./payment.ts";
+export {
+  type DeliveryOutcome,
+  type ReceiptMessage,
+  RECEIPT_RETRY_MINUTES,
+  RECEIPT_MAX_ATTEMPTS,
+  receiptRetryAt,
+} from "./receipt.ts";

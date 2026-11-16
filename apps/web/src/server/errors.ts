@@ -5,7 +5,7 @@ export function reportFailure(
   event: string,
   error: unknown,
   log: Log = logToConsole,
-  requestId = randomUUID(),
+  requestId: string = randomUUID(),
 ) {
   log(event, { requestId, error });
   return { message: "Something went wrong.", requestId };

@@ -4,6 +4,7 @@ import { z } from "zod";
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
 
 const Variables = z.object({
+  RELAY_OUTBOX_SECRET: z.string().min(32).optional(),
   RELAY_SANDBOX: z.literal("1").optional(),
   RELAY_SANDBOX_URL: z.url().optional(),
   RELAY_PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
@@ -66,6 +67,7 @@ export interface PaymentEnv {
 }
 
 export interface Env {
+  readonly outboxSecret: string | null;
   readonly payments: PaymentEnv | null;
   readonly trustedProxyCount: number;
   readonly auth: AuthEnv | null;
@@ -159,6 +161,7 @@ export function parseEnv(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
   return {
+    outboxSecret: parsed.data.RELAY_OUTBOX_SECRET ?? null,
     payments: paymentEnv(parsed.data),
     trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,
     auth: authEnv(parsed.data),

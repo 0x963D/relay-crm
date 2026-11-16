@@ -1,7 +1,9 @@
 import { once } from "node:events";
 import { createServer, type Socket } from "node:net";
 
-export async function openSmtpInbox() {
+export async function openSmtpInbox(
+  outcome: (message: string) => "sent" | "failed" | "unknown" = () => "sent",
+) {
   const messages: string[] = [];
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
@@ -22,9 +24,14 @@ export async function openSmtpInbox() {
         if (data) {
           if (line === ".") {
             messages.push(message);
+            const result = outcome(message);
             message = "";
             data = false;
-            socket.write("250 accepted\r\n");
+            if (result === "unknown") socket.destroy();
+            else
+              socket.write(
+                result === "failed" ? "550 mailbox refused message\r\n" : "250 accepted\r\n",
+              );
           } else message += `${line}\n`;
         } else if (line.startsWith("EHLO") || line.startsWith("HELO"))
           socket.write("250 relay.example\r\n");

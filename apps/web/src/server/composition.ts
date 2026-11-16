@@ -2,7 +2,7 @@ import { sandboxProvider, sandboxCheckout } from "./payments/sandbox.ts";
 import { paymentWebhook } from "./payments/webhook.ts";
 import { after } from "next/server";
 import { createAuthentication, type Authentication } from "./auth.ts";
-import { createMailer } from "./mailer.ts";
+import { createReceiptMailer, createMailer } from "./mailer.ts";
 import { openStore, type Store } from "@relay/store";
 import { readEnv, type Env } from "./env.ts";
 import { createMetaLeadSource } from "./intake/meta/lead-source.ts";
@@ -12,6 +12,7 @@ import { logToConsole } from "./log.ts";
 
 /** Every long-lived object the application has. This file is the only one that builds any. */
 export interface Composition {
+  readonly receiptMailer: ReturnType<typeof createReceiptMailer> | null;
   readonly payments: {
     readonly provider: ReturnType<typeof sandboxProvider>;
     readonly webhook: ReturnType<typeof paymentWebhook>;
@@ -32,6 +33,8 @@ function compose(env: Env): Composition {
   return {
     env,
     store,
+    receiptMailer:
+      env.auth?.delivery.kind === "smtp" ? createReceiptMailer(env.auth.delivery) : null,
     payments: env.payments
       ? {
           provider: sandboxProvider(store, env.payments),

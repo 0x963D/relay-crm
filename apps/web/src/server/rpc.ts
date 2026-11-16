@@ -28,9 +28,11 @@ export interface RpcContext {
 }
 const t = initTRPC.context<RpcContext>().create({
   transformer: superjson,
-  errorFormatter: ({ shape, error }) => {
+  errorFormatter: ({ shape, error, ctx }) => {
     const accessFailure = isAccessError(error.cause) ? error.cause.code : null;
-    const failure = accessFailure ? null : reportFailure("rpc.failed", error.cause ?? error);
+    const failure = accessFailure
+      ? null
+      : reportFailure("rpc.failed", error.cause ?? error, undefined, ctx?.requestId);
     return {
       ...shape,
       message: failure?.message ?? shape.message,
@@ -113,6 +115,9 @@ function parsedMoney(input: { amount: string; currency: string }) {
 
 export const appRouter = t.router({
   payments: t.router({
+    requeueReceipt: authenticated
+      .input(z.object({ id: identifier(PaymentId) }).strict())
+      .mutation(({ ctx, input }) => ctx.store.requeueReceipt(ctx.actor, input.id, ctx.requestId)),
     recordManual: authenticated
       .input(
         z

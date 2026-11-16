@@ -440,6 +440,8 @@ model WebhookInbox {
 }
 
 model Outbox {
+  recipient String?
+  cycleAttempts Int @default(0) @map("cycle_attempts")
   id String @id @default(uuid(7)) @db.Uuid
   paymentId String @unique @map("payment_id") @db.Uuid
   topic String
@@ -448,7 +450,7 @@ model Outbox {
   attempts Int @default(0)
   leaseToken String? @map("lease_token") @db.Uuid
   leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
-  nextAttemptAt DateTime @map("next_attempt_at") @db.Timestamptz(3)
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(3)
   createdAt DateTime @map("created_at") @db.Timestamptz(3)
   @@map("outbox")
 }
@@ -474,4 +476,21 @@ model PaymentApproval {
   requestId String @map("request_id") @db.Uuid
   @@index([paymentId])
   @@map("payment_approvals")
+}
+model ReceiptAttempt {
+  id String @id @default(uuid(7)) @db.Uuid
+  outboxId String @map("outbox_id") @db.Uuid
+  number Int
+  state String
+  reason String?
+  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  @@unique([outboxId, number])
+  @@map("receipt_attempts")
+}
+model EmailSuppression {
+  email String @id
+  reason String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@map("email_suppressions")
 }

@@ -164,6 +164,7 @@ test("production RPC errors hide internal messages and correlate the server log"
     expect(body).not.toContain("database password leaked in this message");
     expect(body).toContain("Something went wrong.");
     const requestId = /"requestId":"([^"]+)"/.exec(body)?.[1];
+    expect(requestId).toBe(response.headers.get("x-request-id"));
     expect(requestId).toMatch(/^[a-f0-9-]{36}$/);
     if (!requestId) throw new Error("No request ID");
     expect(log).toHaveBeenCalledWith(expect.stringContaining(requestId));

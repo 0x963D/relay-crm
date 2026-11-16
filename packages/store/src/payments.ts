@@ -1,3 +1,4 @@
+import { receiptDetail } from "./outbox.ts";
 import { randomUUID } from "node:crypto";
 import {
   AccountId,
@@ -270,10 +271,17 @@ async function settlePayment(
       cause,
       at,
     });
+    const account = required(
+      await tx.account.findUnique({
+        where: { id: row.accountId },
+        include: { lead: { select: { email: true } } },
+      }),
+    );
     await tx.outbox.create({
       data: {
         paymentId: row.id,
         topic: "paymentCompleted",
+        recipient: account.lead?.email ?? null,
         payload: {
           paymentId: row.id,
           accountId: row.accountId,
@@ -934,7 +942,15 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
             : null;
   const mayDecide =
     row.status === "pendingApproval" && (row.recordedById === actor.userId || mayApprove);
+  const receipt = await receiptDetail(tx, row.id);
+  const editable =
+    row.status === "pendingApproval" &&
+    !approvals.some((a) => a.voidedAt === null) &&
+    (await tx.account.findFirst({
+      where: { id: row.accountId, ...scopeWhere(recordScope(actor, "payment", "edit")) },
+    }));
   return {
+    receipt,
     recordedBy,
     approvals: history,
     cannotApprove: [
@@ -946,6 +962,12 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
       })),
     ],
     actions: {
+      editManual: Boolean(editable),
+      requeueReceipt:
+        mayApprove &&
+        receipt !== null &&
+        ["failed", "unknown"].includes(receipt.state) &&
+        !receipt.processing,
       approve: row.method === "manual" && refusal === null,
       approvalRefusal: refusal,
       reject: mayDecide,
