@@ -27,9 +27,10 @@ to check postings, balances and historical conversion.
 
 ## Status
 
-Lead intake, email code sign-in, scoped access and lead assignment work through the API.
-The CRM screen is the existing lead list. Card payments work through the API and a plain sandbox checkout page. Manual approvals and receipt delivery work through the API and worker.
-The work queue and CRM payment screens are not built.
+All three journeys have a backend and typed API. A lead arrives and is assigned, an agent works
+it to won or lost, and a customer makes a payment. There are no CRM journey screens yet.
+The repository still has its lead-list scaffold and a plain sandbox checkout form.
+Nothing has been published.
 
 What works today:
 
@@ -410,6 +411,91 @@ The three secrets must be pairwise distinct. These checks reject obvious weak va
 than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a
 repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
 `AUTH_URL` and SMTP are also unset.
+
+## Working a lead
+
+`leads.queue` returns `overdueCallbacks`, `dueToday` and `notYetCalled`, their full counts and the
+next future callback time. `limit` bounds each group. The default target is the signed-in agent.
+A sales team lead can request an agent on their selected team. Managers, admins and owners can
+request any agent. Each lead still passes the existing record read scope.
+
+The server supplies the current instant and `RELAY_TIME_ZONE`, the organisation's IANA time zone.
+The setting defaults to UTC. A callback before that instant is overdue, including earlier today.
+A remaining callback on the same local calendar day is due today. Future days stay outside those
+groups. An assigned lead without an attempt or a callback appears in `notYetCalled`. Notes alone
+do not count as attempts. Leads with unknown attempt history are not labelled never called.
+`nextCallbackAt` lets an empty queue show when the next callback is due.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts`
+for day-boundary checks in Asia/Tokyo and America/Los_Angeles.
+
+The typed API exposes these writes. Each takes a lead `id` and an idempotency `key`:
+
+- `leads.logAttempt` takes `channel` of `call` or `whatsApp`, `outcome` of `noAnswer` or
+  `spokeToThem`, and a nonempty `note`. An optional `callback` saves with the attempt.
+- `leads.addNote` takes a nonempty `note`.
+- `leads.setCallback` takes `change` of `{ kind: "set", at: Date }` or `{ kind: "clear" }`.
+  Setting also moves an existing callback. The time must be in the future.
+- `leads.close` takes a `closing` union. `won` has no reason. `lost` takes an existing reason
+  category and a nonempty written `note`. `dead` takes `duplicate`, `wrongNumber` or `doNotContact`.
+
+Only `spokeToThem` records contact. A call or WhatsApp attempt alone does not.
+The transition table decides the working stage. A cleared callback leaves the lead working in
+`ready`, without claiming contact. `noAnswerCount` on the queue and detail counts the recorded
+no-answer attempts across callbacks. It is null when earlier attempt history is unknown. The `noAnswer` stage's `count` is the consecutive count from
+the transition table. Setting a callback replaces that stage, but preserves the attempt history.
+
+An agent can work their own lead. Anyone else needs its existing edit scope. A team lead's team
+read scope does not grant edits to a teammate's lead. Closed leads refuse further work.
+Winning or losing requires a working lead. Dead closure follows the existing transition table.
+Every accepted write commits its activity and audit with the acting user and HTTP request ID.
+A replay rechecks current access and adds no history. Reusing a key with different input refuses
+with `idempotencyConflict`.
+
+Winning creates an account owned by the lead's current agent and team in the same serializable
+transaction. The global lead email identity and `leads_account_id_key` link that person to an
+account. The `leads_state_shape` CHECK requires a won lead to have an account, and its foreign key
+requires that account to exist. A competing win retries the whole transaction and returns the
+existing account. It creates no further account or closing activity. A later enquiry for that
+person links to the account through intake. Run
+`pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts`
+for the forced win collision, win against reassignment, close against intake and direct SQL refusal.
+Intake attachments update the lead before appending history so their sequence reflects the order
+of the lead decisions.
+
+`leads.get` includes custody, original attribution and the timeline in descending database sequence.
+Custody gives the original intake source and receipt time, the latest assigner and assignment time,
+and the current holder. Missing historical custody is null. Timeline entries include actor names,
+the submitted command and the request ID. Entries remain append-only.
+
+`contactedAt` is null when no contact is recorded or the first contact time cannot be known.
+`workHistoryKnown` distinguishes a lead whose capture began at creation from historical leads
+already present when the work feature was migrated. The timeline retains each observed attempt
+at its recorded time. The migration does not infer historical contact times.
+
+## Campaign funnel and accounts
+
+`reports.funnel` is available to managers, admins and owners. Accountants, agents and team leads
+cannot read it. Each row gives the original campaign, leads received, still unassigned, contacted,
+won and conversion as won divided by received. It counts each lead once under its creating intake,
+including after reopening. Repeat submissions and enquiries linked to accounts add no received
+leads. Leads without recorded attribution appear under a null campaign.
+
+A campaign's `contacted` is null when some contact history is unknown. `knownContacted` and
+`contactUnknown` expose the known count and the number of leads whose contact cannot be decided.
+A win is never used as proof of contact. The report has no performance or export endpoint.
+
+`accounts.list` retains account read scope and adds the owner, the linked lead's identity, and
+`balances` for callers who may read the ledger. Other callers receive `balances: null`.
+A permitted reader gets the existing ledger reader's balances by currency. An account without
+ledger entries has an empty list. There is no stored balance or separate balance calculation.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts apps/web/test/rpc.int.test.ts`
+for role scope, account balances, boundary parsing and request correlation.
+
+Run `pnpm test:mutations <output-directory> work-` to remove the selected work checks in turn,
+require each named test to fail, restore its source and rerun the baseline.
+Run `pnpm test:prod` for the signed-in production journey. Its `LIVE_WORK` output records form
+intake, manager assignment, the agent's queue, no answer, a callback, confirmed contact, a win,
+and read-back of the timeline, account and funnel.
 
 ## Payments and receipts
 

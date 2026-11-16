@@ -17,6 +17,219 @@ const APP = fileURLToPath(new URL("..", import.meta.url));
 const NEXT = createRequire(import.meta.url).resolve("next/dist/bin/next");
 const UNREACHABLE_DATABASE = "postgresql://nobody:nobody@127.0.0.1:9/unreachable";
 
+databaseTest(
+  "the production work journey signs in, wins a form lead and reads its account and funnel",
+  async ({ db }) => {
+    const managerId = await db.seedUser("manager");
+    const agentId = await db.seedUser("agent");
+    const teamId = await db.seedTeam("sales");
+    await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$3),($2,$3)", [
+      managerId,
+      agentId,
+      teamId,
+    ]);
+    const inbox = await openSmtpInbox();
+    const server = await serve(
+      (origin) => ({
+        AUTH_URL: origin,
+        AUTH_SECRET: "fake-work-journey-secret-at-least-thirty-two-characters",
+        SMTP_URL: inbox.url,
+        SMTP_FROM: "relay@sender.example",
+        RELAY_TIME_ZONE: "Pacific/Auckland",
+      }),
+      db.connectionString,
+    );
+    try {
+      const origin = new URL(server.url("/")).origin;
+      const post = (path: string, body: unknown, cookie = "") =>
+        fetch(server.url(path), {
+          method: "POST",
+          headers: { origin, "content-type": "application/json", cookie },
+          body: JSON.stringify(body),
+        });
+      const signIn = async (email: string) => {
+        const count = inbox.messages.length;
+        expect(
+          (await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" }))
+            .status,
+        ).toBe(200);
+        for (let i = 0; i < 100 && inbox.messages.length === count; i += 1) await sleep(50);
+        const otp = inbox.messages[count]?.match(/Your sign-in code is (\d{6})/)?.[1];
+        if (!otp) throw new Error("No sign-in code arrived");
+        const response = await post("/api/auth/sign-in/email-otp", { email, otp });
+        expect(response.status).toBe(200);
+        const cookie = response.headers
+          .getSetCookie()
+          .find((value) => value.includes("relay.session_token="))
+          ?.split(";")[0];
+        if (!cookie) throw new Error("No session cookie");
+        return cookie;
+      };
+      const manager = await signIn("user-1@team.example");
+      const agent = await signIn("user-2@team.example");
+      const requestIds: string[] = [];
+      const rpc = async (
+        path: string,
+        input: unknown,
+        cookie: string,
+        mutation = false,
+      ): Promise<unknown> => {
+        const encoded = superjson.serialize(input);
+        const response = mutation
+          ? await post(`/api/trpc/${path}`, encoded, cookie)
+          : await fetch(
+              server.url(`/api/trpc/${path}?input=${encodeURIComponent(JSON.stringify(encoded))}`),
+              { headers: { cookie } },
+            );
+        const raw: unknown = await response.json();
+        expect(response.status, JSON.stringify(raw)).toBe(200);
+        const requestId = response.headers.get("x-request-id");
+        if (mutation && requestId) requestIds.push(requestId);
+        const envelope = z.object({ result: z.object({ data: z.unknown() }) }).parse(raw);
+        return superjson.parse(JSON.stringify(envelope.result.data));
+      };
+      const form = await post("/api/intake/form", {
+        submissionId: randomUUID(),
+        email: "journey@example.com",
+        name: "Riley Morgan",
+        phone: "+447700900123",
+        campaign: "Evening course",
+        form: "Course enquiry",
+      });
+      expect(form.status).toBe(202);
+      const pool = z
+        .array(z.object({ id: z.string(), email: z.string() }))
+        .parse(await rpc("leads.list", { limit: 100 }, manager));
+      const id = pool.find((lead) => lead.email === "journey@example.com")?.id;
+      if (!id) throw new Error("Form lead missing from the pool");
+      await rpc("leads.assign", { leadIds: [id], to: { ownerId: agentId, teamId } }, manager, true);
+      const Queue = z.object({
+        notYetCalled: z.array(z.object({ id: z.string(), campaign: z.string().nullable() })),
+        timeZone: z.string(),
+      });
+      const queue = Queue.parse(await rpc("leads.queue", {}, agent));
+      expect(queue.notYetCalled).toEqual([{ id, campaign: "Evening course" }]);
+      expect(queue.timeZone).toBe("Pacific/Auckland");
+      await rpc(
+        "leads.logAttempt",
+        { id, key: "journey-no-answer", channel: "call", outcome: "noAnswer", note: "Rang out" },
+        agent,
+        true,
+      );
+      const Detail = z.object({
+        id: z.string(),
+        contactedAt: z.date().nullable(),
+        noAnswerCount: z.number(),
+        lifecycle: z.object({
+          state: z.object({ status: z.string(), accountId: z.string().optional() }),
+        }),
+        custody: z.object({
+          assignedBy: z.object({ id: z.string() }).nullable(),
+          heldBy: z.object({ id: z.string() }).nullable(),
+        }),
+        timeline: z.array(
+          z.object({ kind: z.string(), sequence: z.bigint(), detail: z.unknown() }),
+        ),
+      });
+      const unanswered = Detail.parse(await rpc("leads.get", { id }, agent));
+      expect(unanswered.contactedAt).toBeNull();
+      expect(unanswered.noAnswerCount).toBe(1);
+      const callbackAt = new Date(Date.now() + 3600000);
+      await rpc(
+        "leads.setCallback",
+        { id, key: "journey-callback", change: { kind: "set", at: callbackAt } },
+        agent,
+        true,
+      );
+      const Callback = z.object({
+        lifecycle: z.object({ state: z.object({ stage: z.object({ at: z.date() }) }) }),
+      });
+      expect(
+        Callback.parse(await rpc("leads.get", { id }, agent)).lifecycle.state.stage.at,
+      ).toEqual(callbackAt);
+      await rpc(
+        "leads.logAttempt",
+        {
+          id,
+          key: "journey-spoke",
+          channel: "call",
+          outcome: "spokeToThem",
+          note: "Agreed to join the evening course",
+        },
+        agent,
+        true,
+      );
+      await rpc("leads.close", { id, key: "journey-win", closing: { kind: "won" } }, agent, true);
+      const detail = Detail.parse(await rpc("leads.get", { id }, agent));
+      expect(detail.lifecycle.state.status).toBe("won");
+      expect(detail.contactedAt).toBeInstanceOf(Date);
+      expect(detail.custody.assignedBy?.id).toBe(managerId);
+      expect(detail.custody.heldBy?.id).toBe(agentId);
+      expect(detail.timeline.map((item) => item.kind)).toEqual([
+        "closure",
+        "attempt",
+        "callback",
+        "attempt",
+        "assignment",
+        "intake",
+      ]);
+      expect(detail.timeline.map((item) => item.sequence)).toEqual(
+        detail.timeline.map((item) => item.sequence).sort((a, b) => (a > b ? -1 : 1)),
+      );
+      const Accounts = z.array(
+        z.object({
+          id: z.string(),
+          owner: z.object({ id: z.string() }).nullable(),
+          balances: z.array(z.unknown()).nullable(),
+        }),
+      );
+      const accounts = Accounts.parse(await rpc("accounts.list", { limit: 100 }, manager));
+      expect(accounts).toEqual([
+        { id: detail.lifecycle.state.accountId, owner: { id: agentId }, balances: [] },
+      ]);
+      expect(
+        Accounts.parse(await rpc("accounts.list", { limit: 100 }, agent))[0]?.balances,
+      ).toBeNull();
+      const funnel = z
+        .array(
+          z.object({
+            campaign: z.string().nullable(),
+            received: z.number(),
+            unassigned: z.number(),
+            contacted: z.number().nullable(),
+            won: z.number(),
+            conversion: z.number().nullable(),
+          }),
+        )
+        .parse(await rpc("reports.funnel", undefined, manager));
+      expect(funnel).toEqual([
+        {
+          campaign: "Evening course",
+          received: 1,
+          unassigned: 0,
+          contacted: 1,
+          won: 1,
+          conversion: 1,
+        },
+      ]);
+      expect(
+        await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1 ORDER BY at,id", [id]),
+      ).toHaveLength(requestIds.length);
+      expect(
+        (await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id]))
+          .map((row) => row.request_id)
+          .sort(),
+      ).toEqual(requestIds.sort());
+      process.stdout.write(
+        `LIVE_WORK ${JSON.stringify({ queue, unanswered, callbackAt, detail, accounts, funnel, correlatedWrites: requestIds.length }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
+      );
+    } finally {
+      await server.stop();
+      await inbox.close();
+    }
+  },
+);
+
 async function freePort(): Promise<number> {
   const probe = createServer();
   probe.listen(0, "127.0.0.1");

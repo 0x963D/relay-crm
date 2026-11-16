@@ -249,6 +249,43 @@ const definitions: {
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
 ];
+definitions.push(
+  {
+    name: "work-current-role",
+    file: "packages/store/src/work.ts",
+    before:
+      'const current = await currentActor(tx, actor);\n    const row = await scopedLead(tx, current, input.id, "edit");',
+    after:
+      'const current = actor;\n    const row = await scopedLead(tx, current, input.id, "edit");',
+    test: "working reloads a revoked role inside its transaction, including a replay",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-contact-proof",
+    file: "packages/store/src/work.ts",
+    before: 'if (work.attempt.outcome === "spokeToThem") contactedAt ??= at;',
+    after: "contactedAt ??= at;",
+    test: "only spoke to them records contact and no-answer history survives callbacks",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-intake-order",
+    file: "packages/store/src/intake.ts",
+    before: "await updateLifecycle(tx, decision.leadId, lifecycleFromRow(row));",
+    after: "",
+    test: "closing races fresh intake and records one of the permitted serial histories",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-repeated-win",
+    file: "packages/store/src/work.ts",
+    before: 'if (row.status === "won" && work.kind === "close" && work.closing.kind === "won")',
+    after:
+      'if (false && row.status === "won" && work.kind === "close" && work.closing.kind === "won")',
+    test: "two wins collide and create one account and one closing activity",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+);
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));
 if (!mutations.length) throw new Error("No matching mutations.");

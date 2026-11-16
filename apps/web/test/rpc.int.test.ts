@@ -191,3 +191,81 @@ test("RPC rejects an oversized JSON body before context or parsing", async ({ db
   expect(response.status).toBe(413);
   expect(context).not.toHaveBeenCalled();
 });
+
+test("work endpoints parse commands, preserve callback dates and carry the HTTP request ID", async ({
+  db,
+}) => {
+  const userId = await db.seedUser("agent");
+  const teamId = await db.seedTeam("sales");
+  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [userId, teamId]);
+  const actor: Actor = { userId, role: "agent", team: null };
+  const id = await db.seedLead({
+    email: "work-api@example.com",
+    lifecycle: {
+      state: { status: "assigned", assignee: { ownerId: userId, teamId } },
+      firstAssignedAt: new Date(),
+      previousOwnerId: null,
+    },
+  });
+  const context = { store: db.store, principal: principal(actor), timeZone: "Asia/Tokyo" };
+  const at = new Date("2099-11-17T09:30:00Z");
+  const attempt = await rpc(
+    context,
+    "leads.logAttempt",
+    {
+      id,
+      key: "call",
+      channel: "call",
+      outcome: "noAnswer",
+      note: "Rang out",
+      callback: { kind: "set", at },
+    },
+    "POST",
+  );
+  expect(attempt.status).toBe(200);
+  const requestId = attempt.headers.get("x-request-id");
+  expect(await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id])).toEqual([
+    { request_id: requestId },
+  ]);
+  expect(
+    await db.rows("SELECT detail->>'requestId' AS request_id FROM activities WHERE lead_id=$1", [
+      id,
+    ]),
+  ).toEqual([{ request_id: requestId }]);
+  expect((await db.store.getLead(actor, id)).lifecycle.state).toMatchObject({
+    stage: { kind: "callBack", at },
+  });
+  expect((await db.store.getLead(actor, id)).contactedAt).toBeNull();
+  for (const [path, input] of [
+    [
+      "leads.logAttempt",
+      { id, key: "bad", channel: "email", outcome: "noAnswer", note: "Invalid channel" },
+    ],
+    [
+      "leads.logAttempt",
+      { id, key: "bad", channel: "call", outcome: "contacted", note: "Invalid outcome" },
+    ],
+    ["leads.addNote", { id, key: "bad", note: " " }],
+    ["leads.setCallback", { id, key: "bad", change: { kind: "set", at: "2099-11-17" } }],
+    ["leads.close", { id, key: "bad", closing: { kind: "lost", reason: "other", note: " " } }],
+    ["leads.close", { id, key: "bad", closing: { kind: "dead", reason: "badTiming" } }],
+  ] as const)
+    expect((await rpc(context, path, input, "POST")).status).toBe(400);
+  const caller = appRouter.createCaller(context);
+  await caller.leads.addNote({ id, key: "note", note: "Asked for the Saturday class" });
+  await caller.leads.setCallback({ id, key: "clear", change: { kind: "clear" } });
+  expect((await caller.leads.queue({})).timeZone).toBe("Asia/Tokyo");
+  await caller.leads.logAttempt({
+    id,
+    key: "spoke",
+    channel: "whatsApp",
+    outcome: "spokeToThem",
+    note: "Discussed the class",
+  });
+  await caller.leads.close({
+    id,
+    key: "lost",
+    closing: { kind: "lost", reason: "badTiming", note: "Starts next year" },
+  });
+  expect((await caller.leads.get({ id })).lostNote).toBe("Starts next year");
+});
