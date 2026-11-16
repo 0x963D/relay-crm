@@ -38,6 +38,12 @@ async function world(db: TestDatabase, role: Role = "manager") {
   const pool = await lead("pool@example.com", null);
   const account = await db.seedAccount();
   const outsideAccount = await db.seedAccount();
+  const teammateAccount = await db.seedAccount();
+  await db.rows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
+    agentId,
+    teamId,
+    teammateAccount,
+  ]);
   await db.rows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
     userId,
     teamId,
@@ -48,7 +54,18 @@ async function world(db: TestDatabase, role: Role = "manager") {
     otherTeamId,
     outsideAccount,
   ]);
-  return { actor, agent, other, own, teammate, outside, pool, account, outsideAccount };
+  return {
+    actor,
+    agent,
+    other,
+    own,
+    teammate,
+    outside,
+    pool,
+    account,
+    outsideAccount,
+    teammateAccount,
+  };
 }
 
 async function auditCount(db: TestDatabase) {
@@ -274,11 +291,15 @@ describe("record scoping", () => {
         else await expect(query).rejects.toMatchObject({ code: "accessDenied" });
       }
       const accounts =
-        management || role === "accountant" ? [w.account, w.outsideAccount] : [w.account];
+        management || role === "accountant"
+          ? [w.account, w.outsideAccount, w.teammateAccount]
+          : role === "teamLead"
+            ? [w.account, w.teammateAccount]
+            : [w.account];
       expect(
         (await db.store.listAccounts(w.actor, { limit: 100 })).map((a) => a.id).sort(),
       ).toEqual([...accounts].sort());
-      for (const id of [w.account, w.outsideAccount]) {
+      for (const id of [w.account, w.outsideAccount, w.teammateAccount]) {
         const query = db.store.getAccount(w.actor, id);
         if (accounts.includes(id)) expect((await query).id).toBe(id);
         else await expect(query).rejects.toMatchObject({ code: "accessDenied" });
@@ -449,4 +470,71 @@ test("an unavailable reopen audit rolls back intake and ownership together", asy
   expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.state.status).toBe("lost");
   expect(await db.rows("SELECT id FROM intake_events")).toEqual([]);
   expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
+});
+
+test("another manager cannot submit someone else's preview", async ({ db }) => {
+  const w = await world(db);
+  const other: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const preview = await db.store.previewDistribution(w.actor, {
+    leadIds: [w.pool],
+    agents: [w.agent],
+    excludePreviousOwner: false,
+  });
+  await expect(
+    db.store.submitDistribution(other, {
+      previewId: preview.id,
+      fingerprint: preview.fingerprint,
+      key: "stolen",
+    }),
+  ).rejects.toMatchObject({ code: "stalePreview" });
+  expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
+});
+
+test("assignment refuses a sales member whose current role is not agent", async ({ db }) => {
+  const w = await world(db);
+  await expect(
+    db.store.assignPool(w.actor, [w.pool], { ownerId: w.actor.userId, teamId: w.agent.teamId }),
+  ).rejects.toMatchObject({ code: "invalidAgent" });
+});
+
+test("assignment refuses an agent in an accounts team", async ({ db }) => {
+  const w = await world(db);
+  const teamId = await db.seedTeam("accounts");
+  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [
+    w.agent.ownerId,
+    teamId,
+  ]);
+  await expect(
+    db.store.assignPool(w.actor, [w.pool], { ownerId: w.agent.ownerId, teamId }),
+  ).rejects.toMatchObject({ code: "invalidAgent" });
+});
+
+test("a distribution preview refuses an assigned lead", async ({ db }) => {
+  const w = await world(db);
+  await expect(
+    db.store.previewDistribution(w.actor, {
+      leadIds: [w.teammate],
+      agents: [w.agent],
+      excludePreviousOwner: false,
+    }),
+  ).rejects.toMatchObject({ code: "conflict" });
+});
+
+test("editLead reloads the actor after management access is revoked", async ({ db }) => {
+  const w = await world(db);
+  await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
+  await expect(
+    db.store.editLead(w.actor, w.teammate, { name: "Denied", phone: null }),
+  ).rejects.toMatchObject({ code: "accessDenied" });
+  expect(await db.rows("SELECT name FROM leads WHERE id=$1", [w.teammate])).toEqual([
+    { name: null },
+  ]);
+});
+
+test("getAccount reloads the actor after management access is revoked", async ({ db }) => {
+  const w = await world(db);
+  await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
+  await expect(db.store.getAccount(w.actor, w.outsideAccount)).rejects.toMatchObject({
+    code: "accessDenied",
+  });
 });

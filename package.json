@@ -23,7 +23,8 @@
     "test:prod": "pnpm build && dotenv -- vitest run --project production",
     "db:generate": "pnpm --filter @relay/store generate",
     "db:migrate": "dotenv -- pnpm --filter @relay/store migrate",
-    "import:csv": "dotenv -- tsx apps/web/scripts/import-csv.ts"
+    "import:csv": "dotenv -- tsx apps/web/scripts/import-csv.ts",
+    "test:mutations": "tsx packages/store/test/safety-mutations.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
