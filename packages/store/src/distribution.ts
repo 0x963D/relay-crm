@@ -1,5 +1,5 @@
+import { idempotent, requestHash } from "./idempotency.ts";
 import { auditActor } from "./audit.ts";
-import { createHash } from "node:crypto";
 import {
   LeadId,
   UserId,
@@ -24,10 +24,6 @@ import { AccessError } from "./errors.ts";
 import { InvariantError, leadFromRow, lifecycleFromRow } from "./lead-row.ts";
 import { scopedLead, updateLifecycle, editLeadFields } from "./leads.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
-
-function digest(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
 
 async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
   if (!scopeAdmits(recordScope(actor, "lead", "assign"), to)) throw new AccessError("accessDenied");
@@ -160,7 +156,7 @@ export async function previewDistribution(
       agents: agents.map((a) => ({ ...a })),
       excludePreviousOwner: request.excludePreviousOwner,
     };
-    const fingerprint = digest({ actorId: current.userId, snapshot, request: storedRequest });
+    const fingerprint = requestHash({ actorId: current.userId, snapshot, request: storedRequest });
     const preview = await tx.distributionPreview.create({
       data: { actorId: current.userId, fingerprint, request: storedRequest, snapshot },
     });
@@ -208,62 +204,71 @@ export async function submitDistribution(
 ): Promise<DistributionResult> {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
-    const prior = await tx.distribution.findUnique({
-      where: { actorId_key: { actorId: current.userId, key: input.key } },
-    });
-    if (prior) {
-      if (
-        prior.requestHash !== digest({ fingerprint: input.fingerprint, previewId: input.previewId })
-      )
-        throw new AccessError("idempotencyConflict");
-      return { items: storedItems(prior.result), changed: true };
-    }
-    if (!scopeHasRecords(recordScope(current, "lead", "assign")))
-      throw new AccessError("accessDenied");
-    const preview = await tx.distributionPreview.findUnique({ where: { id: input.previewId } });
-    if (preview?.actorId !== current.userId || preview.fingerprint !== input.fingerprint)
-      throw new AccessError("stalePreview");
-    const request = preview.request;
-    if (
-      typeof request !== "object" ||
-      request === null ||
-      Array.isArray(request) ||
-      !Array.isArray(request.agents) ||
-      typeof request.excludePreviousOwner !== "boolean"
-    )
-      throw new InvariantError("Invalid preview request");
-    const snapshot = preview.snapshot;
-    if (!Array.isArray(snapshot)) throw new InvariantError("Invalid preview snapshot");
-    const leads: DistributionLead[] = [];
-    for (const entry of snapshot) {
-      if (
-        typeof entry !== "object" ||
-        entry === null ||
-        Array.isArray(entry) ||
-        typeof entry.id !== "string" ||
-        typeof entry.version !== "number"
-      )
-        throw new InvariantError("Invalid preview lead");
-      const id = LeadId.parse(entry.id);
-      if (!id) throw new InvariantError("Invalid preview lead ID");
-      const row = await scopedLead(tx, current, id, "assign");
-      if (row.version !== entry.version || row.status !== "new")
-        throw new AccessError("stalePreview");
-      leads.push({ id, version: row.version, lifecycle: lifecycleFromRow(row) });
-    }
-    const agents = request.agents.map(storedAgent);
-    for (const to of agents) await agentFor(tx, current, to);
-    const plan = planDistribution(leads, agents, request.excludePreviousOwner);
-    if (!plan.ok) throw new AccessError(plan.error);
-    for (const item of plan.value) await applyAssignment(tx, current, item, "pool");
-    await tx.distribution.create({
-      data: {
-        actorId: current.userId,
+    return idempotent(
+      tx,
+      current,
+      {
         key: input.key,
-        requestHash: digest({ fingerprint: input.fingerprint, previewId: input.previewId }),
-        result: plan.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
+        operation: "distribution.submit",
+        request: { fingerprint: input.fingerprint, previewId: input.previewId },
       },
-    });
-    return { items: plan.value, changed: true };
+      storedResult,
+      async () => {
+        if (!scopeHasRecords(recordScope(current, "lead", "assign")))
+          throw new AccessError("accessDenied");
+        const preview = await tx.distributionPreview.findUnique({ where: { id: input.previewId } });
+        if (preview?.actorId !== current.userId || preview.fingerprint !== input.fingerprint)
+          throw new AccessError("stalePreview");
+        const request = preview.request;
+        if (
+          typeof request !== "object" ||
+          request === null ||
+          Array.isArray(request) ||
+          !Array.isArray(request.agents) ||
+          typeof request.excludePreviousOwner !== "boolean"
+        )
+          throw new InvariantError("Invalid preview request");
+        const snapshot = preview.snapshot;
+        if (!Array.isArray(snapshot)) throw new InvariantError("Invalid preview snapshot");
+        const leads: DistributionLead[] = [];
+        for (const entry of snapshot) {
+          if (
+            typeof entry !== "object" ||
+            entry === null ||
+            Array.isArray(entry) ||
+            typeof entry.id !== "string" ||
+            typeof entry.version !== "number"
+          )
+            throw new InvariantError("Invalid preview lead");
+          const id = LeadId.parse(entry.id);
+          if (!id) throw new InvariantError("Invalid preview lead ID");
+          const row = await scopedLead(tx, current, id, "assign");
+          if (row.version !== entry.version || row.status !== "new")
+            throw new AccessError("stalePreview");
+          leads.push({ id, version: row.version, lifecycle: lifecycleFromRow(row) });
+        }
+        const agents = request.agents.map(storedAgent);
+        for (const to of agents) await agentFor(tx, current, to);
+        const plan = planDistribution(leads, agents, request.excludePreviousOwner);
+        if (!plan.ok) throw new AccessError(plan.error);
+        for (const item of plan.value) await applyAssignment(tx, current, item, "pool");
+        return {
+          items: plan.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
+          changed: true,
+        };
+      },
+    );
   });
+}
+
+function storedResult(value: unknown): DistributionResult {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("items" in value) ||
+    !("changed" in value) ||
+    typeof value.changed !== "boolean"
+  )
+    throw new InvariantError("Invalid distribution result");
+  return { items: storedItems(value.items), changed: value.changed };
 }

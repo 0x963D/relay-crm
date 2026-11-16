@@ -53,7 +53,7 @@ async function world(db: TestDatabase, role: Role = "manager") {
 
 async function auditCount(db: TestDatabase) {
   return db.rows(
-    "SELECT (SELECT count(*)::int FROM activities WHERE kind='assignment') AS activities, (SELECT count(*)::int FROM audit_log) AS audit, (SELECT count(*)::int FROM distributions) AS distributions",
+    "SELECT (SELECT count(*)::int FROM activities WHERE kind='assignment') AS activities, (SELECT count(*)::int FROM audit_log) AS audit, (SELECT count(*)::int FROM idempotency_records WHERE operation='distribution.submit') AS distributions",
   );
 }
 

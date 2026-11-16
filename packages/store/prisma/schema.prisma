@@ -304,16 +304,17 @@ model DistributionPreview {
   @@map("distribution_previews")
 }
 
-model Distribution {
-  requestHash String? @map("request_hash")
-  id        String   @id @default(uuid(7)) @db.Uuid
-  actorId   String   @map("actor_id") @db.Uuid
-  key       String
-  result    Json
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+model IdempotencyRecord {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  scope       String
+  key         String
+  operation   String
+  requestHash String?  @map("request_hash")
+  result      Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  @@unique([actorId, key])
-  @@map("distributions")
+  @@unique([scope, key])
+  @@map("idempotency_records")
 }
 
 enum SystemActor {

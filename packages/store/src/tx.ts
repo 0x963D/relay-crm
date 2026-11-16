@@ -30,7 +30,7 @@ const UNIQUE_VIOLATION = "23505";
  */
 export const RACE_CONSTRAINTS: readonly string[] = [
   "leads_email_key",
-  "distributions_actor_id_key_key",
+  "idempotency_records_scope_key_key",
   "auth_request_limits_pkey",
   "intake_events_source_external_id_key",
 ];
