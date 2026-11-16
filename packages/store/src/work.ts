@@ -15,6 +15,7 @@ import {
   type LeadLifecycle,
   type LeadWork,
   type JsonValue,
+  type IntakeSource,
   type QueueGroup,
   type UserId,
 } from "@relay/domain";
@@ -266,7 +267,10 @@ function attemptSummary(activities: readonly Activity[]) {
 }
 
 function queueItem(
-  row: Lead & { activities: Activity[]; intakeEvents: { campaign: string | null }[] },
+  row: Lead & {
+    activities: Activity[];
+    intakeEvents: { source: IntakeSource; campaign: string | null }[];
+  },
 ) {
   const assignment = row.activities.find((activity) => activity.kind === "assignment");
   const currentActivities = row.activities.filter(
@@ -277,7 +281,9 @@ function queueItem(
     (activity) => activity.kind === "note" || activity.kind === "attempt",
   );
   return {
-    ...leadFromRow(row),
+    ...leadFromRow(row, row.intakeEvents[0]?.source),
+    assignedAt: assignment?.at ?? row.firstAssignedAt,
+    assignmentSequence: assignment?.sequence ?? 0n,
     campaign: row.intakeEvents[0]?.campaign ?? null,
     callbackAt: row.callBackAt,
     noAnswerCount: row.workHistoryKnown ? attemptSummary(row.activities).noAnswerCount : null,
@@ -332,19 +338,12 @@ export async function workQueue(
       )
         nextCallbackAt = item.callbackAt;
     }
-    groups.notYetCalled.sort((a, b) => {
-      const assignmentAt = (item: typeof a) =>
-        rows
-          .find((row) => row.id === item.id)
-          ?.activities.find((activity) => activity.kind === "assignment");
-      const left = assignmentAt(a);
-      const right = assignmentAt(b);
-      return (
-        (right?.at.getTime() ?? b.lifecycle.firstAssignedAt?.getTime() ?? 0) -
-          (left?.at.getTime() ?? a.lifecycle.firstAssignedAt?.getTime() ?? 0) ||
-        (left && right ? Number(right.sequence - left.sequence) : b.id.localeCompare(a.id))
-      );
-    });
+    groups.notYetCalled.sort(
+      (a, b) =>
+        (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0) ||
+        Number(b.assignmentSequence - a.assignmentSequence) ||
+        b.id.localeCompare(a.id),
+    );
     return {
       noCallbackSet: groups.noCallbackSet.slice(0, input.limit),
       later: groups.later.slice(0, input.limit),
@@ -403,7 +402,7 @@ export async function leadDetail(db: Db, actor: Actor, id: LeadId) {
       }),
     );
     return {
-      ...leadFromRow(row),
+      ...leadFromRow(row, origin?.source),
       contactedAt: row.workHistoryKnown ? row.contactedAt : null,
       lostNote: row.lostNote,
       workHistoryKnown: row.workHistoryKnown,

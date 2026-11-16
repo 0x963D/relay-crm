@@ -78,6 +78,7 @@ describe("a new person", () => {
         lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
         createdAt: RECEIVED,
         origin: { source: "webForm", campaign: "spring" },
+        source: "webForm",
       },
     ]);
     expect(await ledger(db)).toEqual([

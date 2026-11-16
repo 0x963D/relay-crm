@@ -50,6 +50,7 @@ export interface Lead {
   readonly email: EmailAddress;
   readonly name: string | null;
   readonly phone: string | null;
+  readonly source: IntakeSource | null;
   readonly lifecycle: LeadLifecycle;
   readonly createdAt: Date;
 }

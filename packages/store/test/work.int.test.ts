@@ -562,3 +562,26 @@ test("timeline attempts carry dated callbacks, entry counts and object snapshots
     { before: "object", after: "object" },
   ]);
 });
+
+test("queue rows return intake source and the current assignment time", async ({ db }) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  await db.store.reassignLead(
+    w.manager,
+    id,
+    { ownerId: w.other.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  const detail = await db.store.getLead(w.other, id);
+  const queue = await db.store.workQueue(w.other, {
+    agentId: w.other.userId,
+    at: AT,
+    timeZone: "UTC",
+    limit: 100,
+  });
+  expect(queue.notYetCalled[0]).toMatchObject({
+    id,
+    source: "webForm",
+    assignedAt: detail.custody.heldBy?.since,
+  });
+});

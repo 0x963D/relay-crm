@@ -42,7 +42,10 @@ export async function listLeads(
         },
       },
     });
-    return rows.map((row) => ({ ...leadFromRow(row), origin: row.intakeEvents[0] ?? null }));
+    return rows.map((row) => ({
+      ...leadFromRow(row, row.intakeEvents[0]?.source),
+      origin: row.intakeEvents[0] ?? null,
+    }));
   });
 }
 
@@ -135,7 +138,7 @@ export async function queueLeadRows(tx: Tx, actor: Actor, agentId: UserId) {
       intakeEvents: {
         where: { outcome: "leadCreated" },
         orderBy: { id: "asc" },
-        select: { campaign: true },
+        select: { source: true, campaign: true },
         take: 1,
       },
     },

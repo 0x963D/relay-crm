@@ -215,12 +215,13 @@ export function lifecycleFromRow(row: LifecycleColumns): LeadLifecycle {
   };
 }
 
-export function leadFromRow(row: LeadRow): Lead {
+export function leadFromRow(row: LeadRow, source: IntakeSource | null = null): Lead {
   return {
     id: branded(LeadId, row.id, "id"),
     email: emailAddress(row.email),
     name: row.name,
     phone: row.phone,
+    source,
     lifecycle: lifecycleFromRow(row),
     createdAt: row.createdAt,
   };
