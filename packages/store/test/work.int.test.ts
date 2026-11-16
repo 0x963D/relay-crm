@@ -609,3 +609,25 @@ test("wrong number requires an attempt in the current assignment", async ({ db }
   await w.work(w.other, id, noAnswer);
   await expect(w.work(w.other, id, dead)).resolves.toMatchObject({ id });
 });
+
+test("clearing an unset callback refuses without writing history", async ({ db }) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  for (const attempted of [false, true]) {
+    if (attempted) await w.work(w.agent, id, noAnswer);
+    const counts = await db.counts();
+    await expect(
+      w.work(w.agent, id, { kind: "callback", change: { kind: "clear" } }),
+    ).rejects.toMatchObject({
+      code: "callbackNotSet",
+      message: "This lead has no callback to clear.",
+    });
+    expect(await db.counts()).toEqual(counts);
+  }
+  await w.work(w.agent, id, { kind: "callback", change: { kind: "set", at: FUTURE } });
+  await w.work(w.agent, id, {
+    ...noAnswer,
+    attempt: { ...noAnswer.attempt, callback: { kind: "clear" } },
+  });
+  expect((await db.store.getLead(w.agent, id)).noAnswerCount).toBe(2);
+});

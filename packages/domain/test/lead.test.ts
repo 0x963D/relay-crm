@@ -35,7 +35,7 @@ const MATRIX: Readonly<
     returnToPool: no,
     logContact: no,
     scheduleCallBack: no,
-    clearCallBack: no,
+    clearCallBack: "new",
     logNoAnswer: no,
     win: no,
     lose: no,
@@ -47,7 +47,7 @@ const MATRIX: Readonly<
     returnToPool: "new",
     logContact: "working",
     scheduleCallBack: "working",
-    clearCallBack: no,
+    clearCallBack: "assigned",
     logNoAnswer: "working",
     win: no,
     lose: no,
@@ -105,8 +105,13 @@ const MATRIX: Readonly<
 };
 
 const REFUSALS = [
+  "new + clearCallBack: callbackNotSet",
   "new + markDead(wrongNumber): wrongNumberNeedsAnAttempt",
+  "assigned + clearCallBack: callbackNotSet",
   "assigned + markDead(wrongNumber): wrongNumberNeedsAnAttempt",
+  "working(ready) + clearCallBack: callbackNotSet",
+  "working(contacted) + clearCallBack: callbackNotSet",
+  "working(noAnswer) + clearCallBack: callbackNotSet",
 ];
 
 const CASES = ALL_STATES.flatMap((state) =>

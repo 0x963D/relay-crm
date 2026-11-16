@@ -32,6 +32,7 @@ export interface DistributionLead {
 export const ACCESS_FAILURES = [
   "leadClosed",
   "callbackInPast",
+  "callbackNotSet",
   "wrongNumberNeedsAnAttempt",
   "invalidTransition",
   "pendingPayment",

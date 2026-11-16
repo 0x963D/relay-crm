@@ -67,7 +67,7 @@ export type LeadEvent =
 export type LeadEventType = LeadEvent["type"];
 export type EventOf<E extends LeadEventType> = Extract<LeadEvent, { type: E }>;
 
-export type TransitionRefusal = "wrongNumberNeedsAnAttempt" | "callBackInPast";
+export type TransitionRefusal = "wrongNumberNeedsAnAttempt" | "callBackInPast" | "callbackNotSet";
 
 /**
  * `illegal`: the status never takes this event. `refused`: the status takes it, but the details of
@@ -114,7 +114,7 @@ const RULES: Rules = {
     returnToPool: illegal,
     logContact: illegal,
     scheduleCallBack: illegal,
-    clearCallBack: illegal,
+    clearCallBack: () => err("callbackNotSet"),
     logNoAnswer: illegal,
     win: illegal,
     lose: illegal,
@@ -129,7 +129,7 @@ const RULES: Rules = {
     returnToPool: toPool,
     logContact: (from) => work(from.assignee, { kind: "contacted" }),
     scheduleCallBack: (from, event, at) => callBack(from.assignee, event.at, at),
-    clearCallBack: illegal,
+    clearCallBack: () => err("callbackNotSet"),
     logNoAnswer: (from) => work(from.assignee, { kind: "noAnswer", count: 1 }),
     win: illegal,
     lose: illegal,
@@ -145,7 +145,9 @@ const RULES: Rules = {
     logContact: (from) => work(from.assignee, { kind: "contacted" }),
     scheduleCallBack: (from, event, at) => callBack(from.assignee, event.at, at),
     clearCallBack: (from) =>
-      from.stage.kind === "callBack" ? work(from.assignee, { kind: "ready" }) : ok(from),
+      from.stage.kind === "callBack"
+        ? work(from.assignee, { kind: "ready" })
+        : err("callbackNotSet"),
     logNoAnswer: (from) =>
       work(from.assignee, {
         kind: "noAnswer",

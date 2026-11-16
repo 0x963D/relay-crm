@@ -9,6 +9,7 @@ export class AccessError extends Error {
       leadClosed: "This lead is closed. Refresh to see its history.",
       wrongNumberNeedsAnAttempt:
         "Try contacting this lead in its current assignment before marking it as a wrong number.",
+      callbackNotSet: "This lead has no callback to clear.",
       callbackInPast: "Choose a callback time in the future.",
       invalidTransition: "Work this lead before closing it as won or lost.",
       pendingPayment: "This account already has a payment in progress.",

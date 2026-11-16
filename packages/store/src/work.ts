@@ -76,9 +76,7 @@ function nextState(before: LeadLifecycle, event: LeadEvent, at: Date): LeadLifec
 function callback(before: LeadLifecycle, change: CallbackChange, at: Date): LeadLifecycle {
   if (change.kind === "set")
     return nextState(before, { type: "scheduleCallBack", at: change.at }, at);
-  return before.state.status === "working"
-    ? nextState(before, { type: "clearCallBack" }, at)
-    : before;
+  return nextState(before, { type: "clearCallBack" }, at);
 }
 
 function callbackJson(change: CallbackChange): Prisma.InputJsonObject & Record<string, JsonValue> {
@@ -140,13 +138,16 @@ export async function workLead(
             next = callback(before, work.change, at);
             break;
           case "attempt":
+            if (work.attempt.callback?.kind === "clear")
+              callback(before, work.attempt.callback, at);
             next = nextState(
               before,
               { type: work.attempt.outcome === "spokeToThem" ? "logContact" : "logNoAnswer" },
               at,
             );
             if (work.attempt.outcome === "spokeToThem") contactedAt ??= at;
-            if (work.attempt.callback) next = callback(next, work.attempt.callback, at);
+            if (work.attempt.callback?.kind === "set")
+              next = callback(next, work.attempt.callback, at);
             break;
           case "close": {
             const closing = work.closing;
