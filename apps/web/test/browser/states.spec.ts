@@ -165,6 +165,17 @@ test("failed saves keep the draft and distinguish server and connection failures
   await expect(page.getByLabel("Note", { exact: true })).toHaveValue(
     "Keep this draft after a refusal.",
   );
+  await page.unrouteAll();
+  await page.route(/\/api\/trpc\/.*leads\.logAttempt/, (route) =>
+    route.fulfill({ status: 503, contentType: "text/html", body: "Service unavailable" }),
+  );
+  await page.getByRole("button", { name: "Save attempt", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /This was not saved/ })).toContainText(
+    "The server could not complete the request",
+  );
+  await expect(page.getByRole("alert").filter({ hasText: /This was not saved/ })).not.toContainText(
+    "connection",
+  );
 });
 
 test("a failed paged read keeps the pool and names the failed read", async ({ page }) => {

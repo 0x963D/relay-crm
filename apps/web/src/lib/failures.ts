@@ -43,6 +43,7 @@ export function failureMessage(error: unknown, operation: "read" | "save" = "sav
   const code = failureCode(error);
   if (code) return failureMessages[code];
   const action = operation === "read" ? "loaded" : "saved";
+  const serverFailure = `The server could not complete the request. This was not ${action}. Try again in a moment.`;
   if (typeof error === "object" && error !== null && "data" in error && error.data) {
     const data = error.data;
     if (typeof data === "object" && "code" in data && data.code === "UNAUTHORIZED")
@@ -54,7 +55,17 @@ export function failureMessage(error: unknown, operation: "read" | "save" = "sav
       !("code" in data)
     )
       return error.message;
-    return `The server could not complete the request. This was not ${action}. Try again in a moment.`;
+    return serverFailure;
+  }
+  if (typeof error === "object" && error !== null && "meta" in error) {
+    const meta = error.meta;
+    if (
+      typeof meta === "object" &&
+      meta !== null &&
+      "response" in meta &&
+      meta.response instanceof Response
+    )
+      return serverFailure;
   }
   return `This was not ${action}. The server could not be reached. Check your connection and try again.`;
 }

@@ -41,6 +41,11 @@ describe("screen boundaries", () => {
     );
     expect(failureMessage({ data: { code: "INTERNAL_SERVER_ERROR" } })).not.toContain("connection");
     expect(failureMessage(new TypeError("Failed to fetch"), "read")).toContain("connection");
+    const unavailable = {
+      meta: { response: new Response("Service unavailable", { status: 503 }) },
+    };
+    expect(failureMessage(unavailable, "read")).toContain("The server could not complete");
+    expect(failureMessage(unavailable, "save")).not.toContain("connection");
   });
 });
 
