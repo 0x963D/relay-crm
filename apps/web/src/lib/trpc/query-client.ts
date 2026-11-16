@@ -3,7 +3,7 @@ import superjson from "superjson";
 export function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
-      queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+      queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: true },
       mutations: { networkMode: "always", retry: false },
       dehydrate: {
         serializeData: superjson.serialize,

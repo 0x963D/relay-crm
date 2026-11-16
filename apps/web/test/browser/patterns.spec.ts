@@ -3,6 +3,36 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("returning to a tab refreshes its open lead and list", async ({ page }) => {
+  await signIn(page, "agent");
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
+  const id = page.url().split("/").at(-1);
+  if (!id) throw new Error("Missing lead ID");
+  const other = await page.context().newPage();
+  try {
+    await other.goto(page.url());
+    await other.bringToFront();
+    await rpc(other).leads.addNote.mutate({
+      id,
+      key: randomUUID(),
+      note: "Updated in another tab.",
+    });
+    await page.clock.install();
+    await page.clock.fastForward(31_000);
+    await page.bringToFront();
+    await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.getByRole("list", { name: "Lead history", exact: true })).toContainText(
+      "Updated in another tab.",
+    );
+    await expect(page.getByRole("region", { name: "Work queue", exact: true })).toContainText(
+      "Updated in another tab.",
+    );
+  } finally {
+    await other.close();
+  }
+});
+
 test("saving a note refreshes its record and queue without refreshing agent counts", async ({
   page,
 }) => {
