@@ -549,9 +549,14 @@ A paid report after `expired` or `failed` moves the payment to `needsReview` wit
 That is the only exit from either closed state. `completed` has no exit.
 
 `payments.closeCheckout` lets an account editor close a waiting checkout as `failed` with a written
-reason. It then cancels the provider checkout. If the provider reports that it was already paid, the same request moves it to review.
+reason. When sandbox payments are enabled it then cancels the provider checkout.
+When they are disabled it records that the provider was not asked. Reconciliation resumes when
+they return. If the provider reports that it was already paid, the same request moves it to review.
 A paid report from either a late webhook or the reconciler also moves a closed payment to review.
-The reconciler watches closed card payments until the provider reports a final state. Unknown provider checkouts fail with `the checkout was never created at the provider`.
+The reconciler watches closed card payments until the provider reports a final state.
+An active creation request has a token and a 30-second deadline. Only its owner can finish it.
+Reconciliation waits for creation to finish or its deadline to pass, even when the first check delay is zero.
+The provider refuses creation after the payment leaves `checkoutCreated`. Unknown provider checkouts fail with `the checkout was never created at the provider`.
 Checkouts expire after `RELAY_CHECKOUT_TTL_MS`, default 86400000 milliseconds.
 Run `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
 for expiry, missing checkouts and staff closure.
@@ -605,7 +610,7 @@ Reusing the original request key replays its stored result.
 
 `payments.approve` takes `id`, the displayed terms `version` and the signed-in person's
 `roleVersion` from `payments.get`. Two different accountants, managers, admins or owners must
-approve. Neither the recorder nor the person who last edited the terms may approve. The second
+approve. Neither the recorder nor anyone who edited the terms may approve. The second
 approval calls settlement inside its approval transaction. Manual settlement debits
 "Bank transfers and cash" and credits the customer. There is no posting before the second approval.
 
@@ -617,17 +622,17 @@ requires two current approvals from people other than the makers at completion. 
 unique ignoring case. The email migration refuses existing case-insensitive duplicates.
 
 `payments.editManual` accepts money, receipt hash and reference while the payment waits. The
-account is immutable. The edit checks the displayed version, stores the last editor, increments
+account is immutable. The edit checks the displayed version, adds the editor to the append-only maker set, increments
 the version and voids every active approval in the same transaction. Earlier approvals therefore
 cannot approve the new terms. Editing and approval serialize on the payment. A request whose
 terms version became stale must refresh. The maker migration recovers earlier editors from payment
 events and refuses edited records whose editor history is missing.
 
-`payments.get` and `payments.list` include the recorder, last editor ID, approval history and the
+`payments.get` and `payments.list` include the recorder, approval history and the
 signed-in person's actions. Typed errors include `pendingPayment`, `receiptUsed`, `paymentRecorder`,
 `paymentMaker`, `alreadyApproved`, `roleChanged` and `refreshConflict`.
 `payments.reject` and `payments.cancel` take `id`, `version` and a nonempty written `reason`.
-Only the recorder may cancel. Only someone with approval access who is neither maker may reject.
+Only the recorder may cancel. Only someone with approval access who is not a maker may reject.
 Both decisions are final and credit nothing. Events and audits retain the actor, reason and request ID.
 
 Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts packages/store/test/payment-guards.int.test.ts`
@@ -649,8 +654,8 @@ An unexpired lease prevents another lease or a requeue. Sending happens outside 
 The worker aborts each send within `RELAY_RECEIPT_SEND_TIMEOUT_MS`, default 30000 milliseconds,
 including time spent preparing its attempt. `RELAY_RECEIPT_LEASE_MS` defaults to 60000 milliseconds.
 Settings refuse a send timeout that is not shorter than the lease. The SMTP transport closes its
-connection on abort. This lease and timeout exclude simultaneous sends even if the worker's
-database session disappears. There is no session advisory lock.
+connection on abort. The database clock sets and checks every lease expiry. The lease and timeout exclude simultaneous
+sends through the shipped SMTP adapter even if the worker's database session disappears. There is no session advisory lock.
 
 Delivery is at most once per attempt. A crash after leasing but before recording an attempt leaves
 a pending row that becomes eligible after lease expiry. A crash between recording the attempt and
@@ -691,3 +696,15 @@ API in demo mode. Its `LIVE_MANUAL` output records an editor's refused approval,
 other people, a card checkout refused while a manual payment waits, a refused SMTP connection,
 delivery after the receiver restarts, suppression, unknown delivery and a lifetime-cap refusal.
 The retry test checks the stored delay, then makes only its fixture row due to avoid waiting.
+
+### Known limits
+
+Someone holding the app's database credentials can complete a card payment directly in SQL with a valid posting, because the database checks the posting's shape and not the provider's evidence.
+
+A delivery adapter that ignores its abort signal can still be sending after its timeout, and a requeue can then start a second send. The shipped SMTP adapter closes its connection on abort.
+
+A receipt whose preparation outlasts the send timeout is marked `unknown` without being sent, and needs a person to requeue it.
+
+A provider report of pending, failed or expired with a different amount also enters review as a mismatch.
+
+Someone holding the app's database credentials can add makers or attribute a SQL edit to another person, but cannot remove existing makers.

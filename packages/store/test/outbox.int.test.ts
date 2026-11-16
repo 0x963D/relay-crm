@@ -415,3 +415,60 @@ test("a worker clock two minutes behind cannot overlap a requeued send", async (
   }
   expect(maximum).toBe(1);
 });
+
+test("an adapter ignoring abort can overlap a manually requeued send", async ({ db }) => {
+  const w = await receipt(db);
+  const release = latch();
+  let active = 0;
+  let maximum = 0;
+  const first = db.store.runOutbox(
+    async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await release.promise;
+      active--;
+      return { state: "sent" };
+    },
+    { leaseMs: 1000, sendTimeoutMs: 200 },
+  );
+  try {
+    expect(await first).toEqual([{ id: w.outboxId, state: "unknown" }]);
+    await db.store.requeueReceipt(w.actor, w.id, requestId);
+    await db.store.runOutbox(() => {
+      active++;
+      maximum = Math.max(maximum, active);
+      active--;
+      return Promise.resolve({ state: "sent" });
+    });
+    expect(maximum).toBe(2);
+  } finally {
+    release.resolve();
+    await first;
+  }
+});
+
+test("preparation beyond the send deadline leaves an unsent unknown receipt for manual requeue", async ({
+  db,
+}) => {
+  const w = await receipt(db);
+  let sends = 0;
+  await db.gate.close("outbox");
+  const worker = db.store.runOutbox(
+    () => {
+      sends++;
+      return Promise.resolve({ state: "sent" });
+    },
+    { leaseMs: 5000, sendTimeoutMs: 100 },
+  );
+  try {
+    await db.gate.waitForWaiters(1);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  } finally {
+    await db.gate.open();
+  }
+  expect(await worker).toEqual([{ id: w.outboxId, state: "unknown" }]);
+  expect(sends).toBe(0);
+  const detail = await db.store.getPayment(w.actor, w.id);
+  expect(detail.receipt?.nextAttemptAt).toBeNull();
+  expect(detail.actions.requeueReceipt).toBe(true);
+});

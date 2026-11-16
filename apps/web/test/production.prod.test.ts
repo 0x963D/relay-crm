@@ -782,6 +782,97 @@ databaseTest(
               true,
             ),
           );
+      const dropped = await checkout("paid-while-provider-disabled");
+      expect(
+        (
+          await fetch(dropped.checkout.url, {
+            method: "POST",
+            headers: { origin },
+            redirect: "manual",
+          })
+        ).status,
+      ).toBe(303);
+      const disabled = await serve(
+        (disabledOrigin) => ({
+          AUTH_URL: disabledOrigin,
+          AUTH_SECRET: "fake-production-payment-auth-secret-for-tests",
+          SMTP_URL: inbox.url,
+          SMTP_FROM: "relay@sender.example",
+          RELAY_DEMO: "1",
+        }),
+        db.connectionString,
+      );
+      try {
+        const response = await fetch(disabled.url("/api/trpc/payments.closeCheckout"), {
+          method: "POST",
+          headers: {
+            origin: new URL(disabled.url("/")).origin,
+            "content-type": "application/json",
+            cookie: agent,
+          },
+          body: JSON.stringify({ json: { id: dropped.paymentId, reason: "Customer says unpaid" } }),
+        });
+        expect(response.status, await response.text()).toBe(200);
+      } finally {
+        await disabled.stop();
+      }
+      const beforeRecovery = Detail.parse(
+        await rpc("payments.get", { id: dropped.paymentId }, accountant),
+      );
+      expect(beforeRecovery.state.status).toBe("failed");
+      expect(beforeRecovery.events.at(-1)?.detail).toMatchObject({ providerAsked: false });
+      expect(
+        (
+          await fetch(server.url("/api/payments/reconcile"), {
+            method: "POST",
+            headers: { authorization: `Bearer ${reconcileSecret}` },
+          })
+        ).status,
+      ).toBe(200);
+      const recovered = Detail.parse(
+        await rpc("payments.get", { id: dropped.paymentId }, accountant),
+      );
+      expect(recovered.state).toEqual({ status: "needsReview", reason: "paid after close" });
+      expect(recovered.posting).toBeNull();
+      process.stdout.write(
+        `LIVE_RECOVERY ${JSON.stringify({ before: beforeRecovery.state, after: recovered.state, posting: recovered.posting })}\n`,
+      );
+      const alreadyPaid = await checkout("paid-before-staff-close");
+      expect(
+        (
+          await fetch(alreadyPaid.checkout.url, {
+            method: "POST",
+            headers: { origin },
+            redirect: "manual",
+          })
+        ).status,
+      ).toBe(303);
+      const sameRequest = z
+        .object({
+          state: z.object({
+            status: z.literal("needsReview"),
+            reason: z.literal("paid after close"),
+          }),
+          message: z.string(),
+        })
+        .parse(
+          await rpc(
+            "payments.closeCheckout",
+            { id: alreadyPaid.paymentId, reason: "Customer says unpaid" },
+            agent,
+            true,
+          ),
+        );
+      expect(sameRequest.message).toBe(
+        "The checkout was already paid. The payment needs review; nothing was credited.",
+      );
+      expect(
+        Detail.parse(await rpc("payments.get", { id: alreadyPaid.paymentId }, accountant)).posting,
+      ).toBeNull();
+      expect(
+        Ledger.parse(await rpc("accounts.ledger", { id: accountId }, accountant)).balances,
+      ).toEqual([{ currency: "GBP", balance: expectedBalance }]);
+      process.stdout.write(`LIVE_CLOSE ${JSON.stringify(sameRequest)}\n`);
       const closed = await checkout("expired-before-paid");
       const report = async (status: "expired" | "completed") => {
         const body = new TextEncoder().encode(
@@ -987,15 +1078,33 @@ databaseTest(
         editor,
         true,
       );
+      await rpc(
+        "payments.editManual",
+        {
+          id: manualId,
+          version: 1,
+          amount: "4800000",
+          currency: "GBP",
+          receiptHash: "a".repeat(64),
+          reference: "Reference corrected by recorder",
+        },
+        manager,
+        true,
+      );
       const editorApproval = await post(
         "/api/trpc/payments.approve",
-        { json: { id: manualId, version: 1, roleVersion: 0 } },
+        { json: { id: manualId, version: 2, roleVersion: 0 } },
         editor,
       );
       expect(editorApproval.status).toBe(400);
       const editorRefusal: unknown = await editorApproval.json();
       expect(editorRefusal).toMatchObject({
-        error: { json: { data: { accessFailure: "paymentMaker" } } },
+        error: {
+          json: {
+            message: "You edited this payment and cannot approve it.",
+            data: { accessFailure: "paymentMaker" },
+          },
+        },
       });
       log("editor-approval-refused", editorRefusal);
       await approve(manualId, accountant);

@@ -12,7 +12,7 @@ export class AccessError extends Error {
       pendingPayment: "This account already has a payment in progress.",
       receiptAttemptLimit: "This receipt has reached its lifetime attempt limit.",
       receiptUsed: "This receipt was already used for a payment.",
-      paymentMaker: "You last edited this payment and cannot approve it.",
+      paymentMaker: "You edited this payment and cannot approve it.",
       paymentRecorder: "You recorded this payment and cannot approve it.",
       alreadyApproved: "You already approved this payment.",
       roleChanged: "Your role changed. Refresh before deciding on this payment.",

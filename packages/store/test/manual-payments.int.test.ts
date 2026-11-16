@@ -492,6 +492,7 @@ test.for(["Changed reference", "Transfer reference"])(
     const input = { ...w.input, version: 2 };
     await expect(db.store.approveManualPayment(w.b, input, requestId)).rejects.toMatchObject({
       code: "paymentMaker",
+      message: "You edited this payment and cannot approve it.",
     });
     await expect(
       db.store.decideManualPayment(
