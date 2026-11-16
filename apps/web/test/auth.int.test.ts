@@ -394,7 +394,8 @@ test("auth hides a store exception and logs it with the response request ID", as
     const requestId = /"requestId":"([^"]+)"/.exec(body)?.[1];
     if (!requestId) throw new Error("No request ID");
     expect(logged).toHaveBeenCalledWith(expect.stringContaining(requestId));
-    expect(logged).toHaveBeenCalledWith(expect.stringContaining("fake auth database password"));
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('"class":"Error"'));
+    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining("fake auth database password"));
   } finally {
     logged.mockRestore();
   }
