@@ -644,3 +644,40 @@ test("a signed report for a manual payment is refused without recording an inbox
   );
   expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
 });
+
+test("staff close a checkout while payments are disabled and reconciliation resumes when enabled", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const provider = sandboxProvider(db.store, env);
+  const context = { store: db.store, principal: { kind: "development" as const, actor } };
+  const enabled = appRouter.createCaller({ ...context, payments: { provider, firstCheckMs: 0 } });
+  const disabled = appRouter.createCaller(context);
+  const input = {
+    key: "disabled-close",
+    accountId: await db.seedAccount(),
+    amount: "100",
+    currency: "GBP",
+    kind: "first" as const,
+    mode: "drop" as const,
+  };
+  const created = await enabled.payments.createCheckout(input);
+  const token = created.checkout.url?.split("/").at(-1);
+  if (!token) throw new Error("No token");
+  await db.store.paySandboxCheckout(token);
+  const closed = await disabled.payments.closeCheckout({
+    id: created.paymentId,
+    reason: "Customer closed",
+  });
+  expect(closed.state.status).toBe("failed");
+  expect(
+    (await disabled.payments.get({ id: created.paymentId })).events.at(-1)?.detail,
+  ).toMatchObject({ providerAsked: false });
+  await enabled.payments.createCheckout({ ...input, key: "after-disabled-close" });
+  await reconcilePayments(db.store, provider, env.intervalMs);
+  expect((await enabled.payments.get({ id: created.paymentId })).state).toMatchObject({
+    status: "needsReview",
+    reason: "paid after close",
+  });
+  expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
+});

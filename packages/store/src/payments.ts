@@ -238,6 +238,7 @@ export async function recordCheckoutCancellation(
   id: string,
   observed: ProviderPayment | null,
   requestId: string,
+  providerAsked: boolean,
 ) {
   return transact(db, async (tx) => {
     const at = new Date();
@@ -257,7 +258,7 @@ export async function recordCheckoutCancellation(
         at,
         detail: {
           requestId,
-          providerAsked: true,
+          providerAsked,
           providerStatus: observed?.status ?? "unavailable",
         },
       },

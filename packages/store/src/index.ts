@@ -101,8 +101,12 @@ export function openStore(config: {
     createPayment: (actor: Actor, input: CreatePayment, firstCheckMs: number, requestId: string) =>
       createPayment(db, actor, input, firstCheckMs, requestId),
     finishCheckoutCreation: (id: string) => finishCheckoutCreation(db, id),
-    recordCheckoutCancellation: (id: string, observed: ProviderPayment | null, requestId: string) =>
-      recordCheckoutCancellation(db, id, observed, requestId),
+    recordCheckoutCancellation: (
+      id: string,
+      observed: ProviderPayment | null,
+      requestId: string,
+      providerAsked: boolean,
+    ) => recordCheckoutCancellation(db, id, observed, requestId, providerAsked),
     checkoutTerms: (actor: Actor, id: PaymentId) => checkoutTerms(db, actor, id),
     receivePaymentWebhook: (event: ProviderEvent) => receivePaymentWebhook(db, event),
     duePayments: (at: Date, limit: number) => duePayments(db, at, limit),

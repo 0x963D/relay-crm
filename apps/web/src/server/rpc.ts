@@ -214,16 +214,22 @@ export const appRouter = t.router({
           .strict(),
       )
       .mutation(async ({ ctx, input }) => {
-        if (!ctx.payments) throw new TRPCError({ code: "NOT_FOUND" });
         await ctx.store.closePaymentCheckout(ctx.actor, input.id, input.reason, ctx.requestId);
         let observed = null;
         try {
-          await ctx.payments.provider.cancelCheckout(input.id);
-          observed = await ctx.payments.provider.readPayment(input.id);
+          if (ctx.payments) {
+            await ctx.payments.provider.cancelCheckout(input.id);
+            observed = await ctx.payments.provider.readPayment(input.id);
+          }
         } catch {
           /* Reconciliation retries an unavailable provider. */
         }
-        await ctx.store.recordCheckoutCancellation(input.id, observed, ctx.requestId);
+        await ctx.store.recordCheckoutCancellation(
+          input.id,
+          observed,
+          ctx.requestId,
+          Boolean(ctx.payments),
+        );
         const result = await ctx.store.getPayment(ctx.actor, input.id);
         return {
           ...result,
@@ -231,7 +237,9 @@ export const appRouter = t.router({
           message:
             result.state.status === "needsReview"
               ? "The checkout was already paid. The payment needs review; nothing was credited."
-              : "The checkout is closed.",
+              : ctx.payments
+                ? "The checkout is closed."
+                : "The checkout is closed. The provider was not asked because sandbox payments are disabled.",
         };
       }),
     closeReview: authenticated
