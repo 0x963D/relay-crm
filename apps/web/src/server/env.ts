@@ -1,4 +1,10 @@
-import { RECEIPT_LEASE_MS, RECEIPT_SEND_TIMEOUT_MS, ROLES, type Role } from "@relay/domain";
+import {
+  RECEIPT_LIFETIME_ATTEMPTS,
+  RECEIPT_LEASE_MS,
+  RECEIPT_SEND_TIMEOUT_MS,
+  ROLES,
+  type Role,
+} from "@relay/domain";
 import { z } from "zod";
 
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
@@ -10,6 +16,12 @@ const Secret = z
   .refine((value) => value !== EXAMPLE_AUTH_SECRET, "must not use the secret from .env.example");
 
 const Variables = z.object({
+  RELAY_RECEIPT_LIFETIME_ATTEMPTS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(RECEIPT_LIFETIME_ATTEMPTS),
   RELAY_RECEIPT_LEASE_MS: z.coerce.number().int().min(1).max(3600000).default(RECEIPT_LEASE_MS),
   RELAY_RECEIPT_SEND_TIMEOUT_MS: z.coerce
     .number()
@@ -79,7 +91,11 @@ export interface PaymentEnv {
 
 export interface Env {
   readonly demo: boolean;
-  readonly receipts: { readonly leaseMs: number; readonly sendTimeoutMs: number };
+  readonly receipts: {
+    readonly leaseMs: number;
+    readonly lifetimeAttemptLimit: number;
+    readonly sendTimeoutMs: number;
+  };
   readonly outboxSecret: string | null;
   readonly payments: PaymentEnv | null;
   readonly trustedProxyCount: number;
@@ -189,6 +205,7 @@ export function parseEnv(
   return {
     demo: parsed.data.RELAY_DEMO === "1",
     receipts: {
+      lifetimeAttemptLimit: parsed.data.RELAY_RECEIPT_LIFETIME_ATTEMPTS,
       leaseMs: parsed.data.RELAY_RECEIPT_LEASE_MS,
       sendTimeoutMs: parsed.data.RELAY_RECEIPT_SEND_TIMEOUT_MS,
     },

@@ -15,7 +15,7 @@ describe("parseEnv", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
       demo: false,
       outboxSecret: null,
-      receipts: { leaseMs: 60000, sendTimeoutMs: 30000 },
+      receipts: { leaseMs: 60000, sendTimeoutMs: 30000, lifetimeAttemptLimit: 12 },
       payments: null,
       trustedProxyCount: 0,
       auth: null,
@@ -224,4 +224,10 @@ it.each(["60000", "60001"])("refuses receipt send timeout %s at or beyond its le
       RELAY_RECEIPT_SEND_TIMEOUT_MS: timeout,
     }),
   ).toThrow("shorter than");
+});
+
+it.each(["0", "-1", "1.5", "1001"])("refuses invalid lifetime receipt limit %s", (limit) => {
+  expect(() => parseEnv({ DATABASE_URL, RELAY_RECEIPT_LIFETIME_ATTEMPTS: limit })).toThrow(
+    "RELAY_RECEIPT_LIFETIME_ATTEMPTS",
+  );
 });

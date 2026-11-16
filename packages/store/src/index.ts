@@ -71,15 +71,16 @@ export type Store = ReturnType<typeof openStore>;
 
 export function openStore(config: {
   readonly connectionString: string;
-  readonly receipts?: Pick<OutboxOptions, "leaseMs" | "sendTimeoutMs">;
+  readonly receipts?: Pick<OutboxOptions, "leaseMs" | "sendTimeoutMs" | "lifetimeAttemptLimit">;
 }) {
   const db = connect(config.connectionString);
   return {
     runOutbox: (deliver: ReceiptDelivery, options?: OutboxOptions) =>
       runOutbox(db, deliver, { ...config.receipts, ...options }),
-    leaseReceipt: (id: string, at: Date, leaseMs: number) => leaseReceipt(db, id, at, leaseMs),
+    leaseReceipt: (id: string, at: Date, leaseMs: number) =>
+      leaseReceipt(db, id, at, leaseMs, config.receipts?.lifetimeAttemptLimit),
     requeueReceipt: (actor: Actor, id: PaymentId, requestId: string) =>
-      requeueReceipt(db, actor, id, requestId),
+      requeueReceipt(db, actor, id, requestId, config.receipts?.lifetimeAttemptLimit),
     recordManualPayment: (actor: Actor, input: RecordManualPayment, requestId: string) =>
       recordManualPayment(db, actor, input, requestId),
     approveManualPayment: (
@@ -108,8 +109,10 @@ export function openStore(config: {
     closePaymentCheckout: (actor: Actor, id: PaymentId, reason: string, requestId: string) =>
       closePayment(db, actor, id, reason, requestId, "closeCheckout"),
     cancelSandboxCheckout: (id: string) => cancelSandboxCheckout(db, id),
-    getPayment: (actor: Actor, id: PaymentId) => getPayment(db, actor, id),
-    listPayments: (actor: Actor, limit: number) => listPayments(db, actor, limit),
+    getPayment: (actor: Actor, id: PaymentId) =>
+      getPayment(db, actor, id, config.receipts?.lifetimeAttemptLimit),
+    listPayments: (actor: Actor, limit: number) =>
+      listPayments(db, actor, limit, config.receipts?.lifetimeAttemptLimit),
     accountLedger: (actor: Actor, id: AccountId) => accountLedger(db, actor, id),
     createSandboxCheckout: (input: {
       readonly paymentId: string;

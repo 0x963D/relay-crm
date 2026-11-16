@@ -6,6 +6,7 @@ export class AccessError extends Error {
   constructor(code: AccessFailure) {
     const messages: Partial<Record<AccessFailure, string>> = {
       pendingPayment: "This account already has a payment in progress.",
+      receiptAttemptLimit: "This receipt has reached its lifetime attempt limit.",
       receiptUsed: "This receipt was already used for a payment.",
       paymentMaker: "You last edited this payment and cannot approve it.",
       paymentRecorder: "You recorded this payment and cannot approve it.",

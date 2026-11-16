@@ -74,6 +74,7 @@ const authenticated = t.procedure.use(async ({ ctx, next }) => {
             cause.code === "refreshConflict" ||
             cause.code === "pendingPayment" ||
             cause.code === "receiptUsed" ||
+            cause.code === "receiptAttemptLimit" ||
             cause.code === "stalePreview" ||
             cause.code === "idempotencyConflict"
           ? "CONFLICT"

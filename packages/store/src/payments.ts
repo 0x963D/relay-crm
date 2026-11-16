@@ -1,6 +1,7 @@
 import { receiptDetail } from "./outbox.ts";
 import { randomUUID } from "node:crypto";
 import {
+  RECEIPT_LIFETIME_ATTEMPTS,
   AccountId,
   UserId,
   PaymentId,
@@ -562,7 +563,12 @@ async function posting(tx: Tx, id: string) {
     }),
   };
 }
-export async function getPayment(db: Db, actor: Actor, id: PaymentId) {
+export async function getPayment(
+  db: Db,
+  actor: Actor,
+  id: PaymentId,
+  lifetimeAttemptLimit = RECEIPT_LIFETIME_ATTEMPTS,
+) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const row = await scopedPayment(tx, current, id);
@@ -572,13 +578,18 @@ export async function getPayment(db: Db, actor: Actor, id: PaymentId) {
     });
     return {
       ...payment(row),
-      ...(await approvalDetail(tx, current, row)),
+      ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
       events,
       posting: recordScope(current, "ledger", "read").kind === "all" ? await posting(tx, id) : null,
     };
   });
 }
-export async function listPayments(db: Db, actor: Actor, limit: number) {
+export async function listPayments(
+  db: Db,
+  actor: Actor,
+  limit: number,
+  lifetimeAttemptLimit = RECEIPT_LIFETIME_ATTEMPTS,
+) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const accounts = await tx.account.findMany({
@@ -618,7 +629,7 @@ export async function listPayments(db: Db, actor: Actor, limit: number) {
     const items = await Promise.all(
       rows.map(async (row) => ({
         ...payment(row),
-        ...(await approvalDetail(tx, current, row)),
+        ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
         account: accounts.find((a) => a.id === row.accountId)?.lead ?? null,
         recordedBy: users.find((u) => u.id === row.recordedById) ?? null,
         soldBy: users.find((u) => u.id === row.soldById) ?? null,
@@ -968,7 +979,7 @@ export async function editManualPayment(
     return payment(updated);
   });
 }
-async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
+async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemptLimit: number) {
   const recordedBy = await tx.user.findUnique({
     where: { id: row.recordedById },
     select: { id: true, name: true },
@@ -1040,7 +1051,8 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
         mayApprove &&
         receipt !== null &&
         ["failed", "unknown"].includes(receipt.state) &&
-        !receipt.processing,
+        !receipt.processing &&
+        receipt.attempts < lifetimeAttemptLimit,
       approve: row.method === "manual" && refusal === null,
       approvalRefusal: refusal,
       reject: waiting && mayApprove && !maker,

@@ -327,3 +327,32 @@ test("a completed payment cannot lose its receipt by moving it", async ({ db }) 
     db.rows("UPDATE outbox SET payment_id=$1 WHERE id=$2", [other.id, w.outboxId]),
   ).rejects.toMatchObject({ code: "23001" });
 });
+
+test("the configured lifetime cap survives audited requeues", async ({ db }) => {
+  const w = await receipt(db);
+  const store = openStore({
+    connectionString: db.connectionString,
+    receipts: { lifetimeAttemptLimit: 2 },
+  });
+  try {
+    const failed = () => Promise.resolve({ state: "failed" as const, reason: "Fake refusal" });
+    await store.runOutbox(failed, { at });
+    await store.requeueReceipt(w.actor, w.id, requestId);
+    await store.runOutbox(failed, { at });
+    await expect(store.requeueReceipt(w.actor, w.id, requestId)).rejects.toMatchObject({
+      code: "receiptAttemptLimit",
+      message: "This receipt has reached its lifetime attempt limit.",
+    });
+    expect((await store.getPayment(w.actor, w.id)).actions.requeueReceipt).toBe(false);
+    expect(await store.runOutbox(failed, { at: new Date(at.getTime() + 86400000) })).toEqual([]);
+    expect((await store.getPayment(w.actor, w.id)).receipt).toMatchObject({
+      attempts: 2,
+      nextAttemptAt: null,
+    });
+    expect(
+      await db.rows("SELECT count(*)::int AS count FROM audit_log WHERE action='receiptRequeued'"),
+    ).toEqual([{ count: 1 }]);
+  } finally {
+    await store.close();
+  }
+});

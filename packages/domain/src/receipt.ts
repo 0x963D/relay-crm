@@ -23,3 +23,4 @@ export function receiptRetryAt(
 
 export const RECEIPT_LEASE_MS = 60_000;
 export const RECEIPT_SEND_TIMEOUT_MS = 30_000;
+export const RECEIPT_LIFETIME_ATTEMPTS = 12;

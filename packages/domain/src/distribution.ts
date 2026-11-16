@@ -32,6 +32,7 @@ export interface DistributionLead {
 export const ACCESS_FAILURES = [
   "pendingPayment",
   "receiptUsed",
+  "receiptAttemptLimit",
   "paymentRecorder",
   "paymentMaker",
   "alreadyApproved",

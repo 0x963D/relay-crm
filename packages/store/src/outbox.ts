@@ -4,6 +4,7 @@ import {
   recordScope,
   receiptRetryAt,
   RECEIPT_MAX_ATTEMPTS,
+  RECEIPT_LIFETIME_ATTEMPTS,
   RECEIPT_LEASE_MS,
   RECEIPT_SEND_TIMEOUT_MS,
   type Actor,
@@ -24,12 +25,20 @@ export interface OutboxOptions {
   readonly at?: Date;
   readonly leaseMs?: number;
   readonly sendTimeoutMs?: number;
+  readonly lifetimeAttemptLimit?: number;
   readonly limit?: number;
 }
-export async function leaseReceipt(db: Db, id: string, at: Date, leaseMs: number) {
+export async function leaseReceipt(
+  db: Db,
+  id: string,
+  at: Date,
+  leaseMs: number,
+  lifetimeAttemptLimit = RECEIPT_LIFETIME_ATTEMPTS,
+) {
   return transact(db, async (tx) => {
     const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM outbox WHERE id=${id}::uuid
       AND state IN ('pending','failed') AND cycle_attempts < ${RECEIPT_MAX_ATTEMPTS}
+      AND attempts < ${lifetimeAttemptLimit}
       AND next_attempt_at <= ${at} AND (lease_until IS NULL OR lease_until <= ${at})
       FOR UPDATE SKIP LOCKED`;
     if (!rows.length) return null;
@@ -91,6 +100,7 @@ async function finishDelivery(
   attemptId: string,
   outcome: DeliveryOutcome,
   at: Date,
+  lifetimeAttemptLimit: number,
 ) {
   return transact(db, async (tx) => {
     const row = await tx.outbox.findFirst({ where: { id, leaseToken: token } });
@@ -109,13 +119,19 @@ async function finishDelivery(
         state: outcome.state,
         leaseToken: null,
         leaseUntil: null,
-        nextAttemptAt: receiptRetryAt(outcome.state, row.cycleAttempts, at),
+        nextAttemptAt:
+          row.attempts < lifetimeAttemptLimit
+            ? receiptRetryAt(outcome.state, row.cycleAttempts, at)
+            : null,
       },
     });
     return true;
   });
 }
 export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: OutboxOptions = {}) {
+  const lifetimeAttemptLimit = options.lifetimeAttemptLimit ?? RECEIPT_LIFETIME_ATTEMPTS;
+  if (!Number.isSafeInteger(lifetimeAttemptLimit) || lifetimeAttemptLimit < 1)
+    throw new Error("Receipt lifetime attempt limit must be a positive integer.");
   const leaseMs = options.leaseMs ?? RECEIPT_LEASE_MS;
   const sendTimeoutMs = options.sendTimeoutMs ?? RECEIPT_SEND_TIMEOUT_MS;
   if (
@@ -130,6 +146,7 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
     where: {
       state: { in: ["pending", "failed"] },
       cycleAttempts: { lt: RECEIPT_MAX_ATTEMPTS },
+      attempts: { lt: lifetimeAttemptLimit },
       nextAttemptAt: { lte: now() },
       OR: [{ leaseUntil: null }, { leaseUntil: { lte: now() } }],
     },
@@ -145,7 +162,7 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
   for (const { id, paymentId } of candidates) {
     try {
       const deadline = performance.now() + sendTimeoutMs;
-      const lease = await leaseReceipt(db, id, now(), leaseMs);
+      const lease = await leaseReceipt(db, id, now(), leaseMs, lifetimeAttemptLimit);
       if (!lease?.leaseToken) continue;
       const started = await beginDelivery(db, id, lease.leaseToken, now());
       if (!started) continue;
@@ -199,6 +216,7 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
         started.attempt.id,
         outcome,
         now(),
+        lifetimeAttemptLimit,
       );
       results.push({ id, state: recorded ? outcome.state : "superseded" });
     } catch {
@@ -241,7 +259,13 @@ export async function receiptDetail(tx: Tx, paymentId: string) {
     history,
   };
 }
-export async function requeueReceipt(db: Db, actor: Actor, id: PaymentId, requestId: string) {
+export async function requeueReceipt(
+  db: Db,
+  actor: Actor,
+  id: PaymentId,
+  requestId: string,
+  lifetimeAttemptLimit = RECEIPT_LIFETIME_ATTEMPTS,
+) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     if (recordScope(current, "payment", "requeueReceipt").kind !== "all")
@@ -249,6 +273,7 @@ export async function requeueReceipt(db: Db, actor: Actor, id: PaymentId, reques
     const at = new Date();
     const row = await tx.outbox.findUnique({ where: { paymentId: id } });
     if (!row) throw new AccessError("accessDenied");
+    if (row.attempts >= lifetimeAttemptLimit) throw new AccessError("receiptAttemptLimit");
     if (
       !["failed", "unknown"].includes(row.state) ||
       (row.leaseUntil !== null && row.leaseUntil > at)
