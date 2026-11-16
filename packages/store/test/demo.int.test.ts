@@ -6,7 +6,7 @@ import { seedDemo, resetDemo, demoSchedule } from "../src/demo.ts";
 import { DEMO_PEOPLE } from "../src/demo-state.ts";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 
-const today = new Date("2031-07-15T23:30:00Z");
+const today = new Date("2031-07-15T16:30:00Z");
 const options = (db: TestDatabase) => ({
   ownerUrl: db.ownerConnectionString,
   appUrl: db.connectionString,
@@ -201,14 +201,14 @@ test.for([
   ["Asia/Tokyo", "2031-07-14T15:00:00Z"],
   ["America/Los_Angeles", "2031-07-15T07:00:00Z"],
 ])(
-  "demo queue keeps every group throughout the local day in %s",
+  "demo callbacks move to overdue at their local evening hours in %s",
   async ([timeZone, start], { db }) => {
     if (!timeZone || !start) throw new Error("Missing local day fixture");
     const midnight = new Date(start);
     await seedDemo({ ...options(db), today: midnight, timeZone });
     const userId = UserId.parse(DEMO_PEOPLE.agent.id);
     if (!userId) throw new Error("Missing agent");
-    for (const minutes of [1, 720, 1439]) {
+    for (const minutes of [1, 720, 1049, 1050, 1051, 1109, 1110, 1111, 1439]) {
       const queue = await db.store.workQueue(
         { userId, role: "agent", team: null },
         {
@@ -219,8 +219,8 @@ test.for([
         },
       );
       expect(queue.counts).toEqual({
-        overdueCallbacks: 2,
-        dueToday: 2,
+        overdueCallbacks: 2 + (minutes > 1050 ? 1 : 0) + (minutes > 1110 ? 1 : 0),
+        dueToday: 2 - (minutes > 1050 ? 1 : 0) - (minutes > 1110 ? 1 : 0),
         noCallbackSet: 2,
         notYetCalled: 2,
         later: 2,

@@ -223,16 +223,36 @@ async function check() {
   const manager = await signIn("manager");
   const agent = await signIn("agent");
   const accountant = await signIn("accountant");
-  let queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
-  const queueDeadline = performance.now() + 600000;
-  while (
-    Object.values(queue.counts).some((count) => count !== 2) &&
-    performance.now() < queueDeadline
-  ) {
-    await sleep(1000);
-    queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
-  }
-  for (const count of Object.values(queue.counts)) assert.equal(count, 2);
+  const checkQueue = async (cookie: string) => {
+    const queue = z
+      .object({ at: z.date(), timeZone: z.string(), counts: Counts })
+      .parse(await rpc("leads.queue", {}, cookie));
+    const clock = new Intl.DateTimeFormat("en-GB", {
+      timeZone: queue.timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .format(queue.at)
+      .split(":")
+      .map(Number);
+    const seconds =
+      (clock[0] ?? 0) * 3600 +
+      (clock[1] ?? 0) * 60 +
+      (clock[2] ?? 0) +
+      queue.at.getMilliseconds() / 1000;
+    const passed = Number(seconds > 17.5 * 3600) + Number(seconds > 18.5 * 3600);
+    assert.deepEqual(queue.counts, {
+      overdueCallbacks: 2 + passed,
+      dueToday: 2 - passed,
+      noCallbackSet: 2,
+      notYetCalled: 2,
+      later: 2,
+    });
+    return queue;
+  };
+  const queue = await checkQueue(agent.cookie);
   const paymentCounts = z
     .object({ counts: z.record(z.string(), z.number()) })
     .parse(await rpc("payments.list", { limit: 100 }, accountant.cookie)).counts;
@@ -353,10 +373,7 @@ async function check() {
   assert.equal(ended.status, 401);
   const restoredAccountant = await signIn("accountant");
   const restoredAgent = await signIn("agent");
-  const restoredQueue = z
-    .object({ counts: Counts })
-    .parse(await rpc("leads.queue", {}, restoredAgent.cookie));
-  assert.deepEqual(restoredQueue.counts, queue.counts);
+  const restoredQueue = await checkQueue(restoredAgent.cookie);
   const restoredPayments = z
     .object({ counts: z.record(z.string(), z.number()) })
     .parse(await rpc("payments.list", { limit: 100 }, restoredAccountant.cookie));

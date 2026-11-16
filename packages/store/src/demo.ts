@@ -136,9 +136,11 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       data: { email: "leila.farouk@example.com", reason: "Invented demo suppression" },
     });
   });
-  const [bounds] = await owner.$queryRaw<{ end: Date }[]>`
+  const [bounds] = await owner.$queryRaw<{ end: Date; firstCall: Date; secondCall: Date }[]>`
     SELECT (date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
-        + interval '1 day') AT TIME ZONE ${options.timeZone ?? "UTC"} AS end`;
+        + interval '1 day') AT TIME ZONE ${options.timeZone ?? "UTC"} AS end,
+      (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date + time '17:30') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS "firstCall",
+      (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date + time '18:30') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS "secondCall"`;
   const nextDay = required(bounds).end;
   const history = await owner.$queryRaw<{ at: Date }[]>`
     SELECT (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date
@@ -286,14 +288,14 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       course: "Spanish beginners",
       note: "Wants the Saturday class times",
       spoke: true,
-      callback: dueToday,
+      callback: required(bounds).firstCall,
     },
     {
       name: "Anika Sharma",
       course: "IELTS evening",
       note: "No answer",
       spoke: false,
-      callback: dueToday,
+      callback: required(bounds).secondCall,
     },
     {
       name: "Kofi Mensah",
