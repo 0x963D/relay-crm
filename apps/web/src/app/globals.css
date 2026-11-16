@@ -2152,3 +2152,80 @@ textarea::placeholder {
   color: var(--text);
   box-shadow: var(--shadow-control);
 }
+
+.pool-list .tbl td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pool-list .q-name {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.preview-header {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.preview-header > .sm {
+  font-size: 12px;
+  white-space: nowrap;
+}
+[data-stale="true"] {
+  opacity: 0.55;
+}
+.workspace-pool[data-has-pool="false"] {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 901px) {
+  .qrow[data-auto-selected="true"] {
+    background: var(--ink-tint);
+  }
+}
+@media (min-width: 601px) and (max-width: 1399px) {
+  .pool-list [data-column="campaign"] {
+    display: none;
+  }
+}
+@media (min-width: 601px) and (max-width: 1199px) {
+  .pool-list [data-column="source"],
+  .pool-list [data-column="arrived"] {
+    display: none;
+  }
+  .workspace-queue {
+    grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  }
+  .q-top {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .q-top .sp {
+    display: none;
+  }
+  .q-name {
+    flex-basis: 100%;
+  }
+  .lead-title {
+    column-gap: 6px;
+  }
+  .lead-title .btn {
+    padding-inline: 8px;
+  }
+  .lead-title h2 {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .pool-list .tbl td {
+    white-space: normal;
+  }
+  .pool-list .q-name {
+    white-space: nowrap;
+  }
+}
+[role="status"]:empty,
+[role="alert"]:empty {
+  display: none;
+}
+[hidden] {
+  display: none;
+}

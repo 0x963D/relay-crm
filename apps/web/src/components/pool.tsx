@@ -238,7 +238,10 @@ export function PoolScreen({
           </div>
         )}
       </div>
-      <div className="md workspace-pool">
+      <div
+        className="md workspace-pool"
+        data-has-pool={remote.status === "ready" && (pool?.total !== 0 || preview.kind === "stale")}
+      >
         <div className="pane pool-list">
           {remote.status === "loading" ? (
             <Loading />
@@ -278,9 +281,9 @@ export function PoolScreen({
                       </label>
                     </TableHead>
                     <TableHead>Lead</TableHead>
-                    <TableHead>Campaign</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Arrived</TableHead>
+                    <TableHead data-column="campaign">Campaign</TableHead>
+                    <TableHead data-column="source">Source</TableHead>
+                    <TableHead data-column="arrived">Arrived</TableHead>
                     <TableHead>Previous owner</TableHead>
                     {preview.kind !== "editing" && <TableHead>Goes to</TableHead>}
                   </TableRow>
@@ -316,13 +319,13 @@ export function PoolScreen({
                         <TableCell>
                           <span className="q-name">{row.name ?? row.email}</span>
                         </TableCell>
-                        <TableCell data-label="Campaign" className="t2">
+                        <TableCell data-column="campaign" data-label="Campaign" className="t2">
                           {campaignLabel(row.origin?.campaign)}
                         </TableCell>
-                        <TableCell data-label="Source" className="t2 sm">
+                        <TableCell data-column="source" data-label="Source" className="t2 sm">
                           {sourceLabel(row.source)}
                         </TableCell>
-                        <TableCell data-label="Arrived" className="t2 sm">
+                        <TableCell data-column="arrived" data-label="Arrived" className="t2 sm">
                           {shortDate(row.createdAt, zone)}
                         </TableCell>
                         <TableCell data-label="Previous owner" className="sm t2">

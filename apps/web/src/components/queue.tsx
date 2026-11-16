@@ -237,7 +237,8 @@ export function QueueScreen({
                     <li key={item.id}>
                       <div
                         className="qrow"
-                        data-selected={item.id === selectedId && (params.has("lead") || undefined)}
+                        data-selected={item.id === selectedId && params.has("lead")}
+                        data-auto-selected={item.id === selectedId && !params.has("lead")}
                       >
                         <button
                           type="button"
