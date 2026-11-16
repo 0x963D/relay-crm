@@ -7,8 +7,9 @@ export interface Account {
   readonly createdAt: Date;
 }
 
-export type RecordKind = "lead" | "account";
-export type RecordAccess = "read" | "edit" | "assign" | "identity" | "reopen";
+export type RecordKind = "lead" | "account" | "payment" | "ledger";
+export type RecordAccess =
+  "read" | "edit" | "assign" | "identity" | "reopen" | "settle" | "reconcile" | "closeReview";
 export type RecordScope =
   | { readonly kind: "intersection"; readonly scopes: readonly RecordScope[] }
   | { readonly kind: "all" }

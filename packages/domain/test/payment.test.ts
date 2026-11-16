@@ -1,0 +1,53 @@
+import { expect, it } from "vitest";
+import { transitionPayment, recordScope, type PaymentState, type Money } from "../src/index.ts";
+
+const money: Money = { minor: 39500n, currency: "GBP" };
+const at = new Date("2026-11-16T10:20:00Z");
+it("completes only a matching provider observation and never completes review", () => {
+  const provider = {
+    type: "provider",
+    result: { status: "completed", money },
+    by: "reconciler",
+  } as const;
+  expect(transitionPayment({ status: "checkoutCreated" }, provider, money, at)).toEqual({
+    status: "completed",
+    at,
+    by: "reconciler",
+  });
+  const review: PaymentState = { status: "needsReview", reported: { ...money, minor: 1n }, at };
+  expect(transitionPayment(review, provider, money, at)).toBe(review);
+  expect(transitionPayment(review, { type: "closeReview", reason: " " }, money, at)).toBe(review);
+  expect(
+    transitionPayment(
+      review,
+      { type: "closeReview", reason: "Provider amount differed." },
+      money,
+      at,
+    ),
+  ).toEqual({ status: "failed", reason: "Provider amount differed.", at });
+});
+it.each([
+  { minor: 1n, currency: "GBP" },
+  { minor: 39500n, currency: "EUR" },
+] satisfies Money[])("reviews a mismatched observation %#", (reported) => {
+  expect(
+    transitionPayment(
+      { status: "checkoutCreated" },
+      { type: "provider", result: { status: "completed", money: reported }, by: "providerWebhook" },
+      money,
+      at,
+    ),
+  ).toEqual({ status: "needsReview", reported, at });
+});
+it("grants only the payment jobs their narrow system access", () => {
+  for (const name of ["intake", "providerWebhook", "reconciler"] as const) {
+    for (const record of ["lead", "account", "payment", "ledger"] as const) {
+      expect(recordScope({ kind: "system", name }, record, "settle").kind).toBe(
+        record === "payment" && name !== "intake" ? "all" : "none",
+      );
+      expect(recordScope({ kind: "system", name }, record, "reconcile").kind).toBe(
+        record === "payment" && name === "reconciler" ? "all" : "none",
+      );
+    }
+  }
+});

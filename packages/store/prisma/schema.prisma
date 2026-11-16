@@ -328,6 +328,10 @@ enum SystemActor {
 enum AuditAction {
   leadAssigned
   leadReopened
+  checkoutCreated
+  paymentStateChanged
+  paymentReviewClosed
+  ledgerPosted
 
   @@map("audit_action")
 }
@@ -335,6 +339,8 @@ enum AuditAction {
 enum AuditSubjectType {
   lead
   account
+  payment
+  ledger
 
   @@map("audit_subject_type")
 }
@@ -354,4 +360,97 @@ model AuditLog {
 
   @@index([subjectId, id])
   @@map("audit_log")
+}
+
+
+model Payment {
+  id String @id @default(uuid(7)) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  amount BigInt
+  currency String
+  method String @default("card")
+  kind String
+  status String @default("checkoutCreated")
+  recordedById String @map("recorded_by_id") @db.Uuid
+  soldById String? @map("sold_by_id") @db.Uuid
+  createdAt DateTime @map("created_at") @db.Timestamptz(3)
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz(3)
+  completedBy String? @map("completed_by")
+  reportedAmount BigInt? @map("reported_amount")
+  reportedCurrency String? @map("reported_currency")
+  reason String?
+  nextCheckAt DateTime @map("next_check_at") @db.Timestamptz(3)
+  checkToken String? @map("check_token") @db.Uuid
+  sandboxMode String @map("sandbox_mode")
+  @@index([status, nextCheckAt])
+  @@index([accountId, createdAt])
+  @@map("payments")
+}
+
+model LedgerAccount {
+  id String @id @default(uuid(7)) @db.Uuid
+  accountId String? @map("account_id") @db.Uuid
+  kind String
+  currency String
+  @@unique([accountId, currency])
+  @@map("ledger_accounts")
+}
+
+model LedgerTransaction {
+  id String @id @default(uuid(7)) @db.Uuid
+  paymentId String @unique @map("payment_id") @db.Uuid
+  at DateTime @db.Timestamptz(3)
+  @@map("ledger_transactions")
+}
+
+model LedgerLine {
+  id String @id @default(uuid(7)) @db.Uuid
+  transactionId String @map("transaction_id") @db.Uuid
+  ledgerAccountId String @map("ledger_account_id") @db.Uuid
+  amount BigInt
+  @@index([transactionId])
+  @@index([ledgerAccountId])
+  @@map("ledger_lines")
+}
+
+model PaymentEvent {
+  sequence BigInt @id @default(autoincrement())
+  paymentId String @map("payment_id") @db.Uuid
+  kind String
+  at DateTime @db.Timestamptz(3)
+  detail Json
+  @@index([paymentId, sequence])
+  @@map("payment_events")
+}
+
+model WebhookInbox {
+  eventId String @id @map("event_id")
+  paymentId String @map("payment_id") @db.Uuid
+  payloadHash String @map("payload_hash")
+  receivedAt DateTime @map("received_at") @db.Timestamptz(3)
+  @@map("webhook_inbox")
+}
+
+model Outbox {
+  id String @id @default(uuid(7)) @db.Uuid
+  paymentId String @unique @map("payment_id") @db.Uuid
+  topic String
+  payload Json
+  state String @default("pending")
+  attempts Int @default(0)
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+  nextAttemptAt DateTime @map("next_attempt_at") @db.Timestamptz(3)
+  createdAt DateTime @map("created_at") @db.Timestamptz(3)
+  @@map("outbox")
+}
+
+model SandboxCheckout {
+  id String @id @db.Uuid
+  amount BigInt
+  currency String
+  mode String
+  status String @default("pending")
+  eventId String @unique @default(uuid(7)) @map("event_id") @db.Uuid
+  @@map("sandbox_checkouts")
 }

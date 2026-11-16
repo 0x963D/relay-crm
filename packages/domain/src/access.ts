@@ -32,7 +32,7 @@ export type LeadAccess = RecordAccess;
 
 type Rule = "all" | "own" | "none" | "team";
 type Rules = Readonly<
-  Record<RecordKind, Readonly<Record<Exclude<RecordAccess, "identity" | "reopen">, Rule>>>
+  Record<"lead" | "account", Readonly<Record<"read" | "edit" | "assign", Rule>>>
 >;
 const management: Rules = {
   lead: { read: "all", edit: "all", assign: "all" },
@@ -68,9 +68,32 @@ export function recordScope(
         record === "lead" &&
         (access === "identity" || access === "reopen")
           ? "all"
+          : record === "payment" &&
+              ((access === "settle" &&
+                (actor.name === "providerWebhook" || actor.name === "reconciler")) ||
+                (access === "reconcile" && actor.name === "reconciler"))
+            ? "all"
+            : "none",
+    };
+  }
+  if (record === "ledger" || access === "closeReview") {
+    return {
+      kind:
+        ((record === "ledger" && access === "read") ||
+          (record === "payment" && access === "closeReview")) &&
+        (actor.role === "accountant" ||
+          actor.role === "manager" ||
+          actor.role === "admin" ||
+          actor.role === "owner")
+          ? "all"
           : "none",
     };
   }
+  if (access === "settle" || access === "reconcile") return { kind: "none" };
+  if (record === "payment")
+    return access === "read" || access === "edit"
+      ? recordScope(actor, "account", access)
+      : { kind: "none" };
   if (access === "identity" || access === "reopen") return { kind: "none" };
   const scope: RecordScope = (() => {
     const rule = RULES[actor.role][record][access];

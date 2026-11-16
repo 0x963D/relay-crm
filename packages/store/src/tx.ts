@@ -29,6 +29,19 @@ const UNIQUE_VIOLATION = "23505";
  * decision for every unique index.
  */
 export const RACE_CONSTRAINTS: Readonly<Record<string, "retry" | "reject">> = {
+  payments_pkey: "reject",
+  ledger_accounts_pkey: "reject",
+  ledger_accounts_account_id_currency_key: "retry",
+  ledger_accounts_provider_currency_key: "retry",
+  ledger_transactions_pkey: "reject",
+  ledger_transactions_payment_id_key: "retry",
+  ledger_lines_pkey: "reject",
+  payment_events_pkey: "reject",
+  webhook_inbox_pkey: "retry",
+  outbox_pkey: "reject",
+  outbox_payment_id_key: "retry",
+  sandbox_checkouts_pkey: "retry",
+  sandbox_checkouts_event_id_key: "reject",
   _prisma_migrations_pkey: "reject",
   accounts_pkey: "reject",
   activities_pkey: "reject",

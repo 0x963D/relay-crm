@@ -27,3 +27,9 @@ export type IntakeEventId = Brand<string, "IntakeEventId">;
 
 export const ActivityId = uuidBrand<"ActivityId">();
 export type ActivityId = Brand<string, "ActivityId">;
+
+export const PaymentId = uuidBrand<"PaymentId">();
+export type PaymentId = Brand<string, "PaymentId">;
+
+export const LedgerTransactionId = uuidBrand<"LedgerTransactionId">();
+export type LedgerTransactionId = Brand<string, "LedgerTransactionId">;
