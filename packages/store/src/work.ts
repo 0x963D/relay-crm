@@ -19,7 +19,7 @@ import {
   type UserId,
 } from "@relay/domain";
 import { currentActor } from "./auth.ts";
-import { writeAudit } from "./audit.ts";
+import { snapshot, writeAudit } from "./audit.ts";
 import { AccessError } from "./errors.ts";
 import { idempotent } from "./idempotency.ts";
 import { InvariantError, leadFromRow, lifecycleFromRow } from "./lead-row.ts";
@@ -176,8 +176,8 @@ export async function workLead(
           ...commandJson(work),
           actorId: current.userId,
           requestId,
-          before: JSON.stringify(before),
-          after: JSON.stringify(next),
+          before: snapshot(before),
+          after: snapshot(next),
         };
         await tx.activity.create({
           data: {
@@ -212,7 +212,7 @@ function activityDetail(activity: Activity): Record<string, unknown> {
     : {};
 }
 
-function activitySummary(activity: Activity) {
+function activitySummary(activity: Activity, noAnswerCount: number | null = null) {
   const detail = activityDetail(activity);
   if (activity.kind === "note") {
     if (typeof detail.note !== "string") throw new InvariantError("Invalid lead note");
@@ -231,7 +231,21 @@ function activitySummary(activity: Activity) {
     typeof attempt.note !== "string"
   )
     throw new InvariantError("Invalid lead attempt");
+  const change = "callback" in attempt ? attempt.callback : null;
+  const callbackAt =
+    typeof change === "object" &&
+    change !== null &&
+    "kind" in change &&
+    change.kind === "set" &&
+    "at" in change &&
+    typeof change.at === "string"
+      ? new Date(change.at)
+      : null;
+  if (callbackAt && Number.isNaN(callbackAt.getTime()))
+    throw new InvariantError("Invalid attempt callback");
   return {
+    callbackAt,
+    noAnswerCount,
     kind: "attempt",
     channel: attempt.channel,
     outcome: attempt.outcome,
@@ -380,6 +394,14 @@ export async function leadDetail(db: Db, actor: Actor, id: LeadId) {
       where: { id: { in: actorIds } },
       select: { id: true, name: true },
     });
+    let count = 0;
+    const summaries = new Map(
+      activities.toReversed().map((activity) => {
+        const summary = activitySummary(activity);
+        if (summary?.kind === "attempt" && summary.outcome === "noAnswer") count += 1;
+        return [activity.id, activitySummary(activity, row.workHistoryKnown ? count : null)];
+      }),
+    );
     return {
       ...leadFromRow(row),
       contactedAt: row.workHistoryKnown ? row.contactedAt : null,
@@ -396,7 +418,7 @@ export async function leadDetail(db: Db, actor: Actor, id: LeadId) {
         : null,
       timeline: activities.map((activity) => ({
         ...activity,
-        summary: activitySummary(activity),
+        summary: summaries.get(activity.id) ?? null,
         actor: users.find((user) => user.id === activityDetail(activity).actorId) ?? null,
       })),
     };

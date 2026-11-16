@@ -130,3 +130,37 @@ test("maker migration recovers every editor and voids their waiting approval", a
     ),
   ).toEqual([{ payment_version: 2, voided: true }]);
 });
+
+test("activity snapshot migration decodes historical JSON strings without changing objects", async ({
+  db,
+}) => {
+  await db.ownerRows("CREATE SCHEMA activity_fixture; SET search_path TO activity_fixture");
+  const directory = new URL("../prisma/migrations/", import.meta.url);
+  const migrations = (await readdir(directory)).filter((name) => /^\d{4}_/.test(name)).sort();
+  for (const name of migrations.filter((name) => name < "0038"))
+    await db.ownerRows(await readFile(new URL(`${name}/migration.sql`, directory), "utf8"));
+  const id = crypto.randomUUID();
+  const snapshot = { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null };
+  await db.ownerRows(
+    "INSERT INTO leads(id,email,status,created_at) VALUES ($1,'historical@example.com','new',now())",
+    [id],
+  );
+  for (const before of [JSON.stringify(snapshot), snapshot]) {
+    await db.ownerRows(
+      "INSERT INTO activities(id,lead_id,kind,detail,at) VALUES (gen_random_uuid(),$1,'note',$2,now())",
+      [id, JSON.stringify({ note: "Historical", before, after: before })],
+    );
+  }
+  await db.ownerRows(
+    await readFile(new URL("0038_activity_snapshots/migration.sql", directory), "utf8"),
+  );
+  expect(
+    await db.ownerRows(
+      "SELECT detail->'before' AS before,detail->'after' AS after FROM activities ORDER BY sequence",
+    ),
+  ).toEqual([
+    { before: snapshot, after: snapshot },
+    { before: snapshot, after: snapshot },
+  ]);
+  await expect(db.ownerRows("UPDATE activities SET at=now()")).rejects.toThrow("append-only");
+});

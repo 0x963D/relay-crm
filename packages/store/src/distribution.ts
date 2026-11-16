@@ -1,5 +1,5 @@
 import { idempotent, requestHash } from "./idempotency.ts";
-import { writeAudit } from "./audit.ts";
+import { snapshot, writeAudit } from "./audit.ts";
 import {
   LeadId,
   UserId,
@@ -70,8 +70,8 @@ async function applyAssignment(
   await updateLifecycle(tx, item.leadId, next.value);
   const detail = {
     to: { ...item.to },
-    before: JSON.stringify(before),
-    after: JSON.stringify(next.value),
+    before: snapshot(before),
+    after: snapshot(next.value),
   };
   await tx.activity.create({
     data: {

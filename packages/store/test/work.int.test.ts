@@ -535,3 +535,30 @@ test("worked, reassigned and reopened leads each stay in one queue group", async
     1,
   );
 });
+
+test("timeline attempts carry dated callbacks, entry counts and object snapshots", async ({
+  db,
+}) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  await w.work(w.agent, id, noAnswer);
+  await w.work(w.agent, id, {
+    ...noAnswer,
+    attempt: { ...noAnswer.attempt, callback: { kind: "set", at: FUTURE } },
+  });
+  const entries = (await db.store.getLead(w.agent, id)).timeline.filter(
+    (entry) => entry.kind === "attempt",
+  );
+  expect(entries[0]?.summary).toMatchObject({ callbackAt: FUTURE, noAnswerCount: 2 });
+  expect(entries[1]?.summary).toMatchObject({ callbackAt: null, noAnswerCount: 1 });
+  expect(
+    await db.rows(
+      "SELECT jsonb_typeof(detail->'before') AS before, jsonb_typeof(detail->'after') AS after FROM activities WHERE lead_id=$1 AND detail ? 'before'",
+      [id],
+    ),
+  ).toEqual([
+    { before: "object", after: "object" },
+    { before: "object", after: "object" },
+    { before: "object", after: "object" },
+  ]);
+});

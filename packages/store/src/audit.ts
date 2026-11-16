@@ -15,7 +15,7 @@ function isJsonObject(value: unknown): value is Prisma.InputJsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function snapshot(value: object): Prisma.InputJsonObject {
+export function snapshot(value: object): Prisma.InputJsonObject {
   const json: unknown = JSON.parse(JSON.stringify(value));
   if (!isJsonObject(json)) throw new InvariantError("An audit snapshot must be a JSON object");
   return json;
