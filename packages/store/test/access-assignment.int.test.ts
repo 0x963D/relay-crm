@@ -367,3 +367,24 @@ describe("record scoping", () => {
     });
   });
 });
+
+test("a replay returns only the first result after scope and role change", async ({ db }) => {
+  const w = await world(db, "teamLead");
+  const manager: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const preview = await db.store.previewDistribution(w.actor, {
+    leadIds: [w.pool],
+    agents: [w.agent],
+    excludePreviousOwner: false,
+  });
+  const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "moved" };
+  const first = await db.store.submitDistribution(w.actor, input);
+  await db.store.reassignLead(manager, w.pool, w.other);
+  await db.rows("UPDATE users SET role='accountant' WHERE id=$1", [w.actor.userId]);
+  expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+  expect(await auditCount(db)).toEqual([{ activities: 2, audit: 2, distributions: 1 }]);
+  await expect(db.store.submitDistribution(manager, input)).rejects.toMatchObject({
+    code: "stalePreview",
+  });
+  await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
+  expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+});

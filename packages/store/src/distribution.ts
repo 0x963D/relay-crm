@@ -209,8 +209,6 @@ export async function submitDistribution(
 ): Promise<DistributionResult> {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
-    const scope = recordScope(current, "lead", "assign");
-    if (scope.kind === "none") throw new AccessError("accessDenied");
     const prior = await tx.distribution.findUnique({
       where: { actorId_key: { actorId: current.userId, key: input.key } },
     });
@@ -219,10 +217,10 @@ export async function submitDistribution(
         prior.requestHash !== digest({ fingerprint: input.fingerprint, previewId: input.previewId })
       )
         throw new AccessError("idempotencyConflict");
-      const items = storedItems(prior.result);
-      for (const item of items) await scopedLead(tx, current, item.leadId, "assign");
-      return { items };
+      return { items: storedItems(prior.result) };
     }
+    if (recordScope(current, "lead", "assign").kind === "none")
+      throw new AccessError("accessDenied");
     const preview = await tx.distributionPreview.findUnique({ where: { id: input.previewId } });
     if (preview?.actorId !== current.userId || preview.fingerprint !== input.fingerprint)
       throw new AccessError("stalePreview");
