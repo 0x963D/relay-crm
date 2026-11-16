@@ -1,10 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { isCurrencyCode, type PaymentProvider } from "@relay/domain";
+import { randomUUID } from "node:crypto";
+import { isCurrencyCode, SANDBOX_MODES, type PaymentProvider } from "@relay/domain";
 import type { Store } from "@relay/store";
 import type { PaymentEnv } from "../env.ts";
 import { signPaymentBody } from "./webhook.ts";
 import { reportFailure } from "../errors.ts";
 import { readBody } from "../http.ts";
+import { sandboxPage } from "./sandbox-page.ts";
 
 export function sandboxProvider(store: Store, env: PaymentEnv): PaymentProvider {
   return {
@@ -35,26 +37,28 @@ export function sandboxCheckout(
   store: Store,
   env: PaymentEnv,
   defer: (task: () => Promise<void>) => void,
+  demo = false,
 ) {
   return async (request: Request, id: string): Promise<Response> => {
     const row = await store.getSandboxCheckoutByToken(id);
     if (!row) return new Response(null, { status: 404 });
     if (request.method === "GET") {
-      return new Response(
-        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sandbox checkout</title></head><body><h1>Sandbox checkout</h1><p>This is a test. No real money moves.</p><p>${row.amount.toString()} minor units, ${row.currency}. Status: ${row.status}.</p><form method="post"><button type="submit"${row.status !== "pending" ? " disabled" : ""}>Pay in sandbox</button></form></body></html>`,
-        {
-          headers: {
-            "content-type": "text/html; charset=utf-8",
-            "cache-control": "no-store",
-            "content-security-policy":
-              "default-src 'none'; form-action 'self'; frame-ancestors 'none'",
-          },
+      const nonce = randomUUID();
+      return new Response(sandboxPage(row, demo, env.lateMs, nonce), {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "content-security-policy": `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
         },
-      );
+      });
     }
     if (request.headers.get("origin") !== env.baseUrl) return new Response(null, { status: 403 });
-    if ((await readBody(request)) === null) return new Response(null, { status: 413 });
-    const paid = await store.paySandboxCheckout(id);
+    const body = await readBody(request);
+    if (body === null) return new Response(null, { status: 413 });
+    const value = new URLSearchParams(new TextDecoder().decode(body)).get("mode");
+    const mode = demo ? SANDBOX_MODES.find((choice) => choice === value) : undefined;
+    if (demo && value !== null && !mode) return new Response(null, { status: 400 });
+    const paid = await store.paySandboxCheckout(id, mode);
     if (paid && paid.mode !== "drop") {
       defer(async () => {
         if (paid.mode === "late") await sleep(env.lateMs);

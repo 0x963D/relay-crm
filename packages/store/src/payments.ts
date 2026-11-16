@@ -668,7 +668,20 @@ export async function getPayment(
     });
     const account = await tx.account.findUnique({
       where: { id: row.accountId },
-      select: { lead: { select: { name: true, email: true } } },
+      select: {
+        lead: {
+          select: {
+            name: true,
+            email: true,
+            intakeEvents: {
+              where: { outcome: "leadCreated" },
+              orderBy: { id: "asc" },
+              take: 1,
+              select: { campaign: true },
+            },
+          },
+        },
+      },
     });
     const soldBy = row.soldById
       ? await tx.user.findUnique({
@@ -678,15 +691,18 @@ export async function getPayment(
       : null;
     const checkout = await tx.sandboxCheckout.findUnique({
       where: { paymentId: id },
-      select: { id: true },
+      select: { id: true, expiresAt: true },
     });
     return {
       ...payment(row),
       ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
       events,
-      account: account?.lead ?? null,
+      account: account?.lead ? { name: account.lead.name, email: account.lead.email } : null,
+      campaign: account?.lead?.intakeEvents[0]?.campaign ?? null,
       soldBy,
       providerReference: checkout?.id ?? null,
+      expiresAt: checkout?.expiresAt ?? null,
+      postingCount: await tx.ledgerTransaction.count({ where: { paymentId: id } }),
       posting:
         recordScope(current, "ledger", "read").kind === "all"
           ? ((await postings(tx, [id]))[0] ?? null)
@@ -704,6 +720,7 @@ export async function listPayments(
   actor: Actor,
   limit: number,
   lifetimeAttemptLimit = RECEIPT_LIFETIME_ATTEMPTS,
+  offset = 0,
 ) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
@@ -744,6 +761,7 @@ export async function listPayments(
           where,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: limit,
+          skip: offset,
         })),
       );
     }
@@ -1195,6 +1213,13 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
   }));
   const mayApprove = recordScope(actor, "payment", "approve").kind === "all";
   const maker = await isMaker(tx, row.id, actor.userId);
+  const makers = await tx.paymentMaker.findMany({
+    where: { paymentId: row.id },
+  });
+  const makerUsers = await tx.user.findMany({
+    where: { id: { in: makers.map((entry) => entry.userId) } },
+    select: { id: true, name: true },
+  });
   const refusal =
     row.recordedById === actor.userId
       ? "paymentRecorder"
@@ -1216,10 +1241,18 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
     }));
   return {
     receipt,
+    receiptAttemptLimit: lifetimeAttemptLimit,
     recordedBy,
     approvals: history,
     cannotApprove: [
       { user: recordedBy, reason: "paymentRecorder" as const, at: row.createdAt },
+      ...makers
+        .filter((entry) => entry.userId !== row.recordedById)
+        .map((entry) => ({
+          user: makerUsers.find((user) => user.id === entry.userId) ?? null,
+          reason: "paymentMaker" as const,
+          at: entry.at,
+        })),
       ...history
         .filter(
           (a) =>
@@ -1242,6 +1275,13 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
         })),
     ],
     actions: {
+      closeCheckout:
+        row.status === "checkoutCreated" &&
+        Boolean(
+          await tx.account.findFirst({
+            where: { id: row.accountId, ...scopeWhere(recordScope(actor, "account", "edit")) },
+          }),
+        ),
       editManual: Boolean(editable),
       requeueReceipt:
         mayApprove &&

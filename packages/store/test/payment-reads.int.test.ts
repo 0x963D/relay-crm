@@ -45,6 +45,9 @@ test("payment detail returns customer, seller and the provider reference without
   expect(view.account).toEqual({ name: "Fake Customer", email: "customer@example.com" });
   expect(view.soldBy).toEqual({ id: agent.userId, name: "Fake Seller" });
   expect(view.providerReference).toBe(checkout.id);
+  expect(view.expiresAt).toBeInstanceOf(Date);
+  expect(view.postingCount).toBe(0);
+  expect(view.receiptAttemptLimit).toBeGreaterThan(0);
   expect(checkout.token).toBeTruthy();
   expect(
     JSON.stringify(view, (_, value: unknown) =>
@@ -100,6 +103,7 @@ test("each payment group reports its scoped total beyond the row limit", async (
     }
   }
   const view = await db.store.listPayments(agent, 1);
+  const next = await db.store.listPayments(agent, 1, 1);
   expect(view.counts).toEqual({
     waitingForApproval: 3,
     waitingForProvider: 3,
@@ -114,7 +118,61 @@ test("each payment group reports its scoped total beyond the row limit", async (
   ] as const) {
     expect(view[group]).toHaveLength(1);
     expect(view[group][0]?.soldById).toBe(agent.userId);
+    expect(next[group]).toHaveLength(1);
+    expect(next[group][0]?.id).not.toBe(view[group][0]?.id);
+    expect(next[group][0]?.soldById).toBe(agent.userId);
   }
+  const ownAccounts = await db.store.listAccounts(agent, { limit: 1 });
+  const nextAccounts = await db.store.listAccounts(agent, { limit: 1, offset: 1 });
+  expect(ownAccounts.total).toBe(12);
+  expect(ownAccounts.items[0]?.balances).toBeNull();
+  expect(ownAccounts.items[0]?.mayEdit).toBe(true);
+  expect(nextAccounts.items[0]?.id).not.toBe(ownAccounts.items[0]?.id);
+  const allAccounts = await db.store.listAccounts(manager, { limit: 1 });
+  expect(allAccounts.total).toBe(24);
+  expect(allAccounts.items[0]?.balances).toEqual([]);
+});
+
+test("the approval read names every maker without giving them approval rights", async ({ db }) => {
+  const recorder = await person(db, "manager");
+  const editor = await person(db, "manager");
+  const checker = await person(db, "owner");
+  const id = await account(db, recorder);
+  const payment = await db.store.recordManualPayment(
+    recorder,
+    {
+      key: randomUUID(),
+      accountId: id,
+      money,
+      kind: "first",
+      receiptHash: "f".repeat(64),
+      reference: "Invented receipt",
+    },
+    randomUUID(),
+  );
+  await db.store.editManualPayment(
+    editor,
+    {
+      id: payment.id,
+      version: 0,
+      money,
+      receiptHash: "e".repeat(64),
+      reference: "Invented edited receipt",
+    },
+    randomUUID(),
+  );
+  const view = await db.store.getPayment(checker, payment.id);
+  expect(
+    view.cannotApprove.map((entry) => ({ userId: entry.user?.id, reason: entry.reason })),
+  ).toEqual(
+    expect.arrayContaining([
+      { userId: recorder.userId, reason: "paymentRecorder" },
+      { userId: editor.userId, reason: "paymentMaker" },
+    ]),
+  );
+  expect((await db.store.getPayment(editor, payment.id)).actions.approvalRefusal).toBe(
+    "paymentMaker",
+  );
 });
 
 test("ledger entries batch completion provenance for both system callers and the second approver", async ({

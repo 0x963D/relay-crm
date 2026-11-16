@@ -136,8 +136,8 @@ export function openStore(config: {
     cancelSandboxCheckout: (id: string) => cancelSandboxCheckout(db, id),
     getPayment: (actor: Actor, id: PaymentId) =>
       getPayment(db, actor, id, config.receipts?.lifetimeAttemptLimit),
-    listPayments: (actor: Actor, limit: number) =>
-      listPayments(db, actor, limit, config.receipts?.lifetimeAttemptLimit),
+    listPayments: (actor: Actor, limit: number, offset = 0) =>
+      listPayments(db, actor, limit, config.receipts?.lifetimeAttemptLimit, offset),
     accountLedger: (actor: Actor, id: AccountId) => accountLedger(db, actor, id),
     createSandboxCheckout: (input: {
       readonly paymentId: string;
@@ -148,7 +148,7 @@ export function openStore(config: {
     }) => createSandboxCheckout(db, input),
     getSandboxCheckout: (id: string) => getSandboxCheckout(db, id),
     getSandboxCheckoutByToken: (token: string) => getSandboxCheckoutByToken(db, token),
-    paySandboxCheckout: (id: string) => paySandboxCheckout(db, id),
+    paySandboxCheckout: (id: string, mode?: SandboxMode) => paySandboxCheckout(db, id, mode),
     intake: intakeWith(db) satisfies Intake,
     authenticationDatabase: authenticationDatabase(db),
     sessionPrincipal: (id: string) => sessionPrincipal(db, id),
@@ -180,7 +180,8 @@ export function openStore(config: {
       id: LeadId,
       fields: { readonly name: string | null; readonly phone: string | null },
     ) => editLead(db, actor, id, fields),
-    listAccounts: (actor: Actor, page: { readonly limit: number }) => listAccounts(db, actor, page),
+    listAccounts: (actor: Actor, page: { readonly limit: number; readonly offset?: number }) =>
+      listAccounts(db, actor, page),
     getAccount: (actor: Actor, id: AccountId) => getAccount(db, actor, id),
     assignPool: (actor: Actor, leadIds: readonly LeadId[], to: Assignment, requestId: string) =>
       assignPool(db, actor, leadIds, to, requestId),

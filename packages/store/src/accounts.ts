@@ -24,7 +24,11 @@ function accountFromRow(row: AccountRow): Account {
   }
   return { id, ownerId, teamId, createdAt: row.createdAt };
 }
-export async function listAccounts(db: Db, actor: Actor, page: { readonly limit: number }) {
+export async function listAccounts(
+  db: Db,
+  actor: Actor,
+  page: { readonly limit: number; readonly offset?: number },
+) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const where = scopeWhere(recordScope(current, "account", "read"));
@@ -33,6 +37,7 @@ export async function listAccounts(db: Db, actor: Actor, page: { readonly limit:
       where,
       orderBy: [{ lead: { name: "asc" } }, { lead: { email: "asc" } }, { id: "asc" }],
       take: page.limit,
+      skip: page.offset ?? 0,
       include: {
         owner: { select: { id: true, name: true } },
         lead: {
@@ -59,9 +64,9 @@ export async function listAccounts(db: Db, actor: Actor, page: { readonly limit:
           : null;
         return {
           ...account,
+          mayEdit: scopeAdmits(recordScope(current, "account", "edit"), account),
           campaign: row.lead?.intakeEvents[0]?.campaign ?? null,
-          paymentCount:
-            payments?.filter((payment) => payment.state.status === "completed").length ?? null,
+          paymentCount: payments?.length ?? null,
           paymentInProgress:
             payments?.find(
               (payment) =>

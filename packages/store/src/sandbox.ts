@@ -68,7 +68,7 @@ export async function cancelSandboxCheckout(db: Db, paymentId: string) {
     }),
   );
 }
-export function paySandboxCheckout(db: Db, token: string) {
+export function paySandboxCheckout(db: Db, token: string, mode?: SandboxMode) {
   return transact(db, async (tx) => {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const row = current(
@@ -76,11 +76,13 @@ export function paySandboxCheckout(db: Db, token: string) {
       await tx.sandboxCheckout.findUnique({ where: { tokenHash: tokenHash(token) } }),
     );
     if (row?.status !== "pending") return null;
+    const selectedMode = mode ?? row.mode;
     return tx.sandboxCheckout.update({
       where: { id: row.id },
       data: {
         status: "completed",
-        amount: row.mode === "differentAmount" ? row.amount + 1n : row.amount,
+        mode: selectedMode,
+        amount: selectedMode === "differentAmount" ? row.amount + 1n : row.amount,
       },
     });
   });

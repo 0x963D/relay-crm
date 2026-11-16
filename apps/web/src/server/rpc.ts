@@ -113,6 +113,7 @@ const LeadIds = z
   .max(100)
   .refine((ids) => new Set(ids).size === ids.length, "Lead IDs must be unique.");
 const Page = z.object({ limit: z.int().min(1).max(100).default(100) }).strict();
+const Paged = Page.extend({ offset: z.int().min(0).default(0) });
 
 const MoneyInput = {
   amount: z
@@ -209,9 +210,9 @@ export const appRouter = t.router({
         ),
       ),
     list: authenticated
-      .input(Page)
+      .input(Paged)
       .query(({ ctx, input }) =>
-        paymentResponse(ctx, ctx.store.listPayments(ctx.actor, input.limit)),
+        paymentResponse(ctx, ctx.store.listPayments(ctx.actor, input.limit, input.offset)),
       ),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
@@ -414,7 +415,7 @@ export const appRouter = t.router({
         paymentResponse(ctx, ctx.store.accountLedger(ctx.actor, input.id)),
       ),
     list: authenticated
-      .input(Page)
+      .input(Paged)
       .query(({ ctx, input }) => ctx.store.listAccounts(ctx.actor, input)),
     get: authenticated
       .input(z.object({ id: identifier(AccountId) }).strict())

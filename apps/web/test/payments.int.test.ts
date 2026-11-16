@@ -24,6 +24,54 @@ const env = {
   checkoutTtlMs: 86400000,
 };
 
+test("sandbox choices are applied on the provider page only in demo mode", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  for (const demo of [false, true]) {
+    const created = await db.store.createPayment(
+      actor,
+      {
+        key: randomUUID(),
+        accountId: await db.seedAccount(),
+        money: { minor: 100n, currency: "GBP" },
+        kind: "first",
+        mode: "drop",
+      },
+      0,
+      randomUUID(),
+    );
+    const checkout = await sandboxProvider(db.store, env).createCheckout(
+      await db.store.checkoutTerms(actor, created.id),
+    );
+    const token = checkout.url?.split("/").at(-1);
+    if (!token) throw new Error("No checkout token");
+    const tasks: (() => Promise<void>)[] = [];
+    const handle = sandboxCheckout(
+      db.store,
+      env,
+      (task) => {
+        tasks.push(task);
+      },
+      demo,
+    );
+    const page = await handle(new Request(checkout.url ?? ""), token);
+    const html = await page.text();
+    expect(html.includes('name="mode"')).toBe(demo);
+    expect(html).toContain("NO REAL MONEY MOVES");
+    expect(page.headers.get("content-security-policy")).toContain("style-src 'nonce-");
+    const response = await handle(
+      new Request(checkout.url ?? "", {
+        method: "POST",
+        headers: { origin: env.baseUrl },
+        body: "mode=differentAmount",
+      }),
+      token,
+    );
+    expect(response.status).toBe(303);
+    expect((await db.store.getSandboxCheckout(created.id))?.amount).toBe(demo ? 101n : 100n);
+    expect(tasks).toHaveLength(demo ? 1 : 0);
+  }
+});
+
 test("the outbox command delivers with SMTP and no sign-in settings", async ({ db }) => {
   const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
   const { id } = await db.store.createPayment(

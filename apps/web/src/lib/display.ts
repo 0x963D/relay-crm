@@ -64,3 +64,19 @@ export function custodyDate(at: Date | null, zone: string, held = false): string
         timeZone: zone,
       }).format(at);
 }
+import { CURRENCIES, type Money } from "@relay/domain";
+
+export function formatMoney(money: Money): string {
+  const digits = CURRENCIES[money.currency];
+  const magnitude = money.minor < 0n ? -money.minor : money.minor;
+  const factor = 10n ** BigInt(digits);
+  const fraction = (magnitude % factor).toString().padStart(digits, "0");
+  const parts = new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: money.currency,
+  }).formatToParts(magnitude / factor);
+  return (
+    (money.minor < 0n ? "−" : "") +
+    parts.map((part) => (part.type === "fraction" ? fraction : part.value)).join("")
+  );
+}

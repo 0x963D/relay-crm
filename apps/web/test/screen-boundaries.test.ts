@@ -1,8 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { localCallback } from "../src/lib/display.ts";
+import { formatMoney, localCallback } from "../src/lib/display.ts";
 import { ACCESS_FAILURES } from "@relay/domain";
 import { failureMessages, authFailure, authMessages } from "../src/lib/failures.ts";
 describe("screen boundaries", () => {
+  test("money keeps exact minor units beyond Number precision", () => {
+    expect(formatMoney({ minor: 9223372036854775806n, currency: "GBP" })).toBe(
+      "£92,233,720,368,547,758.06",
+    );
+    expect(formatMoney({ minor: 1234n, currency: "KWD" })).toBe("KWD\u00a01.234");
+    expect(formatMoney({ minor: 42n, currency: "JPY" })).toBe("JP¥42");
+  });
   test("callback inputs use the deployment timezone and reject a skipped clock time", () => {
     expect(localCallback("2031-07-15T09:30", "Europe/Bucharest")).toEqual(
       new Date("2031-07-15T06:30Z"),

@@ -42,9 +42,14 @@ function compose(env: Env): Composition {
       ? {
           provider: sandboxProvider(store, env.payments),
           webhook: paymentWebhook(store, env.payments.webhookSecret),
-          checkout: sandboxCheckout(store, env.payments, (task) => {
-            after(task);
-          }),
+          checkout: sandboxCheckout(
+            store,
+            env.payments,
+            (task) => {
+              after(task);
+            },
+            env.demo,
+          ),
         }
       : null,
     auth:
