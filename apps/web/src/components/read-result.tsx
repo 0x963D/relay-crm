@@ -7,24 +7,27 @@ import { failureCode, failureMessages } from "@/lib/failures";
 import { Empty } from "./pieces";
 import { Button } from "./ui/button";
 
-export async function ReadResult({
+export async function ReadResult<T>({
   query,
   children,
   back,
   title,
 }: {
-  query: Promise<unknown>;
-  children: ReactNode;
+  query: Promise<T>;
+  children: ReactNode | ((value: T) => ReactNode);
   back: string;
   title: string;
 }) {
+  let value: T;
   try {
-    await query;
+    value = await query;
   } catch (error) {
     const code =
       error instanceof TRPCError && isAccessError(error.cause)
         ? error.cause.code
-        : failureCode(error);
+        : error instanceof TRPCError && (error.code === "BAD_REQUEST" || error.code === "NOT_FOUND")
+          ? "accessDenied"
+          : failureCode(error);
     if (!code) throw error;
     return (
       <Empty
@@ -40,5 +43,7 @@ export async function ReadResult({
       </Empty>
     );
   }
-  return <HydrateClient>{children}</HydrateClient>;
+  return (
+    <HydrateClient>{typeof children === "function" ? children(value) : children}</HydrateClient>
+  );
 }

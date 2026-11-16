@@ -2,6 +2,30 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("missing, foreign and malformed records have an unavailable message instead of a server error", async ({
+  page,
+}) => {
+  await signIn(page, "accountant");
+  const payments = await rpc(page).payments.list.query({ limit: 100 });
+  const foreign = payments.waitingForApproval.find(
+    (payment) => payment.account?.name === "Mireille Dubois",
+  )!;
+  await page.context().clearCookies();
+  await signIn(page, "agent");
+  for (const id of ["00000000-0000-4000-8000-000000000999", foreign.id, "not-an-id"]) {
+    await page.goto(`${browserState().url}/payments/${id}/edit`);
+    await expect(
+      page.getByRole("heading", { name: "This payment is unavailable", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
+  }
+  await page.goto(`${browserState().url}/queue/leads/not-an-id`);
+  await expect(
+    page.getByRole("heading", { name: "You cannot open this lead", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
+});
+
 test("both money forms belong to Payments in the address, header and navigation", async ({
   page,
 }) => {
