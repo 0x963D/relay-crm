@@ -15,7 +15,6 @@ import {
   sessionPrincipal,
   initialSessionTeam,
   selectTeam,
-  takeAuthRequest,
   ensureDevelopmentActor,
 } from "./auth.ts";
 import {
@@ -26,6 +25,7 @@ import {
   previewDistribution,
   submitDistribution,
 } from "./distribution.ts";
+import { takeRequestLimit } from "./rate-limit.ts";
 import { connect } from "./tx.ts";
 
 export type { LeadListItem };
@@ -40,8 +40,8 @@ export function openStore(config: { readonly connectionString: string }) {
     sessionPrincipal: (id: string) => sessionPrincipal(db, id),
     initialSessionTeam: (userId: string) => initialSessionTeam(db, userId),
     selectTeam: (sessionId: string, teamId: TeamId | null) => selectTeam(db, sessionId, teamId),
-    takeAuthRequest: (key: string, max: number, windowSeconds: number) =>
-      takeAuthRequest(db, key, max, windowSeconds),
+    takeRequestLimit: (key: string, max: number, windowSeconds: number) =>
+      takeRequestLimit(db, key, max, windowSeconds),
     ensureDevelopmentActor: (actor: Actor) => ensureDevelopmentActor(db, actor),
     listLeads: (actor: Actor, page: { readonly limit: number }) => listLeads(db, actor, page),
     getLead: (actor: Actor, id: LeadId) => getLead(db, actor, id),

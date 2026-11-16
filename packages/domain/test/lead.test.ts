@@ -94,15 +94,11 @@ const MATRIX: Readonly<
     win: no,
     lose: no,
     markDead: no,
-    reopen: "new",
+    reopen: no,
   },
 };
 
-const REFUSALS = [
-  "new + markDead(wrongNumber): wrongNumberNeedsAnAttempt",
-  "dead(doNotContact) + reopen: doNotContactIsFinal",
-  "dead(doNotContact, from the pool) + reopen: doNotContactIsFinal",
-];
+const REFUSALS = ["new + markDead(wrongNumber): wrongNumberNeedsAnAttempt"];
 
 const CASES = ALL_STATES.flatMap((state) =>
   ALL_EVENTS.map((event) => ({
@@ -313,15 +309,15 @@ describe("ownership history", () => {
     });
   });
 
-  it("keeps the earlier previous owner when a lead that died in the pool is reopened", () => {
+  it("refuses to reopen a lead that died in the pool", () => {
     const lead: LeadLifecycle = {
       state: { status: "dead", assignee: null, reason: "duplicate" },
       firstAssignedAt: EARLIER,
       previousOwnerId: ben.ownerId,
     };
     expect(transition(lead, reopen, NOW)).toEqual({
-      ok: true,
-      value: { state: { status: "new" }, firstAssignedAt: EARLIER, previousOwnerId: ben.ownerId },
+      ok: false,
+      error: { kind: "illegal", from: "dead", event: "reopen" },
     });
   });
 

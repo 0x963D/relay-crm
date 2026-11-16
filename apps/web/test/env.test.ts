@@ -12,6 +12,7 @@ const META = {
 describe("parseEnv", () => {
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
+      trustedProxyCount: 0,
       auth: null,
       databaseUrl: DATABASE_URL,
       meta: null,
@@ -78,4 +79,13 @@ describe("parseEnv", () => {
   it("refuses a RELAY_DEV_ACTOR other than 1, so a mistyped value fails at startup", () => {
     expect(() => parseEnv({ DATABASE_URL, RELAY_DEV_ACTOR: "true" })).toThrow(/RELAY_DEV_ACTOR/);
   });
+});
+
+it.each(["-1", "1.5", "33", "not-a-count"])("refuses invalid proxy count %s", (count) => {
+  expect(() => parseEnv({ DATABASE_URL, RELAY_TRUSTED_PROXY_COUNT: count })).toThrow(
+    /RELAY_TRUSTED_PROXY_COUNT/,
+  );
+});
+it("reads an explicit trusted proxy count", () => {
+  expect(parseEnv({ DATABASE_URL, RELAY_TRUSTED_PROXY_COUNT: "2" }).trustedProxyCount).toBe(2);
 });

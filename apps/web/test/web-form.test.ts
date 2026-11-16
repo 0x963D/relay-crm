@@ -13,6 +13,8 @@ function setup(respond?: Parameters<typeof intakeFake>[0]) {
   const intake = intakeFake(respond);
   const form = createWebFormEndpoint({
     intake: intake.intake,
+    limits: { takeRequestLimit: () => Promise.resolve(true) },
+    trustedProxyCount: 0,
     now: () => NOW,
     log: (event) => {
       logged.push(event);

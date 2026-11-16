@@ -67,8 +67,7 @@ export interface IntakeSubmission {
 
 export type IntakeOutcome =
   | {
-      readonly kind:
-        "leadCreated" | "attachedToOpenLead" | "leadReopened" | "suppressedDoNotContact";
+      readonly kind: "leadCreated" | "attachedToOpenLead" | "leadReopened" | "suppressedDeadLead";
       readonly leadId: LeadId;
     }
   | { readonly kind: "linkedToAccount"; readonly accountId: AccountId }

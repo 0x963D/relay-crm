@@ -92,8 +92,8 @@ export function createAuthentication(
     const key = createHash("sha256").update(parsed.data.email).digest("hex");
     const minimum = performance.now() + 300 + randomInt(0, 50);
     try {
-      const globalAllowed = await store.takeAuthRequest("auth:global", 100, 60);
-      const addressAllowed = await store.takeAuthRequest(
+      const globalAllowed = await store.takeRequestLimit("auth:global", 100, 60);
+      const addressAllowed = await store.takeRequestLimit(
         `${sending ? "send" : "verify"}:${key}`,
         sending ? 3 : 10,
         60,

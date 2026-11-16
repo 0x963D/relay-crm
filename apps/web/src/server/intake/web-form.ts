@@ -11,11 +11,16 @@ import {
   type JsonValue,
 } from "@relay/domain";
 import { z } from "zod";
+import type { Store } from "@relay/store";
+import { clientAddress } from "../client-address.ts";
+import { allowRequest, limitKey, rateLimited } from "../rate-limit.ts";
 import { readBody, status } from "../http.ts";
 import type { Log } from "../log.ts";
 
 export interface WebFormDeps {
   readonly intake: Intake;
+  readonly limits: Pick<Store, "takeRequestLimit">;
+  readonly trustedProxyCount: number;
   readonly now: () => Date;
   readonly log: Log;
 }
@@ -82,9 +87,22 @@ function invalid(errors: Readonly<Record<string, string>>): Response {
  * whether the email was already known. A failed intake gets 503, and sending the same
  * `submissionId` again is safe.
  */
-export function createWebFormEndpoint({ intake, now, log }: WebFormDeps): WebFormEndpoint {
+export function createWebFormEndpoint({
+  intake,
+  limits,
+  trustedProxyCount,
+  now,
+  log,
+}: WebFormDeps): WebFormEndpoint {
   return {
     POST: async (request) => {
+      if (
+        !(await allowRequest(limits, [
+          { key: limitKey("form:client", clientAddress(request, trustedProxyCount)), max: 10 },
+          { key: "form:global", max: 1000 },
+        ]))
+      )
+        return rateLimited();
       const bytes = await readBody(request, MAX_BODY_BYTES);
       if (bytes === null) return status(413);
       const body = parseBody(request.headers.get("content-type") ?? "", bytes);

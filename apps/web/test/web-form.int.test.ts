@@ -1,5 +1,7 @@
 import { test, type TestDatabase } from "@relay/store/testing";
 import { describe, expect } from "vitest";
+import { limitKey } from "../src/server/rate-limit.ts";
+import { connections } from "../src/server/client-address.ts";
 import { createWebFormEndpoint } from "../src/server/intake/web-form.ts";
 
 const FORM_URL = "https://crm.example/api/intake/form";
@@ -7,6 +9,8 @@ const FORM_URL = "https://crm.example/api/intake/form";
 function formOver(db: TestDatabase) {
   return createWebFormEndpoint({
     intake: db.store.intake,
+    limits: db.store,
+    trustedProxyCount: 0,
     now: () => new Date("2026-11-14T09:30:00.000Z"),
     log: () => undefined,
   });
@@ -54,4 +58,41 @@ describe("the web form over a real database", () => {
     expect(response.status).toBe(422);
     expect(await db.counts()).toEqual({ leads: 0, intakeEvents: 0, activities: 0 });
   });
+});
+
+test("limits anonymous cross-origin submissions across endpoint instances", async ({ db }) => {
+  for (let i = 0; i < 10; i += 1) {
+    const request = submit({ email: `visitor-${String(i)}@example.com` });
+    request.headers.set("origin", "https://other.example");
+    expect((await formOver(db).POST(request)).status).toBe(202);
+  }
+  const refused = await formOver(db).POST(submit({ email: "one-more@example.com" }));
+  expect(refused.status).toBe(429);
+  expect(refused.headers.get("retry-after")).toBe("60");
+  expect((await db.counts()).leads).toBe(10);
+});
+
+test("the shared global budget limits another client without recording an intake", async ({
+  db,
+}) => {
+  await db.rows(
+    "INSERT INTO auth_request_limits(key,count,started_at) VALUES ('form:global',1000,now())",
+  );
+  const response = await connections.run("192.0.2.2", () =>
+    formOver(db).POST(submit({ email: "global@example.com" })),
+  );
+  expect(response.status).toBe(429);
+  expect(response.headers.get("retry-after")).toBe("60");
+  expect((await db.counts()).leads).toBe(0);
+});
+
+test("an exhausted client cannot spend the global form budget", async ({ db }) => {
+  await db.rows("INSERT INTO auth_request_limits(key,count,started_at) VALUES ($1,10,now())", [
+    limitKey("form:client", "192.0.2.1"),
+  ]);
+  const response = await connections.run("192.0.2.1", () =>
+    formOver(db).POST(submit({ email: "limited@example.com" })),
+  );
+  expect(response.status).toBe(429);
+  expect(await db.rows("SELECT key FROM auth_request_limits WHERE key='form:global'")).toEqual([]);
 });

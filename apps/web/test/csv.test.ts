@@ -151,7 +151,7 @@ describe("the import report", () => {
         attachedToOpenLead: 0,
         leadReopened: 0,
         linkedToAccount: 0,
-        suppressedDoNotContact: 0,
+        suppressedDeadLead: 0,
         rejectedNoEmail: 1,
       },
       replayed: 1,

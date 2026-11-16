@@ -78,7 +78,7 @@ enum IntakeOutcome {
   attachedToOpenLead
   leadReopened
   linkedToAccount
-  suppressedDoNotContact
+  suppressedDeadLead
   rejectedNoEmail
 
   @@map("intake_outcome")

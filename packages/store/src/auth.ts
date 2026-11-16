@@ -84,29 +84,6 @@ export async function selectTeam(db: Db, sessionId: string, teamId: TeamId | nul
   });
 }
 
-export async function takeAuthRequest(
-  db: Db,
-  key: string,
-  max: number,
-  windowSeconds: number,
-): Promise<boolean> {
-  return transact(db, async (tx) => {
-    const now = new Date();
-    const prior = await tx.authRequestLimit.findUnique({ where: { key } });
-    if (!prior || now.getTime() - prior.startedAt.getTime() >= windowSeconds * 1000) {
-      await tx.authRequestLimit.upsert({
-        where: { key },
-        create: { key, count: 1, startedAt: now },
-        update: { count: 1, startedAt: now },
-      });
-      return true;
-    }
-    if (prior.count >= max) return false;
-    await tx.authRequestLimit.update({ where: { key }, data: { count: { increment: 1 } } });
-    return true;
-  });
-}
-
 export async function ensureDevelopmentActor(db: Db, actor: Actor): Promise<void> {
   await transact(db, async (tx) => {
     await tx.user.upsert({

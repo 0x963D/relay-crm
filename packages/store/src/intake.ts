@@ -107,7 +107,7 @@ async function applyDecision(
       return result;
     }
     case "suppress":
-      return record(tx, submission, { kind: "suppressedDoNotContact", leadId: decision.leadId });
+      return record(tx, submission, { kind: "suppressedDeadLead", leadId: decision.leadId });
     case "linkAccount":
       return record(tx, submission, { kind: "linkedToAccount", accountId: decision.accountId });
   }
@@ -156,7 +156,7 @@ function subjectOf(outcome: IntakeOutcome): Subject {
     case "leadCreated":
     case "attachedToOpenLead":
     case "leadReopened":
-    case "suppressedDoNotContact":
+    case "suppressedDeadLead":
       return { leadId: outcome.leadId, accountId: null };
     case "linkedToAccount":
       return { leadId: null, accountId: outcome.accountId };
@@ -176,7 +176,7 @@ function outcomeFromRow(row: OutcomeColumns): IntakeOutcome {
     case "leadCreated":
     case "attachedToOpenLead":
     case "leadReopened":
-    case "suppressedDoNotContact":
+    case "suppressedDeadLead":
       return { kind: row.outcome, leadId: branded(LeadId, row.leadId, "lead_id") };
     case "linkedToAccount":
       return { kind: row.outcome, accountId: branded(AccountId, row.accountId, "account_id") };

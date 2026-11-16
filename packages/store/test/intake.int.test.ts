@@ -225,7 +225,7 @@ describe("a person who is already a lead", () => {
 
     const result = await db.store.intake(submissionExample());
 
-    expect(result.outcome).toEqual({ kind: "suppressedDoNotContact", leadId });
+    expect(result.outcome).toEqual({ kind: "suppressedDeadLead", leadId });
     const [lead] = await db.store.listLeads(await ownerOf(db), { limit: 10 });
     expect(lead?.lifecycle).toEqual(lifecycle);
     expect(await db.counts()).toEqual({ leads: 1, intakeEvents: 1, activities: 1 });
@@ -265,3 +265,26 @@ describe("hostile input", () => {
     expect(await db.rows("SELECT raw FROM intake_events")).toEqual([{ raw }]);
   });
 });
+
+for (const reason of ["duplicate", "wrongNumber", "doNotContact"] as const) {
+  for (const source of ["webForm", "metaLeadAds", "csv", "manual"] as const) {
+    test(`never reopens a dead ${reason} lead through ${source}`, async ({ db }) => {
+      const { leadId, assignee } = await seedHeldLead(db, "dead@example.com", (held) => ({
+        status: "dead",
+        assignee: held,
+        reason,
+      }));
+      await db.store.intake(
+        submissionExample({
+          source,
+          externalId: `dead-${reason}-${source}`,
+          email: "dead@example.com",
+        }),
+      );
+      expect(
+        await db.rows("SELECT status,owner_id,dead_reason FROM leads WHERE id=$1", [leadId]),
+      ).toEqual([{ status: "dead", owner_id: assignee.ownerId, dead_reason: reason }]);
+      expect(await db.rows("SELECT id FROM audit_log")).toEqual([]);
+    });
+  }
+}

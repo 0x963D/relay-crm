@@ -73,8 +73,7 @@ export type LeadEvent =
 export type LeadEventType = LeadEvent["type"];
 export type EventOf<E extends LeadEventType> = Extract<LeadEvent, { type: E }>;
 
-export type TransitionRefusal =
-  "wrongNumberNeedsAnAttempt" | "doNotContactIsFinal" | "callBackInPast";
+export type TransitionRefusal = "wrongNumberNeedsAnAttempt" | "callBackInPast";
 
 /**
  * `illegal`: the status never takes this event. `refused`: the status takes it, but the details of
@@ -190,7 +189,7 @@ const RULES: Rules = {
     win: illegal,
     lose: illegal,
     markDead: illegal,
-    reopen: (from) => (from.reason === "doNotContact" ? err("doNotContactIsFinal") : toPool()),
+    reopen: illegal,
   },
 };
 

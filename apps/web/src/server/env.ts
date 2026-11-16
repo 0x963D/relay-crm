@@ -16,6 +16,7 @@ const Variables = z.object({
     .optional(),
   META_GRAPH_BASE_URL: z.url().default("https://graph.facebook.com"),
   NODE_ENV: z.string().optional(),
+  RELAY_TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).max(32).default(0),
   RELAY_DEV_ACTOR: z
     .literal("1", { error: "must be 1 to turn the dev actor on, or unset" })
     .optional(),
@@ -39,6 +40,7 @@ export interface AuthEnv {
 }
 
 export interface Env {
+  readonly trustedProxyCount: number;
   readonly auth: AuthEnv | null;
   readonly databaseUrl: string;
   readonly meta: MetaEnv | null;
@@ -128,6 +130,7 @@ export function parseEnv(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
   return {
+    trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,
     auth: authEnv(parsed.data),
     databaseUrl: DATABASE_URL,
     meta: metaEnv(parsed.data),
@@ -140,4 +143,16 @@ export function parseEnv(
 
 export function readEnv(developmentBuild?: boolean): Env {
   return parseEnv(process.env, developmentBuild);
+}
+
+export function serverOptions() {
+  const port = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(65535)
+    .parse(process.env.PORT ?? "3000");
+  const dev = process.argv.includes("--dev");
+  Object.assign(process.env, { NODE_ENV: dev ? "development" : "production" });
+  return { port, dev };
 }

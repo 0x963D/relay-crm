@@ -44,7 +44,31 @@ including forced races, forward migration of populated tables and catalog checks
 `pnpm test:mutations <output-directory>` removes each covered safety check in turn, requires its
 named test to fail, restores the source in `finally`, and reruns the unchanged tests.
 
-The form intake endpoint still has no rate limit. This build is not ready for public hosting.
+The public form accepts anonymous submissions, including submissions from other origins.
+By design, a new enquiry for a lost lead returns it to the pool and removes its owner.
+The intake system actor audits that change. No intake source reopens a dead lead, regardless
+of whether its reason is duplicate, wrong number or do not contact.
+
+`pnpm test:int -- apps/web/test/web-form.int.test.ts` verifies the form's shared PostgreSQL limits.
+Each client may make 10 requests per 60-second fixed window. All clients share a separate
+1,000-request window. A refused request returns 429 with `Retry-After: 60` and records no intake.
+A client refused by its own budget does not consume the global budget. Invalid submissions count.
+The window starts with the first request and resets on the first request after expiry.
+The shared counter uses one conditional PostgreSQL upsert. The row lock serializes increments
+and refuses increments past the budget. `pnpm test:int -- packages/store/test/distribution-contract.int.test.ts`
+checks concurrent admission, saturation and expiry.
+
+`RELAY_TRUSTED_PROXY_COUNT` defaults to 0. `pnpm test -- apps/web/test/client-address.test.ts`
+checks that 0 ignores all forwarded headers and uses the TCP peer. A positive setting selects
+that many hops from the right of `X-Forwarded-For`. An invalid address or a shorter chain falls
+back to the TCP peer. Configure the exact proxy count and prevent direct access around those
+proxies. Each proxy must append the peer address or overwrite the header with a verified chain.
+IPv4-mapped IPv6 and IPv6 spellings are canonicalized before counting.
+
+Use `pnpm dev` and `pnpm start`. Their Node HTTP entry point captures the connection address
+in request-local storage before Next handles the request. Running `next start` directly lacks
+that context and puts requests without a trusted forwarded address in one `unknown` budget.
+`pnpm test -- apps/web/test/env.test.ts` checks that the proxy count is an integer from 0 to 32.
 
 ## How it is built
 

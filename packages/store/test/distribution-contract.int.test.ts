@@ -348,14 +348,21 @@ describe("scoped records", () => {
 });
 
 describe("request limits", () => {
-  test("a burst on the global auth limit row", async ({ db }) => {
+  test.for([100, 10])("a burst on a shared bucket with a limit of %s", async (limit, { db }) => {
     const results = await Promise.allSettled(
-      Array.from({ length: 40 }, () => db.store.takeAuthRequest("auth:global", 100, 60)),
+      Array.from({ length: 40 }, () => db.store.takeRequestLimit("auth:global", limit, 60)),
     );
-    const rejected = results.filter((r) => r.status === "rejected");
-    const rows = await db.rows("SELECT count FROM auth_request_limits WHERE key='auth:global'");
-
-    expect(rejected).toHaveLength(0);
-    expect(rows).toEqual([{ count: 40 }]);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(0);
+    expect(results.filter((result) => result.status === "fulfilled" && result.value)).toHaveLength(
+      Math.min(40, limit),
+    );
+    expect(await db.rows("SELECT count FROM auth_request_limits WHERE key='auth:global'")).toEqual([
+      { count: Math.min(40, limit) },
+    ]);
+    await db.rows("UPDATE auth_request_limits SET started_at=now()-interval '61 seconds'");
+    expect(await db.store.takeRequestLimit("auth:global", limit, 60)).toBe(true);
+    expect(await db.rows("SELECT count FROM auth_request_limits WHERE key='auth:global'")).toEqual([
+      { count: 1 },
+    ]);
   });
 });

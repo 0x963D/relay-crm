@@ -31,6 +31,7 @@ async function serve(
   variables:
     Readonly<Record<string, string>> | ((origin: string) => Readonly<Record<string, string>>),
   databaseUrl = UNREACHABLE_DATABASE,
+  rawNext = false,
 ) {
   const port = await freePort();
   const origin = `http://127.0.0.1:${String(port)}`;
@@ -39,20 +40,30 @@ async function serve(
     ([name]) =>
       name !== "NODE_ENV" && name !== "DATABASE_URL" && !/^(META|RELAY|AUTH|SMTP)_/.test(name),
   );
-  const server = spawn(process.execPath, [NEXT, "start", "--port", String(port)], {
-    cwd: APP,
-    env: { ...Object.fromEntries(inherited), DATABASE_URL: databaseUrl, ...configured },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const server = spawn(
+    process.execPath,
+    rawNext ? [NEXT, "start", "--port", String(port)] : ["scripts/serve.ts"],
+    {
+      cwd: APP,
+      env: {
+        ...Object.fromEntries(inherited),
+        DATABASE_URL: databaseUrl,
+        PORT: String(port),
+        ...configured,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
 
   let output = "";
   await new Promise<void>((resolve, reject) => {
     server.stdout.on("data", (chunk: Buffer) => {
       output += chunk.toString();
-      if (output.includes("Ready in")) resolve();
+      if (output.includes("Ready in") && rawNext) resolve();
     });
     server.stderr.on("data", (chunk: Buffer) => {
       output += chunk.toString();
+      if (output.includes("server.ready")) resolve();
     });
     server.on("exit", (code) => {
       reject(new Error(`next start exited with ${String(code)} before it was ready:\n${output}`));
@@ -63,6 +74,7 @@ async function serve(
     output: () => output,
     url: (path: string) => `http://127.0.0.1:${String(port)}${path}`,
     stop: async () => {
+      if (server.exitCode !== null || server.signalCode !== null) return;
       const exited = once(server, "exit");
       server.kill();
       await exited;
@@ -85,22 +97,25 @@ describe("the production server with no session", () => {
     }
   });
 
-  test("keeps both intake endpoints open, because neither needs an actor", async () => {
-    const server = await serve({});
-    try {
-      const form = await fetch(server.url("/api/intake/form"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: "not an address" }),
-      });
-      const meta = await fetch(server.url("/api/intake/meta"));
+  databaseTest(
+    "keeps both intake endpoints open, because neither needs an actor",
+    async ({ db }) => {
+      const server = await serve({}, db.connectionString);
+      try {
+        const form = await fetch(server.url("/api/intake/form"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: "not an address" }),
+        });
+        const meta = await fetch(server.url("/api/intake/meta"));
 
-      expect(form.status).toBe(422);
-      expect(meta.status, "the webhook is off because no META_ variable is set").toBe(404);
-    } finally {
-      await server.stop();
-    }
-  });
+        expect(form.status).toBe(422);
+        expect(meta.status, "the webhook is off because no META_ variable is set").toBe(404);
+      } finally {
+        await server.stop();
+      }
+    },
+  );
 });
 
 databaseTest(
@@ -189,6 +204,7 @@ databaseTest(
     const attempt = serve(
       { NODE_ENV: "development", RELAY_DEV_ACTOR: "1", RELAY_DEV_ROLE: "owner" },
       db.connectionString,
+      true,
     ).then(async (server) => {
       try {
         const response = await fetch(server.url("/")).catch(() => {
@@ -201,5 +217,35 @@ databaseTest(
     });
     await expect(attempt).rejects.toThrow(/RELAY_DEV_ACTOR.*production/);
     expect(await db.rows("SELECT email FROM users")).toEqual([]);
+  },
+);
+
+databaseTest(
+  "two production servers share form limits and ignore spoofed forwarded headers",
+  async ({ db }) => {
+    const server = await serve({}, db.connectionString);
+    let second: Awaited<ReturnType<typeof serve>> | undefined;
+    try {
+      second = await serve({}, db.connectionString);
+      for (let i = 0; i < 10; i += 1) {
+        const response = await fetch((i % 2 === 0 ? server : second).url("/api/intake/form"), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "https://other.example",
+            "x-forwarded-for": `192.0.2.${String(i + 1)}`,
+          },
+          body: JSON.stringify({ email: `live-${String(i)}@example.com` }),
+        });
+        expect(response.status).toBe(202);
+      }
+      const refused = await fetch(second.url("/api/intake/form"), { method: "POST", body: "{}" });
+      expect(refused.status).toBe(429);
+      expect(refused.headers.get("retry-after")).toBe("60");
+      expect((await db.counts()).leads).toBe(10);
+    } finally {
+      await second?.stop();
+      await server.stop();
+    }
   },
 );

@@ -64,10 +64,10 @@ describe("resolveIntake", () => {
     ["won", "linkAccount"],
     ["lost(notInterested)", "reopen"],
     ["lost(badTiming)", "reopen"],
-    ["dead(duplicate)", "reopen"],
-    ["dead(wrongNumber)", "reopen"],
+    ["dead(duplicate)", "suppress"],
+    ["dead(wrongNumber)", "suppress"],
     ["dead(doNotContact)", "suppress"],
-    ["dead(duplicate, from the pool)", "reopen"],
+    ["dead(duplicate, from the pool)", "suppress"],
     ["dead(doNotContact, from the pool)", "suppress"],
   ];
 

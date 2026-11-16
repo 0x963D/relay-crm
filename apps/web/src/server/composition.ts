@@ -53,7 +53,13 @@ function compose(env: Env): Composition {
         log,
       },
     ),
-    webForm: createWebFormEndpoint({ intake: store.intake, now, log }),
+    webForm: createWebFormEndpoint({
+      intake: store.intake,
+      limits: store,
+      trustedProxyCount: env.trustedProxyCount,
+      now,
+      log,
+    }),
   };
 }
 
