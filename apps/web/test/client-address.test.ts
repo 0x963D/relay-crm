@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { clientAddress, connections } from "../src/server/client-address.ts";
 
 function address(forwarded: string, count: number, peer = "::ffff:127.0.0.1") {
@@ -26,4 +26,24 @@ describe("client addresses", () => {
   it("canonicalizes equivalent IPv6 client addresses", () => {
     expect(address("2001:db8:0:0:0:0:0:1", 1)).toBe(address("2001:db8::1", 1));
   });
+});
+
+it("refuses an unknown client with a fixed error and logs the configuration once", async () => {
+  const { protectHttp } = await import("../src/server/errors.ts");
+  const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    for (let i = 0; i < 2; i += 1) {
+      const response = await connections.run("", () =>
+        protectHttp("request.failed", () =>
+          Response.json({ address: clientAddress(new Request("http://relay.example"), 0) }),
+        ),
+      );
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ message: "Something went wrong." });
+    }
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls.flat().join(" ")).toContain("clientAddressUnavailable");
+  } finally {
+    log.mockRestore();
+  }
 });

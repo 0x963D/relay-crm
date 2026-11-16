@@ -30,12 +30,14 @@ function setup(store: Parameters<typeof createAuthentication>[0]) {
   );
   async function post(path: string, body: unknown) {
     const started = performance.now();
-    const response = await auth.handle(
-      new Request(`${origin}/api/auth${path}`, {
-        method: "POST",
-        headers: { origin, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
+    const response = await connections.run(connections.getStore() ?? "127.0.0.1", () =>
+      auth.handle(
+        new Request(`${origin}/api/auth${path}`, {
+          method: "POST",
+          headers: { origin, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      ),
     );
     const elapsed = performance.now() - started;
     for (const task of tasks.splice(0)) await task();

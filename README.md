@@ -91,7 +91,9 @@ IPv4-mapped IPv6 and IPv6 spellings are canonicalized before counting.
 Use `pnpm dev` and `pnpm start`. Development always binds `127.0.0.1`. Production uses `HOST`,
 defaulting to `0.0.0.0`. `pnpm test -- apps/web/test/env.test.ts` checks those choices. Their Node HTTP entry point captures the connection address
 in request-local storage before Next handles the request. Running `next start` directly lacks
-that context and puts requests without a trusted forwarded address in one `unknown` budget.
+that context. A request without either a socket address or a trusted forwarded address is refused
+with the fixed error response. The server logs the missing-address configuration error once.
+No shared fallback budget is created. `pnpm test:prod` checks this through plain `next start`.
 `pnpm test -- apps/web/test/env.test.ts` checks that the proxy count is an integer from 0 to 32.
 
 ## How it is built

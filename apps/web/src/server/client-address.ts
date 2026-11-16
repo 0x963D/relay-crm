@@ -16,10 +16,21 @@ function canonicalAddress(value: string): string | null {
   return isIP(mapped) === 4 ? mapped : new URL(`http://[${address}]/`).hostname;
 }
 
+export class ClientAddressError extends Error {
+  override readonly name = "ClientAddressError";
+}
+
 export function clientAddress(request: Request, trustedProxyCount: number): string {
-  const peer = canonicalAddress(connections.getStore() ?? "") ?? "unknown";
-  if (trustedProxyCount === 0) return peer;
+  const peer = canonicalAddress(connections.getStore() ?? "");
   const forwarded = request.headers.get("x-forwarded-for")?.split(",");
-  if (!forwarded || forwarded.length < trustedProxyCount) return peer;
-  return canonicalAddress(forwarded[forwarded.length - trustedProxyCount] ?? "") ?? peer;
+  const trusted =
+    trustedProxyCount > 0 && forwarded && forwarded.length >= trustedProxyCount
+      ? canonicalAddress(forwarded[forwarded.length - trustedProxyCount] ?? "")
+      : null;
+  const address = trusted ?? peer;
+  if (address === null)
+    throw new ClientAddressError(
+      "No client address. Use the HTTP entry point or configure a trusted proxy.",
+    );
+  return address;
 }

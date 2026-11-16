@@ -1,3 +1,4 @@
+import { connections } from "../src/server/client-address.ts";
 import type { IntakeResult } from "@relay/domain";
 import { intakeFake, intakeResultExample } from "@relay/domain/testing";
 import { describe, expect, it } from "vitest";
@@ -20,7 +21,11 @@ function setup(respond?: Parameters<typeof intakeFake>[0]) {
       logged.push(event);
     },
   });
-  return { form, received: intake.received, logged };
+  return {
+    form: { POST: (request: Request) => connections.run("127.0.0.1", () => form.POST(request)) },
+    received: intake.received,
+    logged,
+  };
 }
 
 function json(body: unknown): Request {

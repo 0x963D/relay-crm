@@ -7,13 +7,17 @@ import { createWebFormEndpoint } from "../src/server/intake/web-form.ts";
 const FORM_URL = "https://crm.example/api/intake/form";
 
 function formOver(db: TestDatabase) {
-  return createWebFormEndpoint({
+  const form = createWebFormEndpoint({
     intake: db.store.intake,
     limits: db.store,
     trustedProxyCount: 0,
     now: () => new Date("2026-11-14T09:30:00.000Z"),
     log: () => undefined,
   });
+  return {
+    POST: (request: Request) =>
+      connections.run(connections.getStore() ?? "127.0.0.1", () => form.POST(request)),
+  };
 }
 
 function submit(fields: Readonly<Record<string, string>>): Request {

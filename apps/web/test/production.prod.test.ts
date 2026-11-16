@@ -832,3 +832,26 @@ databaseTest(
     }
   },
 );
+
+databaseTest(
+  "plain next start refuses clients with no verified address and logs once",
+  async ({ db }) => {
+    const server = await serve({}, db.connectionString, true);
+    try {
+      for (let i = 0; i < 2; i += 1) {
+        const response = await fetch(server.url("/api/intake/form"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: "nobody@example.com" }),
+        });
+        expect(response.status).toBe(500);
+        expect(await response.json()).toMatchObject({ message: "Something went wrong." });
+      }
+      expect(server.output().split("server.clientAddressUnavailable")).toHaveLength(2);
+      expect(await db.rows("SELECT * FROM auth_request_limits")).toEqual([]);
+      expect((await db.counts()).leads).toBe(0);
+    } finally {
+      await server.stop();
+    }
+  },
+);
