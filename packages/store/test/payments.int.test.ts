@@ -295,3 +295,27 @@ test.for(["webhook", "reconciler"] as const)(
     ]);
   },
 );
+
+test("a superseded check retains the provider answer without settling", async ({ db }) => {
+  const { id, manager } = await setup(db);
+  const at = new Date();
+  const stale = await db.store.claimPaymentCheck(id, at, 1000);
+  const fresh = await db.store.claimPaymentCheck(id, new Date(at.getTime() + 1001), 1000);
+  if (!stale || !fresh) throw new Error("No claims");
+  expect(await db.store.finishPaymentCheck(id, stale, observed)).toEqual({
+    status: "checkoutCreated",
+    changed: false,
+  });
+  const checks = (await db.store.getPayment(manager, id)).events.filter(
+    (e) => e.kind === "reconcilerCheck",
+  );
+  expect(checks).toHaveLength(1);
+  expect(checks[0]?.detail).toMatchObject({
+    superseded: true,
+    checkId: stale,
+    providerStatus: "completed",
+    reportedAmount: "39500",
+    changed: false,
+  });
+  expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+});

@@ -308,3 +308,26 @@ test("account editors close a waiting checkout with a reason and cancel the prov
   });
   expect(await provider.readPayment(created.paymentId)).toMatchObject({ status: "failed" });
 });
+
+test("a scan timestamp does not become the deadline origin for later claims", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const { id } = await db.store.createPayment(
+    actor,
+    {
+      key: "old-scan",
+      accountId: await db.seedAccount(),
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      mode: "drop",
+    },
+    0,
+    randomUUID(),
+  );
+  const scan = new Date();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const before = Date.now();
+  await reconcilePayments(db.store, sandboxProvider(db.store, env), env.intervalMs, scan);
+  const [row] = await db.rows("SELECT next_check_at FROM payments WHERE id=$1", [id]);
+  if (!(row?.next_check_at instanceof Date)) throw new Error("No deadline");
+  expect(row.next_check_at.getTime()).toBeGreaterThanOrEqual(before + env.intervalMs);
+});

@@ -10,7 +10,7 @@ export async function reconcilePayments(
   const candidates = await store.duePayments(at, 100);
   const results = [];
   for (const { id } of candidates) {
-    const token = await store.claimPaymentCheck(id, at, intervalMs);
+    const token = await store.claimPaymentCheck(id, new Date(), intervalMs);
     if (token === null) continue;
     let observed: ProviderPayment | null;
     try {

@@ -417,7 +417,7 @@ export async function finishPaymentCheck(
 ) {
   return transact(db, async (tx) => {
     const row = required(await tx.payment.findUnique({ where: { id } }));
-    if (row.checkToken !== token) return { status: stateOf(row).status, changed: false };
+    const superseded = row.checkToken !== token;
     const at = new Date();
     const recordCheck = async (outcome: SettlementResult) => {
       await tx.paymentEvent.create({
@@ -427,13 +427,13 @@ export async function finishPaymentCheck(
           at,
           detail:
             observed === null
-              ? { ...outcome, error: "Provider status unavailable", checkId: token }
-              : { ...observationDetail(observed, outcome), checkId: token },
+              ? { ...outcome, error: "Provider status unavailable", checkId: token, superseded }
+              : { ...observationDetail(observed, outcome), checkId: token, superseded },
         },
       });
     };
     const outcome =
-      observed === null
+      observed === null || superseded
         ? { status: stateOf(row).status, changed: false }
         : await settlePayment(
             tx,
@@ -444,7 +444,7 @@ export async function finishPaymentCheck(
             at,
             recordCheck,
           );
-    if (observed === null) await recordCheck(outcome);
+    if (observed === null || superseded) await recordCheck(outcome);
     return outcome;
   });
 }
