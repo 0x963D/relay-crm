@@ -34,19 +34,22 @@ export function Avatar({
     </span>
   );
 }
-const slipVariants = cva("gap-1 rounded-sm px-2 py-0.5 text-xs font-medium", {
-  variants: {
-    kind: {
-      neutral: "border-transparent bg-muted text-secondary-foreground",
-      waiting: "border-waiting-border bg-waiting text-waiting-foreground",
-      refused: "border-refused-border bg-refused text-refused-foreground",
-      complete: "border-complete-border bg-complete text-complete-foreground",
-      fresh: "border-transparent bg-accent text-accent-foreground",
-      outline: "border-input bg-background text-secondary-foreground",
+const slipVariants = cva(
+  "max-w-full gap-1 whitespace-normal rounded-sm px-2 py-0.5 text-start text-xs font-medium",
+  {
+    variants: {
+      kind: {
+        neutral: "border-transparent bg-muted text-secondary-foreground",
+        waiting: "border-waiting-border bg-waiting text-waiting-foreground",
+        refused: "border-refused-border bg-refused text-refused-foreground",
+        complete: "border-complete-border bg-complete text-complete-foreground",
+        fresh: "border-transparent bg-accent text-accent-foreground",
+        outline: "border-input bg-background text-secondary-foreground",
+      },
     },
+    defaultVariants: { kind: "neutral" },
   },
-  defaultVariants: { kind: "neutral" },
-});
+);
 export function Slip({
   kind,
   icon,

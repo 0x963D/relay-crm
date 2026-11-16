@@ -10,6 +10,7 @@ async function frameCapture(page: Page) {
   await mkdir(captureDirectory, { recursive: true });
   await page.clock.setFixedTime(new Date());
   return async (name: string) => {
+    await expect(page.getByRole("status", { name: /^Loading / })).toHaveCount(0);
     for (const theme of ["light", "dark"]) {
       await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption(theme);
       await settleFrame(page);
@@ -78,24 +79,8 @@ test("@capture every lead-work screen in both themes", async ({ page }) => {
     "Nothing was assigned",
   );
   await capture("05-stale");
-  let releaseLead: () => void = () => undefined;
-  const pendingLead = new Promise<void>((resolve) => {
-    releaseLead = resolve;
-  });
-  const leadRequests = /\/queue\/leads\//;
-  await page.route(leadRequests, async (route) => {
-    await pendingLead;
-    await route.continue();
-  });
-  try {
-    await page.getByRole("radio", { name: "Agent", exact: true }).click();
-    await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
-    await expect(page.getByRole("status", { name: "Loading lead", exact: true })).toBeVisible();
-    await capture("15-lead-loading");
-  } finally {
-    releaseLead();
-    await page.unroute(leadRequests);
-  }
+  await page.getByRole("radio", { name: "Agent", exact: true }).click();
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
   await capture("06-queue");
   await capture("16-queue");

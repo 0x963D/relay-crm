@@ -432,7 +432,7 @@ export function PoolScreen({ zone }: { zone: string }) {
                     <>
                       <fieldset className="space-y-2">
                         <legend className="text-caption font-semibold">Share between</legend>
-                        <div className="grid gap-2 @sm/assignment:grid-cols-2">
+                        <div className="grid gap-2 @xs/assignment:grid-cols-2">
                           {agents.map((agent) => (
                             <label
                               key={assignmentKey(agent)}
