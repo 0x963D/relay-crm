@@ -212,20 +212,41 @@ function activityDetail(activity: Activity): Record<string, unknown> {
     : {};
 }
 
+function activitySummary(activity: Activity) {
+  const detail = activityDetail(activity);
+  if (activity.kind === "note") {
+    if (typeof detail.note !== "string") throw new InvariantError("Invalid lead note");
+    return { kind: "note", note: detail.note } as const;
+  }
+  if (activity.kind !== "attempt") return null;
+  const attempt = detail.attempt;
+  if (
+    typeof attempt !== "object" ||
+    attempt === null ||
+    !("channel" in attempt) ||
+    !("outcome" in attempt) ||
+    !("note" in attempt) ||
+    (attempt.channel !== "call" && attempt.channel !== "whatsApp") ||
+    (attempt.outcome !== "noAnswer" && attempt.outcome !== "spokeToThem") ||
+    typeof attempt.note !== "string"
+  )
+    throw new InvariantError("Invalid lead attempt");
+  return {
+    kind: "attempt",
+    channel: attempt.channel,
+    outcome: attempt.outcome,
+    note: attempt.note,
+  } as const;
+}
+
 function attemptSummary(activities: readonly Activity[]) {
   let noAnswerCount = 0;
   let hasAttempt = false;
   for (const activity of activities) {
-    if (activity.kind !== "attempt") continue;
+    const summary = activitySummary(activity);
+    if (summary?.kind !== "attempt") continue;
     hasAttempt = true;
-    const attempt = activityDetail(activity).attempt;
-    if (
-      typeof attempt === "object" &&
-      attempt !== null &&
-      "outcome" in attempt &&
-      attempt.outcome === "noAnswer"
-    )
-      noAnswerCount += 1;
+    if (summary.outcome === "noAnswer") noAnswerCount += 1;
   }
   return { hasAttempt, noAnswerCount };
 }
@@ -242,7 +263,7 @@ function queueItem(
     campaign: row.intakeEvents[0]?.campaign ?? null,
     callbackAt: row.callBackAt,
     noAnswerCount: row.workHistoryKnown ? summary.noAnswerCount : null,
-    lastNoteOrOutcome: last ? activityDetail(last) : null,
+    lastNoteOrOutcome: last ? activitySummary(last) : null,
     hasAttempt:
       summary.hasAttempt || row.stage === "noAnswer" || row.stage === "contacted"
         ? true
@@ -357,6 +378,7 @@ export async function leadDetail(db: Db, actor: Actor, id: LeadId) {
         : null,
       timeline: activities.map((activity) => ({
         ...activity,
+        summary: activitySummary(activity),
         actor: users.find((user) => user.id === activityDetail(activity).actorId) ?? null,
       })),
     };

@@ -13,4 +13,5 @@ test.each([
   expect(queueGroup({ callbackAt: new Date(tomorrow), hasAttempt: true }, at, zone)).toBeNull();
   expect(queueGroup({ callbackAt: null, hasAttempt: false }, at, zone)).toBe("notYetCalled");
   expect(queueGroup({ callbackAt: null, hasAttempt: true }, at, zone)).toBeNull();
+  expect(queueGroup({ callbackAt: null, hasAttempt: null }, at, zone)).toBeNull();
 });
