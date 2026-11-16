@@ -1,0 +1,86 @@
+name: relay-crm-demo
+
+services:
+  secrets:
+    image: node:24.14.0-bookworm-slim
+    command: ["node", "/seed-secrets.ts"]
+    volumes:
+      - secrets:/run/relay-secrets
+      - ./apps/web/scripts/demo-secrets.ts:/seed-secrets.ts:ro
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_DB: relay
+      POSTGRES_PASSWORD_FILE: /run/relay-secrets/postgres-password
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+    volumes:
+      - database:/var/lib/postgresql/data
+      - secrets:/run/relay-secrets:ro
+      - ./infra/demo/init-roles.sh:/docker-entrypoint-initdb.d/10-relay-roles.sh:ro
+      - ./packages/store/scripts/setup-roles.sql:/opt/relay/setup-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username relay --dbname relay"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mail:
+    image: axllent/mailpit:v1.29.2
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mail:/data
+    ports:
+      - "127.0.0.1:8127:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build: .
+    image: relay-crm-demo-app:local
+    pull_policy: build
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      mail:
+        condition: service_healthy
+    volumes:
+      - secrets:/run/relay-secrets:ro
+    ports:
+      - "127.0.0.1:3107:3107"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3107/api/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 5s
+      start_period: 30s
+      retries: 30
+
+  scheduler:
+    image: relay-crm-demo-app:local
+    pull_policy: never
+    init: true
+    command: ["node", "--import", "tsx", "apps/web/scripts/demo-scheduler.ts"]
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - secrets:/run/relay-secrets:ro
+
+volumes:
+  secrets:
+  database:
+  mail:

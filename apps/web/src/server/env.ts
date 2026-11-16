@@ -6,6 +6,7 @@ import {
   type Role,
 } from "@relay/domain";
 import { z } from "zod";
+import { readFile } from "node:fs/promises";
 
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
 
@@ -256,6 +257,17 @@ export function readEnv(developmentBuild?: boolean): Env {
 
 export function readDemoSetupEnv() {
   return { env: readEnv(), migrationUrl: process.env.MIGRATION_DATABASE_URL ?? null };
+}
+
+export function commandEnvironment(overrides: Readonly<Record<string, string>>) {
+  return { ...process.env, ...overrides };
+}
+
+export async function loadDemoConfiguration(file: string) {
+  const value: unknown = JSON.parse(await readFile(file, "utf8"));
+  const variables = z.record(z.string(), z.string()).parse(value);
+  Object.assign(process.env, variables);
+  return readEnv(false);
 }
 
 export function serverOptions(

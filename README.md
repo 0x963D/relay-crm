@@ -3,6 +3,66 @@
 Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone.
 It is a local build. Nothing has been published. The name is a working title.
 
+## Run the demo
+
+With Docker and Docker Compose installed, run this command in the repository.
+
+```sh
+docker compose up
+```
+
+Open the app at <http://127.0.0.1:3107> and the mail inbox at <http://127.0.0.1:8127>.
+Run `docker compose config` to inspect those ports and the services. Both published ports bind to loopback.
+The database has no published port.
+
+The invented company is Tidewell Language School. The shared logins are Priya Raman, manager,
+Dele Akinwale, agent, and Esther Okafor, accountant. The journey screens and role-switching buttons
+are separate work. The current app has a lead-list scaffold and the backend APIs.
+Start a demo session with `POST /api/auth/demo` and a JSON body such as `{"role":"agent"}`.
+Send the app's origin in the `Origin` header and keep the returned session cookie.
+The response includes the available roles. Emailed-code sign-in works alongside demo sign-in.
+
+The data is invented and is reset every night.
+The demo's logins are shared, so one visitor can give a manual payment both approvals.
+The demo sends mail only to its own inbox, and a hosted demo must point SMTP at a sink it controls.
+The public form stores any submitted email as a lead and can reopen a lost lead.
+A visitor can leave data changed until the next reset.
+
+Compose generates secrets in its own volume on first start. The app applies migrations through
+`relay_owner`, seeds the empty database, and then serves through `relay_app`. The owner URL is passed
+only to the migration child process. A demo-only owner file also permits the protected reset.
+The scheduler calls reconciliation and the outbox each minute and resets at midnight UTC.
+`pnpm demo:check <evidence-directory> --cold` starts the command above, checks the production HTTP
+journeys, prints `QUICKSTART.wallMs`, and removes only this Compose project's containers and volumes.
+Its timer includes the application build, migrations, seed, readiness, role sign-ins and API reads.
+Base images and the build cache may already be present. The check also proves scheduled recovery of
+a dropped webhook, inbox delivery, and reset through HTTP.
+
+Stop and remove the local demo with `docker compose -p relay-crm-demo down --volumes`.
+To restore it while it runs, use
+`docker compose -p relay-crm-demo exec -T app node --import tsx apps/web/scripts/demo-scheduler.ts --reset`.
+For a separately configured local database, `pnpm db:seed` requires the owner and app URLs and an SMTP
+sink. Repeating it on a seeded database reports that nothing changed. `pnpm demo:reset` also requires
+`RELAY_DEMO=1` and the seed's owner-only marker. It ends every session and rebuilds the invented
+history through ordinary store operations. A failed seed can be recovered with that reset.
+
+The seed uses the board's people, courses and amounts. It combines alternate payment stories into
+one history, so list counts need not match a single board frame. Callback dates are relative to the
+supplied seed time in UTC. Receipt failures and unknown delivery are invented delivery outcomes;
+successful seed receipts go to the configured SMTP sink. Leila's receipt uses an explicit demo
+email suppression because intake requires an email address.
+
+For a hosted demo, set `RELAY_DEMO=1`, `RELAY_SANDBOX=1`, `AUTH_URL`, `RELAY_SANDBOX_URL`, `DATABASE_URL`,
+`SMTP_URL`, `SMTP_FROM`, `RELAY_TIME_ZONE`, and the exact `RELAY_TRUSTED_PROXY_COUNT` for its proxy.
+Generate distinct `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`, `RELAY_RECONCILE_SECRET`,
+`RELAY_OUTBOX_SECRET`, and `RELAY_DEMO_RESET_SECRET`. Set the reconciliation delays for its scheduler.
+Supply an owner-only JSON file with `ownerUrl` through `RELAY_DEMO_OWNER_FILE` only on a disposable
+demo deployment. Apply migrations with `MIGRATION_DATABASE_URL` outside the serving environment.
+Schedule the reconcile, outbox and reset routes. Disable public intake with `RELAY_PUBLIC_FORM=0`
+if visitors must not submit addresses. `pnpm test -- apps/web/test/env.test.ts` checks the settings
+and secret rules. `pnpm test:prod` proves the demo route is disabled without the demo flag in a
+production build. Nothing in this repository deploys or publishes the demo.
+
 ## The money invariant
 
 A completed payment credits its account exactly once through a balanced, immutable ledger posting.

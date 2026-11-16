@@ -38,6 +38,8 @@ databaseTest(
           AUTH_SECRET: "fake-demo-production-auth-secret-0123456789",
           SMTP_URL: inbox.url,
           SMTP_FROM: "relay@sender.example",
+          RELAY_DEMO_RESET_SECRET: "fake-reset-production-secret-abcdefghijklmnopqrstuvwxyz",
+          RELAY_DEMO_OWNER_FILE: "unused-owner-file.json",
           ...(demo ? { RELAY_DEMO: "1" } : {}),
         }),
         db.connectionString,
@@ -53,8 +55,10 @@ databaseTest(
         if (!demo) {
           for (const role of ["manager", "agent", "accountant"])
             expect((await post("/api/auth/demo", { role })).status).toBe(404);
+          expect((await post("/api/demo/reset", {})).status).toBe(404);
           continue;
         }
+        expect((await post("/api/demo/reset", {})).status).toBe(401);
         expect((await fetch(server.url("/api/auth/demo"))).status).toBe(404);
         expect((await post("/api/auth/demo", { role: "owner" })).status).toBe(400);
         expect(
@@ -105,8 +109,9 @@ databaseTest(
 databaseTest(
   "health returns no details and refuses a reachable database missing its migration",
   async ({ db }) => {
-    const server = await serve({}, db.connectionString);
+    const server = await serve({ RELAY_PUBLIC_FORM: "0" }, db.connectionString);
     try {
+      expect((await fetch(server.url("/api/intake/form"), { method: "POST" })).status).toBe(404);
       const healthy = await fetch(server.url("/api/health"));
       expect(healthy.status).toBe(200);
       expect(await healthy.text()).toBe("");
