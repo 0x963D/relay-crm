@@ -137,7 +137,7 @@ export function PaymentDetail({
             <h2 ref={heading} tabIndex={-1} className="text-3xl font-bold outline-none">
               {formatMoney(payment.money)}
             </h2>
-            <PaymentStatus payment={payment} />
+            <PaymentStatus payment={payment} reason />
           </div>
           <p className="mt-1 text-caption text-secondary-foreground">
             {payment.kind === "first" ? "First" : "Repeat"} payment ·{" "}

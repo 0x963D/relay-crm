@@ -96,6 +96,11 @@ test("review compares the fact that differs, including a paid report after expir
   expect(late).toBeDefined();
   await page.goto(`${browserState().url}/payments/${late!.id}`);
   const comparison = page.getByRole("region", { name: "Review comparison" });
+  await expect(
+    page
+      .getByRole("article", { name: "Payment detail" })
+      .getByText("Paid after close", { exact: true }),
+  ).toBeVisible();
   await expect(comparison).toContainText("Expired");
   await expect(comparison).toContainText("Paid");
   await expect(comparison).toContainText("The state");

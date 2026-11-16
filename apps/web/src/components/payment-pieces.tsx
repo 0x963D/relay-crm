@@ -36,32 +36,45 @@ export function PaymentPart({ actions }: { actions: PaymentRow["actions"] }) {
 export function PaymentStatus({
   payment,
   compact = false,
+  reason = false,
 }: {
   payment: Pick<PaymentRow, "state" | "approvals">;
   compact?: boolean;
+  reason?: boolean;
 }) {
   const status = payment.state.status;
   return (
-    <Slip
-      kind={
-        status === "completed"
-          ? "complete"
-          : ["checkoutCreated", "pendingApproval"].includes(status)
-            ? "waiting"
-            : status === "expired"
-              ? "neutral"
-              : "refused"
-      }
-      icon={
-        status === "completed"
-          ? "done"
-          : ["checkoutCreated", "pendingApproval"].includes(status)
-            ? "wait"
-            : "error"
-      }
-    >
-      {compact && status === "checkoutCreated" ? "Waiting" : paymentStatus(payment)}
-    </Slip>
+    <>
+      <Slip
+        kind={
+          status === "completed"
+            ? "complete"
+            : ["checkoutCreated", "pendingApproval"].includes(status)
+              ? "waiting"
+              : status === "expired"
+                ? "neutral"
+                : "refused"
+        }
+        icon={
+          status === "completed"
+            ? "done"
+            : ["checkoutCreated", "pendingApproval"].includes(status)
+              ? "wait"
+              : status === "needsReview"
+                ? "warning"
+                : status === "expired"
+                  ? "clock"
+                  : "error"
+        }
+      >
+        {compact && status === "checkoutCreated" ? "Waiting" : paymentStatus(payment)}
+      </Slip>
+      {reason && payment.state.status === "needsReview" && (
+        <Slip kind="outline" icon="info">
+          {payment.state.reason.charAt(0).toUpperCase() + payment.state.reason.slice(1)}
+        </Slip>
+      )}
+    </>
   );
 }
 export function LedgerPosting({ payment }: { payment: PaymentView }) {
