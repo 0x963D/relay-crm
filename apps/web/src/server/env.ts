@@ -6,7 +6,7 @@ import {
   type Role,
 } from "@relay/domain";
 import { z } from "zod";
-import { readFile } from "node:fs/promises";
+import { applyDemoConfiguration } from "./env-file.ts";
 
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
 
@@ -256,9 +256,7 @@ export function commandEnvironment(overrides: Readonly<Record<string, string>>) 
 }
 
 export async function loadDemoConfiguration(file: string) {
-  const value: unknown = JSON.parse(await readFile(file, "utf8"));
-  const variables = z.record(z.string(), z.string()).parse(value);
-  Object.assign(process.env, variables);
+  await applyDemoConfiguration(file);
   return readEnv(false);
 }
 

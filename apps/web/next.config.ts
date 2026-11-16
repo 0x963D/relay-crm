@@ -1,8 +1,11 @@
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_SERVER } from "next/constants.js";
 import { readEnv } from "./src/server/env.ts";
 
 const config: NextConfig = {
+  output: "standalone",
+  outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
   transpilePackages: ["@relay/domain", "@relay/store"],
   // Keeps `next dev` from writing a generated file into the repository.
   agentRules: false,

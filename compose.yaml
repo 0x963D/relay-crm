@@ -71,8 +71,11 @@ services:
       retries: 30
 
   resetter:
-    image: ${COMPOSE_PROJECT_NAME}-app:local
-    pull_policy: never
+    build:
+      context: .
+      target: maintenance
+    image: ${COMPOSE_PROJECT_NAME}-maintenance:local
+    pull_policy: build
     init: true
     command: ["node", "--import", "tsx", "apps/web/scripts/demo-resetter.ts"]
     depends_on:
@@ -84,7 +87,7 @@ services:
       - reset-config:/run/relay-secrets/reset:ro
 
   scheduler:
-    image: ${COMPOSE_PROJECT_NAME}-app:local
+    image: ${COMPOSE_PROJECT_NAME}-maintenance:local
     pull_policy: never
     init: true
     command: ["node", "--import", "tsx", "apps/web/scripts/demo-scheduler.ts"]

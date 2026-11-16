@@ -130,6 +130,7 @@ export default defineConfig(
     files: [
       "packages/store/prisma.config.ts",
       "apps/web/src/server/env.ts",
+      "apps/web/src/server/env-file.ts",
       "apps/web/test/production.prod.test.ts",
     ],
     rules: { "no-restricted-syntax": "off" },
