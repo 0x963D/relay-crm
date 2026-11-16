@@ -319,3 +319,15 @@ describe("append-only logs", () => {
     expect(await db.counts()).toEqual({ leads: 1, intakeEvents: 1, activities: 1 });
   });
 });
+
+test("every append-only table refuses truncate even when empty", async ({ db }) => {
+  const tables = await db.rows(
+    "SELECT DISTINCT c.relname AS name FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE p.proname='reject_mutation' AND n.nspname='public'",
+  );
+  expect(tables.length).toBeGreaterThan(0);
+  for (const table of tables) {
+    await expect(db.rows(`TRUNCATE "${String(table.name)}" CASCADE`)).rejects.toThrow(
+      "append-only",
+    );
+  }
+});
