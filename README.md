@@ -144,6 +144,9 @@ For a hosted demo, configure `RELAY_DEMO`, `RELAY_SANDBOX`, `AUTH_URL`, `RELAY_S
 `DATABASE_URL`, `SMTP_URL`, `SMTP_FROM`, `RELAY_TIME_ZONE` and the proxy count. Use distinct auth,
 webhook, reconcile and outbox secrets. Keep the owner connection in a separate maintenance process.
 Point SMTP at a controlled sink. Nothing in this repository publishes or deploys the demo.
+Do not publish the mail inbox, because a sign-in code read from it opens a session as any seeded staff member.
+Set `AUTH_URL` to the HTTPS origin so the session cookie is marked Secure.
+Do not publish PostgreSQL or bind the app or the inbox to all interfaces.
 
 ## The money invariant
 
