@@ -76,26 +76,28 @@ export async function queueAgents(db: Db, actor: Actor, offset: number) {
       const teamId = TeamId.parse(member.teamId);
       return ownerId !== null && teamId !== null && scopeAdmits(scope, { ownerId, teamId });
     });
-    return Promise.all(
-      admitted.map(async (member) => {
-        const ownerId = UserId.parse(member.userId);
-        const teamId = TeamId.parse(member.teamId);
-        if (!ownerId || !teamId) throw new InvariantError("Invalid agent membership");
-        return {
-          ownerId,
-          teamId,
-          name: member.user.name,
-          team: member.team.name,
-          openCount: await tx.lead.count({
-            where: {
-              ownerId,
-              status: { in: ["assigned", "working"] },
-              AND: scopeWhere(scope),
-            },
-          }),
-        };
-      }),
-    );
+    const counts = await tx.lead.groupBy({
+      by: ["ownerId"],
+      where: {
+        ownerId: { in: admitted.map((member) => member.userId) },
+        status: { in: ["assigned", "working"] },
+        AND: scopeWhere(scope),
+      },
+      _count: { _all: true },
+    });
+    const openCounts = new Map(counts.map((row) => [row.ownerId, row._count._all]));
+    return admitted.map((member) => {
+      const ownerId = UserId.parse(member.userId);
+      const teamId = TeamId.parse(member.teamId);
+      if (!ownerId || !teamId) throw new InvariantError("Invalid agent membership");
+      return {
+        ownerId,
+        teamId,
+        name: member.user.name,
+        team: member.team.name,
+        openCount: openCounts.get(ownerId) ?? 0,
+      };
+    });
   });
 }
 

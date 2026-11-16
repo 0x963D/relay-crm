@@ -11,6 +11,8 @@ import { Checkbox } from "./ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Card } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { reads } from "@/lib/reads";
 import type { Remote } from "./queue";
 type Pool = Outputs["leads"]["pool"];
 type Preview = Outputs["distribution"]["preview"];
@@ -36,9 +38,21 @@ export function PoolScreen({
   zone: string;
   onTotalChange: (total: number) => void;
 }) {
-  const [remote, setRemote] = useState<Remote<Pool>>({ status: "loading" });
-  const [agents, setAgents] = useState(initialAgents);
-  const [revision, setRevision] = useState(0);
+  const client = useQueryClient();
+  const query = useQuery(reads.pool());
+  const people = useQuery(reads.agents());
+  const agents = people.data ?? initialAgents;
+  const remote: Remote<Pool> = query.data
+    ? { status: "ready", value: query.data }
+    : query.isError
+      ? { status: "error", error: query.error }
+      : { status: "loading" };
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: ["pool"] }),
+      client.invalidateQueries({ queryKey: ["agents"] }),
+      client.invalidateQueries({ queryKey: ["queue"] }),
+    ]);
   const [selected, setSelected] = useState<string[]>([]);
   const [method, setMethod] = useState<"hand" | "round">("hand");
   const [chosen, setChosen] = useState<string[]>(
@@ -50,25 +64,6 @@ export function PoolScreen({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  useEffect(() => {
-    const c = new AbortController();
-    setRemote({ status: "loading" });
-    void Promise.all([
-      api.leads.pool.query({ limit: 14, offset: 0 }, { signal: c.signal }),
-      api.leads.agents.query({ offset: 0 }, { signal: c.signal }),
-    ]).then(
-      ([value, people]) => {
-        setRemote({ status: "ready", value });
-        setAgents(people);
-      },
-      (error: unknown) => {
-        if (!c.signal.aborted) setRemote({ status: "error", error });
-      },
-    );
-    return () => {
-      c.abort();
-    };
-  }, [revision]);
   const pool = remote.status === "ready" ? remote.value : null;
   useEffect(() => {
     if (pool) onTotalChange(pool.total);
@@ -92,10 +87,10 @@ export function PoolScreen({
     if (!pool) return;
     setLoadingMore(true);
     try {
-      const next = await api.leads.pool.query({ limit: 14, offset: pool.rows.length });
-      setRemote({
-        status: "ready",
-        value: { total: next.total, rows: [...pool.rows, ...next.rows] },
+      const next = await client.fetchQuery(reads.pool({ limit: 14, offset: pool.rows.length }));
+      client.setQueryData(reads.pool().queryKey, {
+        total: next.total,
+        rows: [...pool.rows, ...next.rows],
       });
     } catch (error) {
       setError(failureMessage(error));
@@ -138,7 +133,7 @@ export function PoolScreen({
         } catch (error) {
           if (failureCode(error) !== "stalePreview") throw error;
           const current = await Promise.all(
-            selected.map((id) => api.leads.get.query({ id }).catch(() => null)),
+            selected.map((id) => client.fetchQuery(reads.lead(id))),
           );
           const changed = current.filter(
             (lead): lead is Lead => lead !== null && lead.lifecycle.state.status !== "new",
@@ -147,13 +142,7 @@ export function PoolScreen({
             .filter((lead): lead is Lead => lead !== null && lead.lifecycle.state.status === "new")
             .map((lead) => lead.id);
           setPreview({ ...preview, kind: "stale", changed, remaining });
-          setRemote({
-            status: "ready",
-            value: await api.leads.pool.query({
-              limit: Math.max(14, Math.min(pool.rows.length, 100)),
-              offset: 0,
-            }),
-          });
+          await refresh();
           return;
         }
       } else {
@@ -169,7 +158,7 @@ export function PoolScreen({
       );
       setSelected([]);
       setPreview({ kind: "editing" });
-      setRevision((r) => r + 1);
+      void refresh();
     } catch (error) {
       setError(failureMessage(error));
     } finally {
@@ -245,10 +234,10 @@ export function PoolScreen({
               <Refusal
                 title="The lead pool could not be opened"
                 retry={() => {
-                  setRevision((r) => r + 1);
+                  void refresh();
                 }}
               >
-                {failureMessage(remote.error)}
+                {failureMessage(remote.error, "read")}
               </Refusal>
             </div>
           ) : pool?.total === 0 && preview.kind !== "stale" ? (
@@ -405,6 +394,11 @@ export function PoolScreen({
               </TabsTrigger>
             </TabsList>
             <TabsContent value={method} className="pool-tab-panel">
+              {people.isError && (
+                <Refusal title="Agents could not be loaded">
+                  {failureMessage(people.error, "read")}
+                </Refusal>
+              )}
               {error && <Refusal title="Nothing was assigned">{error}</Refusal>}
               {preview.kind === "stale" ? (
                 <Refusal title="Nothing was assigned">
@@ -522,7 +516,7 @@ export function PoolScreen({
                       onClick={() => {
                         invalidate();
                         setSelected([]);
-                        setRevision((r) => r + 1);
+                        void refresh();
                       }}
                     >
                       Cancel

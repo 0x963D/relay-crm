@@ -7,7 +7,7 @@ export const failureMessages: Record<AccessFailure, string> = {
   callbackNotSet: "This lead has no callback to clear. Refresh to see its current state.",
   wrongNumberNeedsAnAttempt:
     "Try contacting this lead in its current assignment before marking it as a wrong number.",
-  invalidTransition: "The lead was not closed. Log an attempt before closing it as won or lost.",
+  invalidTransition: "Log an attempt before closing this lead as won or lost.",
   pendingPayment:
     "This account already has a payment in progress. Open that payment before recording another.",
   receiptUsed:
@@ -39,15 +39,24 @@ export function failureCode(error: unknown): AccessFailure | null {
   if (typeof data !== "object" || data === null || !("accessFailure" in data)) return null;
   return ACCESS_FAILURES.find((code) => code === data.accessFailure) ?? null;
 }
-export function failureMessage(error: unknown): string {
+export function failureMessage(error: unknown, operation: "read" | "save" = "save"): string {
   const code = failureCode(error);
   if (code) return failureMessages[code];
-  if (typeof error === "object" && error !== null && "data" in error) {
-    const data: unknown = error.data;
-    if (typeof data === "object" && data !== null && "code" in data && data.code === "UNAUTHORIZED")
+  const action = operation === "read" ? "loaded" : "saved";
+  if (typeof error === "object" && error !== null && "data" in error && error.data) {
+    const data = error.data;
+    if (typeof data === "object" && "code" in data && data.code === "UNAUTHORIZED")
       return "Your session ended. Sign in again to continue.";
+    if (
+      "message" in error &&
+      typeof error.message === "string" &&
+      typeof data === "object" &&
+      !("code" in data)
+    )
+      return error.message;
+    return `The server could not complete the request. This was not ${action}. Try again in a moment.`;
   }
-  return "This could not be saved or loaded. Check your connection and try again.";
+  return `This was not ${action}. The server could not be reached. Check your connection and try again.`;
 }
 export const authMessages = {
   OTP_EXPIRED: "That code no longer works. It ran out of time. Send a new code.",
@@ -61,7 +70,8 @@ export async function authFailure(
   phase: "send" | "code" | "demo",
 ): Promise<string> {
   if (!response) return authMessages.connection;
-  if (response.status >= 500) return authMessages.connection;
+  if (response.status >= 500)
+    return "The server could not complete sign-in. Try again in a moment.";
   if (response.status === 404) return "Sign-in is unavailable. Ask your manager for help.";
   if (response.status === 429) return authMessages.TOO_MANY_ATTEMPTS;
   if (phase === "demo")

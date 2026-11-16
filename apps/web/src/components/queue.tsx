@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, type Outputs } from "@/lib/api";
+import { type Outputs } from "@/lib/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { reads } from "@/lib/reads";
 import { failureMessage } from "@/lib/failures";
 import { campaignLabel, dayLabel, shortDate, sourceLabel } from "@/lib/display";
 import { Avatar, Empty, Loading, Refusal, Slip } from "./pieces";
@@ -90,41 +92,27 @@ export function QueueScreen({
   const params = useSearchParams();
   const agentId =
     profile.role === "agent" ? profile.userId : (params.get("agent") ?? agents[0]?.ownerId);
-  const [remote, setRemote] = useState<Remote<Queue>>({ status: "loading" });
-  const [revision, setRevision] = useState(0);
+  const client = useQueryClient();
+  const query = useQuery({ ...reads.queue({ agentId, limit: 20 }), enabled: !!agentId });
+  const remote: Remote<Queue> = query.data
+    ? { status: "ready", value: query.data }
+    : query.isError
+      ? { status: "error", error: query.error }
+      : { status: "loading" };
+  const refresh = () => {
+    setMore([]);
+    void client.invalidateQueries({ queryKey: ["queue"] });
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [more, setMore] = useState<Queue[]>([]);
   const [moreError, setMoreError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const load = useCallback(
-    async (signal: AbortSignal) => {
-      if (!agentId) throw new Error("No agent selected");
-      return api.leads.queue.query({ agentId, limit: 20 }, { signal });
-    },
-    [agentId],
-  );
-  useEffect(() => {
-    const c = new AbortController();
-    setRemote({ status: "loading" });
-    setMore([]);
-    void load(c.signal).then(
-      (value) => {
-        setRemote({ status: "ready", value });
-      },
-      (error: unknown) => {
-        if (!c.signal.aborted) setRemote({ status: "error", error });
-      },
-    );
-    return () => {
-      c.abort();
-    };
-  }, [load, revision]);
   useEffect(() => {
     if (remote.status !== "ready" || !remote.value.nextCallbackAt) return;
     const delay = Math.max(1000, remote.value.nextCallbackAt.getTime() - Date.now() + 100);
     const timer = setTimeout(
       () => {
-        setRevision((r) => r + 1);
+        void client.invalidateQueries({ queryKey: ["queue"] });
       },
       Math.min(delay, 2147483647),
     );
@@ -153,11 +141,13 @@ export function QueueScreen({
     setPending(true);
     setMoreError(null);
     try {
-      const page = await api.leads.queue.query({
-        agentId,
-        limit: 20,
-        offset: (more.length + 1) * 20,
-      });
+      const page = await client.fetchQuery(
+        reads.queue({
+          agentId,
+          limit: 20,
+          offset: (more.length + 1) * 20,
+        }),
+      );
       setMore((pages) => [...pages, page]);
     } catch (error) {
       setMoreError(failureMessage(error));
@@ -206,10 +196,10 @@ export function QueueScreen({
               <Refusal
                 title="The queue could not be opened"
                 retry={() => {
-                  setRevision((r) => r + 1);
+                  void client.invalidateQueries({ queryKey: ["queue"] });
                 }}
               >
-                {failureMessage(remote.error)}
+                {failureMessage(remote.error, "read")}
               </Refusal>
             </div>
           ) : total === 0 ? (
@@ -314,7 +304,7 @@ export function QueueScreen({
               action={params.get("action")}
               onSaved={() => {
                 setSelected(selectedId);
-                setRevision((r) => r + 1);
+                refresh();
               }}
               onBack={() => {
                 router.push(

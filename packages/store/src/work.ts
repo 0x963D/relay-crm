@@ -364,18 +364,14 @@ export async function workQueue(
         Number(b.assignmentSequence - a.assignmentSequence) ||
         b.id.localeCompare(a.id),
     );
+    const page = <T>(items: readonly T[]) =>
+      items.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit);
     return {
-      noCallbackSet: groups.noCallbackSet.slice(
-        input.offset ?? 0,
-        (input.offset ?? 0) + input.limit,
-      ),
-      later: groups.later.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit),
-      overdueCallbacks: groups.overdueCallbacks.slice(
-        input.offset ?? 0,
-        (input.offset ?? 0) + input.limit,
-      ),
-      dueToday: groups.dueToday.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit),
-      notYetCalled: groups.notYetCalled.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit),
+      noCallbackSet: page(groups.noCallbackSet),
+      later: page(groups.later),
+      overdueCallbacks: page(groups.overdueCallbacks),
+      dueToday: page(groups.dueToday),
+      notYetCalled: page(groups.notYetCalled),
       counts: {
         overdueCallbacks: groups.overdueCallbacks.length,
         noCallbackSet: groups.noCallbackSet.length,

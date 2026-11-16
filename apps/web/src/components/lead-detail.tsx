@@ -13,6 +13,8 @@ import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Checkbox } from "./ui/checkbox";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { reads } from "@/lib/reads";
 import type { Profile, Remote } from "./queue";
 type Lead = Outputs["leads"]["get"];
 type Mode = "rest" | "attempt" | "callback" | "note" | "close";
@@ -98,8 +100,13 @@ export function LeadDetail({
   onSaved: () => void;
   onBack: () => void;
 }) {
-  const [remote, setRemote] = useState<Remote<Lead>>({ status: "loading" });
-  const [revision, setRevision] = useState(0);
+  const client = useQueryClient();
+  const query = useQuery(reads.lead(id));
+  const remote: Remote<Lead> = query.data
+    ? { status: "ready", value: query.data }
+    : query.isError
+      ? { status: "error", error: query.error }
+      : { status: "loading" };
   const [mode, setMode] = useState<Mode>(action ? "attempt" : "rest");
   const [channel, setChannel] = useState<"call" | "whatsApp">(
     action === "whatsapp" ? "whatsApp" : "call",
@@ -116,21 +123,6 @@ export function LeadDetail({
   const [visible, setVisible] = useState(20);
   const [expanded, setExpanded] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
-  useEffect(() => {
-    const c = new AbortController();
-    setRemote({ status: "loading" });
-    void api.leads.get.query({ id }, { signal: c.signal }).then(
-      (value) => {
-        setRemote({ status: "ready", value });
-      },
-      (error: unknown) => {
-        if (!c.signal.aborted) setRemote({ status: "error", error });
-      },
-    );
-    return () => {
-      c.abort();
-    };
-  }, [id, revision]);
   const request = useRef<{ body: string; key: string } | null>(null);
   const tabValue = mode === "attempt" ? channel : mode === "close" ? closing : mode;
   function open(next: Mode, nextChannel?: "call" | "whatsApp") {
@@ -202,7 +194,7 @@ export function LeadDetail({
         );
       setMode("rest");
       setNote("");
-      setRevision((r) => r + 1);
+      await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
       onSaved();
     } catch (error) {
       setError(failureMessage(error));
@@ -221,7 +213,7 @@ export function LeadDetail({
       });
       setSuccess("Callback cleared. The lead stays in the queue.");
       setMode("rest");
-      setRevision((r) => r + 1);
+      await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
       onSaved();
     } catch (error) {
       setError(failureMessage(error));
@@ -247,7 +239,7 @@ export function LeadDetail({
             </Button>
           }
         >
-          {failureMessage(remote.error)}
+          {failureMessage(remote.error, "read")}
         </Empty>
       </>
     );
