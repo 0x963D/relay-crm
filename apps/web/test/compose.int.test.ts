@@ -11,7 +11,10 @@ const Configuration = z.object({
   name: z.string(),
   services: z.object({
     app: z.object({ image: z.string(), ports: z.array(z.object({ published: z.string() })) }),
-    mail: z.object({ ports: z.array(z.object({ published: z.string() })) }),
+    mail: z.object({
+      ports: z.array(z.object({ published: z.string() })),
+      environment: z.record(z.string(), z.string()),
+    }),
   }),
 });
 test.each(["relay-check-a", "relay-check-b"])(
@@ -31,5 +34,6 @@ test.each(["relay-check-a", "relay-check-b"])(
     expect(config.services.app.image).toBe(`${project}-app:local`);
     expect(config.services.app.ports[0]?.published).toBe("35107");
     expect(config.services.mail.ports[0]?.published).toBe("38127");
+    expect(config.services.mail.environment.MP_MAX_MESSAGES).toBe("0");
   },
 );

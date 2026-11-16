@@ -24,6 +24,8 @@ The response includes the available roles. Emailed-code sign-in works alongside 
 
 The data is invented and is reset every night.
 The demo's logins are shared, so one visitor can give a manual payment both approvals.
+The demo's inbox keeps every message, and anyone who can open it can sign in by emailed code as any of the invented staff.
+The demo checks card payments more often than a production setup would, and payment API reads return its configured first-check delay and interval.
 The demo sends mail only to its own inbox, and a hosted demo must point SMTP at a sink it controls.
 The public form stores any submitted email as a lead and can reopen a lost lead.
 A visitor can leave data changed until the next reset.
