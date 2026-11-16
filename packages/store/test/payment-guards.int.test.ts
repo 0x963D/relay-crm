@@ -150,3 +150,14 @@ test("the database refuses duplicate active approvals but permits a fresh approv
     ),
   ).toEqual([{ total: 2, active: 1 }]);
 });
+
+test("completion refuses a maker even alongside two eligible approvals", async ({ db }) => {
+  const w = await waiting(db);
+  await db.ownerRows("ALTER TABLE payment_approvals DISABLE TRIGGER payment_approvals_guard");
+  await db.rows(
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) SELECT gen_random_uuid(),$1,u,0,0,now(),$3 FROM unnest($2::uuid[]) AS u",
+    [w.id, [w.recorder.userId, w.a.userId, w.b.userId], requestId],
+  );
+  await db.ownerRows("ALTER TABLE payment_approvals ENABLE TRIGGER payment_approvals_guard");
+  await refusesCompletion(db, w.id);
+});

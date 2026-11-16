@@ -75,10 +75,11 @@ const definitions: {
     test: "reassigning the current owner reports no change and writes no history",
   },
   {
-    name: "payment-completion-recorder",
-    file: "packages/store/prisma/migrations/0033_payment_maker_history/migration.sql",
-    before: " AND a.approver_id<>NEW.recorded_by_id",
-    after: "",
+    name: "payment-completion-maker",
+    file: "packages/store/prisma/migrations/0037_manual_completion_eligibility/migration.sql",
+    before:
+      "NOT EXISTS (SELECT 1 FROM payment_makers m WHERE m.payment_id=NEW.id AND m.user_id=a.approver_id)",
+    after: "true",
     test: "completion independently excludes the recorder when another person last edited",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
@@ -92,8 +93,8 @@ const definitions: {
   },
   {
     name: "payment-role-completion",
-    file: "packages/store/prisma/migrations/0033_payment_maker_history/migration.sql",
-    before: "AND a.role_version=u.role_version ",
+    file: "packages/store/prisma/migrations/0037_manual_completion_eligibility/migration.sql",
+    before: "AND a.role_version=u.role_version",
     after: "",
     test: "completion independently compares both approval role versions",
     testFile: "packages/store/test/payment-guards.int.test.ts",
