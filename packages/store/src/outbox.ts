@@ -39,25 +39,20 @@ export async function leaseReceipt(
     const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM outbox WHERE id=${id}::uuid
       AND state IN ('pending','failed') AND cycle_attempts < ${RECEIPT_MAX_ATTEMPTS}
       AND attempts < ${lifetimeAttemptLimit}
-      AND next_attempt_at <= ${at} AND (lease_until IS NULL OR lease_until <= ${at})
+      AND next_attempt_at <= ${at} AND (lease_until IS NULL OR lease_until <= now())
       FOR UPDATE SKIP LOCKED`;
     if (!rows.length) return null;
-    return tx.outbox.update({
-      where: { id },
-      data: { leaseToken: randomUUID(), leaseUntil: new Date(at.getTime() + leaseMs) },
-    });
+    await tx.$executeRaw`UPDATE outbox SET lease_token=${randomUUID()}::uuid, lease_until=now()+${leaseMs}*interval '1 millisecond' WHERE id=${id}::uuid`;
+    return tx.outbox.findUnique({ where: { id } });
   });
 }
 async function beginDelivery(db: Db, id: string, token: string, at: Date) {
   return transact(db, async (tx) => {
-    const row = await tx.outbox.findFirst({
-      where: {
-        id,
-        leaseToken: token,
-        leaseUntil: { gt: at },
-        state: { in: ["pending", "failed"] },
-      },
-    });
+    const eligible = await tx.$queryRaw<
+      { id: string }[]
+    >`SELECT id FROM outbox WHERE id=${id}::uuid AND lease_token=${token}::uuid AND lease_until>now() AND state IN ('pending','failed') FOR UPDATE`;
+    if (!eligible.length) return null;
+    const row = await tx.outbox.findUnique({ where: { id } });
     if (!row) return null;
     const suppression = row.recipient
       ? await tx.emailSuppression.findUnique({ where: { email: row.recipient } })
@@ -142,18 +137,11 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
   )
     throw new Error("Receipt send timeout must be positive and shorter than the lease.");
   const now = () => options.at ?? new Date();
-  const candidates = await db.outbox.findMany({
-    where: {
-      state: { in: ["pending", "failed"] },
-      cycleAttempts: { lt: RECEIPT_MAX_ATTEMPTS },
-      attempts: { lt: lifetimeAttemptLimit },
-      nextAttemptAt: { lte: now() },
-      OR: [{ leaseUntil: null }, { leaseUntil: { lte: now() } }],
-    },
-    orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
-    take: options.limit ?? 100,
-    select: { id: true, paymentId: true },
-  });
+  const candidates = await db.$queryRaw<{ id: string; paymentId: string }[]>`
+    SELECT id,payment_id AS "paymentId" FROM outbox WHERE state IN ('pending','failed')
+      AND cycle_attempts < ${RECEIPT_MAX_ATTEMPTS} AND attempts < ${lifetimeAttemptLimit}
+      AND next_attempt_at <= ${now()} AND (lease_until IS NULL OR lease_until <= now())
+    ORDER BY next_attempt_at,id LIMIT ${options.limit ?? 100}`;
   const results: {
     id: string;
     state: DeliveryOutcome["state"] | "superseded" | "recordingFailed";
@@ -244,6 +232,12 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
   }
   return results;
 }
+async function receiptProcessing(tx: Tx, id: string) {
+  const [row] = await tx.$queryRaw<
+    { processing: boolean }[]
+  >`SELECT coalesce(lease_until>now(),false) AS processing FROM outbox WHERE id=${id}::uuid`;
+  return row?.processing ?? false;
+}
 export async function receiptDetail(tx: Tx, paymentId: string) {
   const row = await tx.outbox.findUnique({ where: { paymentId } });
   if (!row) return null;
@@ -253,7 +247,7 @@ export async function receiptDetail(tx: Tx, paymentId: string) {
   });
   return {
     id: row.id,
-    processing: row.leaseUntil !== null && row.leaseUntil > new Date(),
+    processing: await receiptProcessing(tx, row.id),
     recipient: row.recipient,
     state: row.state,
     attempts: row.attempts,
@@ -277,10 +271,7 @@ export async function requeueReceipt(
     const row = await tx.outbox.findUnique({ where: { paymentId: id } });
     if (!row) throw new AccessError("accessDenied");
     if (row.attempts >= lifetimeAttemptLimit) throw new AccessError("receiptAttemptLimit");
-    if (
-      !["failed", "unknown"].includes(row.state) ||
-      (row.leaseUntil !== null && row.leaseUntil > at)
-    )
+    if (!["failed", "unknown"].includes(row.state) || (await receiptProcessing(tx, row.id)))
       throw new AccessError("refreshConflict");
     await tx.outbox.update({
       where: { id: row.id },

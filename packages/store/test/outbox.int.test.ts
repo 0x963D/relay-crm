@@ -67,6 +67,9 @@ test("a worker stopped after leasing is recovered after expiry", async ({ db }) 
     return Promise.resolve({ state: "sent" });
   };
   expect(await db.store.runOutbox(send, { at: new Date(at.getTime() + 59_999) })).toEqual([]);
+  await db.rows("UPDATE outbox SET lease_until=now()-interval '1 millisecond' WHERE id=$1", [
+    w.outboxId,
+  ]);
   expect(await db.store.runOutbox(send, { at: new Date(at.getTime() + 60_000) })).toHaveLength(1);
   expect(calls).toBe(1);
 });
@@ -371,3 +374,44 @@ test.for(["cycle", "lifetime"] as const)(
     ]);
   },
 );
+
+test("a worker clock two minutes behind cannot overlap a requeued send", async ({ db }) => {
+  const w = await receipt(db);
+  await db.rows("UPDATE outbox SET next_attempt_at=now()-interval '10 minutes' WHERE id=$1", [
+    w.outboxId,
+  ]);
+  const entered = latch();
+  const release = latch();
+  let active = 0;
+  let maximum = 0;
+  const first = db.store.runOutbox(
+    async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      entered.resolve();
+      await release.promise;
+      active--;
+      return { state: "sent" };
+    },
+    { at: new Date(Date.now() - 120000), leaseMs: 60000, sendTimeoutMs: 10000 },
+  );
+  try {
+    await entered.promise;
+    expect((await db.store.getPayment(w.actor, w.id)).receipt?.processing).toBe(true);
+    await expect(db.store.requeueReceipt(w.actor, w.id, requestId)).rejects.toMatchObject({
+      code: "refreshConflict",
+    });
+    expect(
+      await db.store.runOutbox(() => {
+        active++;
+        maximum = Math.max(maximum, active);
+        active--;
+        return Promise.resolve({ state: "sent" });
+      }),
+    ).toEqual([]);
+  } finally {
+    release.resolve();
+    await first;
+  }
+  expect(maximum).toBe(1);
+});
