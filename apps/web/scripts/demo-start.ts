@@ -1,5 +1,4 @@
 import { execFile, spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { seedDemo } from "@relay/store/demo";
@@ -8,11 +7,8 @@ import { commandEnvironment, loadDemoConfiguration } from "../src/server/env.ts"
 
 const env = await loadDemoConfiguration("/run/relay-secrets/app.json");
 const ownerUrl = await demoOwnerUrl("/run/relay-secrets/owner.json");
-const prisma = createRequire(
-  new URL("../../../packages/store/package.json", import.meta.url),
-).resolve("prisma/build/index.js");
-const migration = await promisify(execFile)(process.execPath, [prisma, "migrate", "deploy"], {
-  cwd: fileURLToPath(new URL("../../../packages/store", import.meta.url)),
+const migration = await promisify(execFile)("pnpm", ["db:migrate"], {
+  cwd: fileURLToPath(new URL("../../..", import.meta.url)),
   env: commandEnvironment({ MIGRATION_DATABASE_URL: ownerUrl }),
 });
 process.stdout.write(migration.stdout);
