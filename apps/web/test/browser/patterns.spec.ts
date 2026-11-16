@@ -3,6 +3,30 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("agent selection and phone Back restore focus to their controls", async ({ page }) => {
+  await signIn(page, "manager");
+  await page.getByRole("link", { name: "Agent queues", exact: true }).click();
+  const picker = page.getByRole("combobox", { name: "View agent queue", exact: true });
+  await expect(picker).toBeVisible();
+  const agent = (await rpc(page).leads.agents.query({})).find(
+    (row) => row.name === "Dele Akinwale",
+  );
+  if (!agent) throw new Error("Missing agent");
+  await picker.focus();
+  await picker.selectOption(agent.ownerId);
+  await expect(
+    page.getByRole("heading", { name: "Dele Akinwale's queue", exact: true }),
+  ).toBeVisible();
+  await expect(picker).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const lead = page.getByRole("link", { name: "Open Hye-jin Park", exact: true });
+  await lead.click();
+  const back = page.getByRole("link", { name: "Back to queue", exact: true });
+  await back.focus();
+  await page.keyboard.press("Enter");
+  await expect(lead).toBeFocused();
+});
+
 test("composer choices are radios and the form adds no tab-panel stop", async ({ page }) => {
   await signIn(page, "agent");
   await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();

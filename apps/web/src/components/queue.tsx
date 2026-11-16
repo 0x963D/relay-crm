@@ -1,5 +1,5 @@
 "use client";
-import { type ReactNode, Suspense, useEffect, useState } from "react";
+import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
@@ -88,6 +88,10 @@ function QueueSlip({
 function AgentPicker({ agentId }: { agentId: string }) {
   const trpc = useTRPC();
   const router = useRouter();
+  const picker = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    picker.current?.focus();
+  }, [agentId]);
   const { data: agents } = useSuspenseQuery(trpc.leads.agents.queryOptions({ offset: 0 }));
   const people = [
     ...new Map(
@@ -105,6 +109,7 @@ function AgentPicker({ agentId }: { agentId: string }) {
   ];
   return (
     <NativeSelect
+      ref={picker}
       aria-label="View agent queue"
       value={agentId}
       onChange={(event) => {
@@ -135,6 +140,13 @@ export function QueueScreen({
   const trpc = useTRPC();
   const client = useQueryClient();
   const params = useParams<{ leadId?: string }>();
+  const previousLead = useRef(params.leadId);
+  const leadLinks = useRef(new Map<string, HTMLAnchorElement>());
+  useEffect(() => {
+    if (!params.leadId && previousLead.current)
+      leadLinks.current.get(previousLead.current)?.focus();
+    previousLead.current = params.leadId;
+  }, [params.leadId]);
   const [limit, setLimit] = useState(20);
   const pageQuery = usePagedQuery(trpc.leads.queue.queryOptions({ agentId, limit }), agentId);
   const queue = pageQuery.data;
@@ -233,6 +245,10 @@ export function QueueScreen({
                       </span>
                       <div className="grid min-w-0 flex-1 gap-1 @md/queue:grid-cols-value-action">
                         <Link
+                          ref={(link) => {
+                            if (link) leadLinks.current.set(item.id, link);
+                            else leadLinks.current.delete(item.id);
+                          }}
                           href={`${basePath}/leads/${item.id}`}
                           scroll={false}
                           aria-label={`Open ${item.name ?? item.email}`}
