@@ -49,3 +49,31 @@ export function failureMessage(error: unknown): string {
   }
   return "This could not be saved or loaded. Check your connection and try again.";
 }
+export const authMessages = {
+  OTP_EXPIRED: "That code no longer works. It ran out of time. Send a new code.",
+  INVALID_OTP: "That code did not work. Check all six digits or ask for a new code.",
+  TOO_MANY_ATTEMPTS: "Too many tries. Wait a minute, then ask for a new code.",
+  demoUnavailable: "This demo role is unavailable. Choose another role or try after the reset.",
+  connection: "The request could not be completed. Check your connection and try again.",
+};
+export async function authFailure(
+  response: Response | null,
+  phase: "send" | "code" | "demo",
+): Promise<string> {
+  if (!response) return authMessages.connection;
+  if (response.status >= 500) return authMessages.connection;
+  if (response.status === 404) return "Sign-in is unavailable. Ask your manager for help.";
+  if (response.status === 429) return authMessages.TOO_MANY_ATTEMPTS;
+  if (phase === "demo")
+    return response.status === 403
+      ? authMessages.demoUnavailable
+      : "The demo role could not be opened. Try again in a moment.";
+  const payload: unknown = await response.json().catch(() => null);
+  if (phase === "code" && typeof payload === "object" && payload !== null && "code" in payload) {
+    if (payload.code === "OTP_EXPIRED") return authMessages.OTP_EXPIRED;
+    if (payload.code === "TOO_MANY_ATTEMPTS") return authMessages.TOO_MANY_ATTEMPTS;
+  }
+  return phase === "code"
+    ? authMessages.INVALID_OTP
+    : "The code could not be sent. Check your email address and try again.";
+}

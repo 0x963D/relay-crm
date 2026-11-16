@@ -77,6 +77,10 @@ export function PoolScreen({
   }
   function toggle(id: string, on: boolean) {
     invalidate();
+    if (on && selected.length >= 100) {
+      setError("Select at most 100 leads at a time. Assign these leads before selecting more.");
+      return;
+    }
     setSelected((ids) => (on ? [...new Set([...ids, id])] : ids.filter((v) => v !== id)));
   }
   async function more() {
@@ -252,7 +256,7 @@ export function PoolScreen({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="check-cell">
-                      <span className="check-target">
+                      <label className="check-target">
                         <Checkbox
                           aria-label="Select all shown leads"
                           disabled={pending || preview.kind === "stale"}
@@ -261,10 +265,10 @@ export function PoolScreen({
                           }
                           onCheckedChange={(v) => {
                             invalidate();
-                            setSelected(v === true ? rows.map((row) => row.id) : []);
+                            setSelected(v === true ? rows.slice(0, 100).map((row) => row.id) : []);
                           }}
                         />
-                      </span>
+                      </label>
                     </TableHead>
                     <TableHead>Lead</TableHead>
                     <TableHead>Campaign</TableHead>
@@ -291,7 +295,7 @@ export function PoolScreen({
                         className={change ? "is-gone" : undefined}
                       >
                         <TableCell className="check-cell">
-                          <span className="check-target">
+                          <label className="check-target">
                             <Checkbox
                               aria-label={`Select ${row.name ?? row.email}`}
                               checked={selected.includes(row.id) && !change}
@@ -300,7 +304,7 @@ export function PoolScreen({
                                 toggle(row.id, v === true);
                               }}
                             />
-                          </span>
+                          </label>
                         </TableCell>
                         <TableCell>
                           <span className="q-name">{row.name ?? row.email}</span>
@@ -363,7 +367,11 @@ export function PoolScreen({
             </>
           )}
         </div>
-        <section className="pane pane--side pad pool-panel" aria-label="Assign leads">
+        <section
+          className="pane pane--side pad pool-panel"
+          aria-label="Assign leads"
+          aria-busy={pending}
+        >
           <h2 className="h2">
             {selected.length
               ? `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}`

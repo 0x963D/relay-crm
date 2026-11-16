@@ -14,6 +14,7 @@ import { clientAddress } from "./client-address.ts";
 import { allowRequest, limitKey, rateLimited } from "./rate-limit.ts";
 import type { AuthEnv } from "./env.ts";
 import type { Mailer } from "./mailer.ts";
+import { authMessages } from "../lib/failures.ts";
 
 const Email = z
   .string()
@@ -79,8 +80,7 @@ export function createAuthentication(
               const user = await store.demoPerson(ctx.body.role).catch((error: unknown) => {
                 if (isAccessError(error))
                   throw new APIError("FORBIDDEN", {
-                    message:
-                      "This demo role is unavailable. Choose another role or try after the reset.",
+                    message: authMessages.demoUnavailable,
                   });
                 throw error;
               });

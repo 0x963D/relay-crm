@@ -3,8 +3,8 @@ import { useEffect, useState, useRef, type SyntheticEvent } from "react";
 import { DEAD_REASONS, recordScope, scopeAdmits } from "@relay/domain";
 import { api, type Inputs, type Outputs } from "@/lib/api";
 import { failureMessage } from "@/lib/failures";
-import { localCallback, shortDate, sourceLabel } from "@/lib/display";
-import { Avatar, Empty, Loading, Refusal, Signoff, Slip } from "./pieces";
+import { localCallback, shortDate, sourceLabel, custodyDate } from "@/lib/display";
+import { Empty, Loading, Refusal, Signoff, Slip } from "./pieces";
 import { Icon, type IconName } from "./icons";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -25,6 +25,7 @@ function object(value: unknown): Record<string, unknown> | null {
 function timelineEntry(
   entry: Lead["timeline"][number],
   zone: string,
+  lead: Lead,
 ): { title: string; body: string; icon: IconName } {
   const detail = object(entry.detail);
   if (entry.summary?.kind === "attempt")
@@ -35,14 +36,18 @@ function timelineEntry(
     };
   if (entry.summary?.kind === "note")
     return { title: "Note added", body: entry.summary.note, icon: "edit" };
-  if (entry.kind === "assignment")
+  if (entry.kind === "assignment") {
+    const to = object(detail?.to);
+    const holder = to?.ownerId === lead.custody.heldBy?.id ? lead.custody.heldBy?.name : null;
+    const fromPool = object(object(detail?.before)?.state)?.status === "new";
     return {
-      title: "Lead assigned",
+      title: holder ? `Assigned to ${holder}` : "Lead assigned",
       body: entry.actor
-        ? `By ${entry.actor.name}, from the lead pool or a previous assignment.`
+        ? `By ${entry.actor.name}${fromPool ? ", from the lead pool." : ". The lead kept its history."}`
         : "Assignment recorded",
       icon: "assign",
     };
+  }
   if (entry.kind === "callback") {
     const change = object(detail?.change);
     const at = change?.at;
@@ -60,14 +65,21 @@ function timelineEntry(
         typeof closing?.note === "string"
           ? closing.note
           : typeof closing?.reason === "string"
-            ? closing.reason
+            ? closing.reason === "wrongNumber"
+              ? "Wrong number"
+              : closing.reason === "doNotContact"
+                ? "Do not contact"
+                : "Duplicate"
             : "",
       icon: "done",
     };
   }
   return {
     title: entry.kind === "intake" ? "Lead received" : "Status changed",
-    body: "",
+    body:
+      entry.kind === "intake"
+        ? `${sourceLabel(lead.source)}${lead.attribution?.campaign ? ` � ${lead.attribution.campaign}` : ""}`
+        : "",
     icon: entry.kind === "intake" ? "inbox" : "history",
   };
 }
@@ -102,6 +114,7 @@ export function LeadDetail({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [visible, setVisible] = useState(20);
+  const [expanded, setExpanded] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   useEffect(() => {
     const c = new AbortController();
@@ -122,6 +135,7 @@ export function LeadDetail({
   const tabValue = mode === "attempt" ? channel : mode === "close" ? closing : mode;
   function open(next: Mode, nextChannel?: "call" | "whatsApp") {
     request.current = null;
+    setExpanded(false);
     setMode(next);
     if (nextChannel) setChannel(nextChannel);
     setError(null);
@@ -313,24 +327,18 @@ export function LeadDetail({
           <Signoff
             caption="Received from"
             name={sourceLabel(lead.custody.receivedFrom?.source)}
-            time={
-              lead.custody.receivedFrom ? shortDate(lead.custody.receivedFrom.at, zone) : "Unknown"
-            }
+            time={custodyDate(lead.custody.receivedFrom?.at ?? null, zone)}
             icon="inbox"
           />
           <Signoff
             caption="Assigned by"
             name={lead.custody.assignedBy?.name ?? null}
-            time={
-              lead.custody.assignedBy?.at ? shortDate(lead.custody.assignedBy.at, zone) : undefined
-            }
+            time={custodyDate(lead.custody.assignedBy?.at ?? null, zone)}
           />
           <Signoff
             caption="Held by"
             name={lead.custody.heldBy?.name ?? null}
-            time={
-              lead.custody.heldBy?.since ? shortDate(lead.custody.heldBy.since, zone) : undefined
-            }
+            time={custodyDate(lead.custody.heldBy?.since ?? null, zone, true)}
           />
         </div>
         <dl className="attribution">
@@ -527,10 +535,12 @@ export function LeadDetail({
                     mode === "note" ||
                     (mode === "close" && closing === "lost")) && (
                     <label className="field">
-                      <span className="label">
+                      <span className="label" id="work-note-label">
                         {mode === "close" ? "Why was it lost?" : "Note"}
                       </span>
                       <Textarea
+                        aria-labelledby="work-note-label"
+                        aria-describedby={mode === "close" ? "lost-help" : undefined}
                         required
                         maxLength={4000}
                         value={note}
@@ -539,7 +549,7 @@ export function LeadDetail({
                         }}
                       />
                       {mode === "close" && (
-                        <span className="help">
+                        <span className="help" id="lost-help">
                           Required, in your own words. There are no categories to pick. The reason
                           is saved on the timeline with your name.
                         </span>
@@ -662,8 +672,8 @@ export function LeadDetail({
           )}
         </div>
         <ul className="tl">
-          {lead.timeline.slice(0, visible).map((entry) => {
-            const display = timelineEntry(entry, zone);
+          {lead.timeline.slice(0, mode === "rest" || expanded ? visible : 1).map((entry) => {
+            const display = timelineEntry(entry, zone, lead);
             return (
               <li className="tl-item" key={entry.id}>
                 <span className="tl-dot">
@@ -689,22 +699,20 @@ export function LeadDetail({
                     </time>
                   </div>
                   {display.body && <p className="tl-body">{display.body}</p>}
-                  {entry.actor && (
-                    <div className="tl-body t3">
-                      <Avatar name={entry.actor.name} />
-                      <span> {entry.actor.name}</span>
-                    </div>
+                  {entry.actor && entry.kind !== "assignment" && (
+                    <div className="tl-body t3">{entry.actor.name}</div>
                   )}
                 </div>
               </li>
             );
           })}
         </ul>
-        {lead.timeline.length > visible && (
+        {lead.timeline.length > (mode === "rest" || expanded ? visible : 1) && (
           <Button
             variant="ghost"
             onClick={() => {
-              setVisible((n) => n + 20);
+              if (mode !== "rest" && !expanded) setExpanded(true);
+              else setVisible((n) => n + 20);
             }}
           >
             Show earlier entries

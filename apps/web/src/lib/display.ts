@@ -52,3 +52,15 @@ export function localCallback(value: string, timeZone: string): Date | null {
   }
   return null;
 }
+
+export function custodyDate(at: Date | null, zone: string, held = false): string | undefined {
+  if (!at) return undefined;
+  return held
+    ? `since ${new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: zone }).format(at)}`
+    : new Intl.DateTimeFormat("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        timeZone: zone,
+      }).format(at);
+}

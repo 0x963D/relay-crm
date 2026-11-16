@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Outputs } from "@/lib/api";
 import { api } from "@/lib/api";
+import { authFailure } from "@/lib/failures";
 import { Avatar, Brand, Empty, Refusal } from "./pieces";
 import { Icon, type IconName } from "./icons";
 import { Button } from "./ui/button";
@@ -71,13 +72,9 @@ export function Workspace({
         location.assign("/");
         return;
       }
-      setError(
-        response.status === 403
-          ? "This demo role is unavailable. Choose another role or try after the reset."
-          : "The demo role could not be changed. Try again.",
-      );
+      setError(await authFailure(response, "demo"));
     } catch {
-      setError("The demo role could not be changed. Check your connection and try again.");
+      setError(await authFailure(null, "demo"));
     } finally {
       setPending(false);
     }

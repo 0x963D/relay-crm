@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { localCallback } from "../src/lib/display.ts";
 import { ACCESS_FAILURES } from "@relay/domain";
-import { failureMessages } from "../src/lib/failures.ts";
+import { failureMessages, authFailure, authMessages } from "../src/lib/failures.ts";
 describe("screen boundaries", () => {
   test("callback inputs use the deployment timezone and reject a skipped clock time", () => {
     expect(localCallback("2031-07-15T09:30", "Europe/Bucharest")).toEqual(
@@ -13,4 +13,13 @@ describe("screen boundaries", () => {
   test("every typed refusal has one plain-words message", () => {
     expect(Object.keys(failureMessages).sort()).toEqual([...ACCESS_FAILURES].sort());
   });
+});
+
+test("sign-in distinguishes an invalid code from one that expired", async () => {
+  expect(await authFailure(Response.json({ code: "OTP_EXPIRED" }, { status: 400 }), "code")).toBe(
+    authMessages.OTP_EXPIRED,
+  );
+  expect(await authFailure(Response.json({ code: "INVALID_OTP" }, { status: 400 }), "code")).toBe(
+    authMessages.INVALID_OTP,
+  );
 });

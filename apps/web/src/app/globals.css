@@ -58,7 +58,6 @@
   --size-900: 900px;
   --size-1200: 1200px;
 }
-/* Relay CRM design board · product styles. Tokens first, then components. */
 :root {
   --carbon: #161a52;
   --carbon-2: #0e1138;
@@ -139,7 +138,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* shell: a white sheet lying on the carbon */
 .shell {
   display: grid;
   grid-template-columns: var(--size-232) 1fr;
@@ -290,7 +288,6 @@ body {
   padding: var(--size-18) var(--size-24);
 }
 
-/* type helpers */
 .h2 {
   font-size: var(--size-17);
   line-height: var(--size-22);
@@ -346,7 +343,6 @@ body {
   min-inline-size: 0;
 }
 
-/* icons, avatars */
 .i {
   inline-size: var(--size-16);
   block-size: var(--size-16);
@@ -381,11 +377,10 @@ body {
   font-size: var(--size-12);
 }
 .av--carbon {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--avatar-carbon-bg);
   color: var(--on-carbon);
 }
 
-/* slips: a state said once, as a small copy slip with an icon */
 .slip {
   display: inline-flex;
   align-items: center;
@@ -429,7 +424,6 @@ body {
   border-color: var(--rule-2);
 }
 
-/* sign-off lines: the signature move. A name on a ruled line, its caption under the line. */
 .signoff {
   display: grid;
   gap: var(--size-20);
@@ -479,7 +473,6 @@ body {
   border-block-end-inline-size: var(--size-1);
 }
 
-/* queue list */
 .sec {
   display: flex;
   align-items: center;
@@ -512,7 +505,6 @@ body {
   margin-block-start: var(--size-1);
 }
 
-/* table */
 .tbl {
   inline-size: 100%;
   border-collapse: collapse;
@@ -544,7 +536,6 @@ body {
   border-block-start: var(--size-1-5) solid var(--text);
 }
 
-/* forms */
 .field {
   display: flex;
   flex-direction: column;
@@ -635,7 +626,6 @@ body {
   gap: var(--size-2);
 }
 
-/* alerts: refusals say what happened, who did it, and what to do next */
 .alert {
   display: flex;
   gap: var(--size-10);
@@ -666,7 +656,6 @@ body {
   font-weight: 660;
 }
 
-/* timeline */
 .tl {
   display: flex;
   flex-direction: column;
@@ -743,7 +732,6 @@ body {
   background: var(--rule);
 }
 
-/* Kept in a style block (never inlined): the reset, states, variants and pseudo-elements. */
 * {
   margin: 0;
   box-sizing: border-box;
@@ -920,7 +908,7 @@ html[data-theme="dark"] .nav a[aria-current="page"] {
 .tabs button[aria-selected="true"] {
   background: var(--sheet);
   color: var(--text);
-  box-shadow: 0 var(--size-1) var(--size-2) rgba(22, 26, 82, 0.14);
+  box-shadow: var(--shadow-control);
 }
 .tabs--fill {
   display: flex;
@@ -1388,7 +1376,7 @@ textarea::placeholder {
 .tabs button[data-state="active"] {
   background: var(--sheet);
   color: var(--text);
-  box-shadow: 0 var(--size-1) var(--size-2) var(--carbon-line);
+  box-shadow: var(--shadow-control);
 }
 .tabs button {
   white-space: nowrap;
@@ -1736,7 +1724,8 @@ textarea::placeholder {
     padding: var(--size-12) var(--size-16) var(--size-2);
   }
   .qrow {
-    padding: var(--size-10) var(--size-8) var(--size-10) var(--size-16);
+    padding-block: var(--size-10);
+    padding-inline: var(--size-16) var(--size-8);
     gap: var(--size-8);
     min-block-size: var(--size-68);
   }
@@ -2062,4 +2051,19 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: var(--size-12);
+}
+
+:root {
+  --avatar-carbon-bg: rgba(255, 255, 255, 0.14);
+  --shadow-control: 0 var(--size-1) var(--size-2) rgba(22, 26, 82, 0.14);
+}
+.theme {
+  min-block-size: var(--size-28);
+}
+@media (max-width: 600px) {
+  .theme,
+  .pool-panel label.row,
+  .callback-check {
+    min-block-size: var(--size-44);
+  }
 }

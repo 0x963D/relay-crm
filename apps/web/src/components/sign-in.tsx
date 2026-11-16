@@ -1,5 +1,6 @@
 "use client";
 import { useState, type SyntheticEvent } from "react";
+import { authFailure } from "@/lib/failures";
 import { Brand, Refusal } from "./pieces";
 import { Icon } from "./icons";
 import { Button } from "./ui/button";
@@ -27,17 +28,13 @@ export function SignIn({ demo }: { demo: boolean }) {
         body: JSON.stringify({ email, type: "sign-in" }),
       });
       if (!res.ok) {
-        setError(
-          res.status === 429
-            ? "Too many requests. Wait a minute before asking for another code."
-            : "The code could not be sent. Check your email address and try again.",
-        );
+        setError(await authFailure(res, "send"));
         return;
       }
       setCode("");
       setStep("code");
     } catch {
-      setError("The code could not be sent. Check your connection and try again.");
+      setError(await authFailure(null, "code"));
     } finally {
       setPending(false);
     }
@@ -61,13 +58,9 @@ export function SignIn({ demo }: { demo: boolean }) {
         return;
       }
       setCode("");
-      setError(
-        res.status === 429
-          ? "Too many tries. Wait a minute, then ask for a new code."
-          : "That code no longer works. It was used already or it ran out of time. Ask for a new code.",
-      );
+      setError(await authFailure(res, "code"));
     } catch {
-      setError("You could not sign in. Check your connection and try again.");
+      setError(await authFailure(null, "code"));
     } finally {
       setPending(false);
     }
@@ -85,13 +78,9 @@ export function SignIn({ demo }: { demo: boolean }) {
         location.assign("/");
         return;
       }
-      setError(
-        response.status === 403
-          ? "This demo role is unavailable. Choose another role or try after the reset."
-          : "The demo could not open. Try again in a moment.",
-      );
+      setError(await authFailure(response, "demo"));
     } catch {
-      setError("The demo could not open. Check your connection and try again.");
+      setError(await authFailure(null, "code"));
     } finally {
       setPending(false);
     }
