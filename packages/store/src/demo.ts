@@ -197,7 +197,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       name,
       phone: `+44 7700 900${String(phone)}`,
       attribution: normalizeAttribution({
-        campaign: courses[course] ?? course,
+        campaign: course === "No campaign" ? null : (courses[course] ?? course),
         form: course === "IELTS evening" ? "IELTS enquiry" : "Course enquiry",
         adSet: course === "IELTS evening" ? "London, age 25 to 40" : null,
         ad: course === "IELTS evening" ? "Band 7 in 8 weeks, video" : null,
@@ -271,7 +271,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       spoke: true,
     },
     { name: "Amara Nwosu", course: "IELTS evening", note: "No answer", spoke: false, twice: true },
-    { name: "Luca Ferraro", course: "Spanish beginners" },
+    { name: "Samir Fadel", course: "Spanish beginners" },
     { name: "Bashir Karimi", course: "German A1", source: "webForm" },
     {
       name: "Camille Laurent",
@@ -298,16 +298,17 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       }
     }
     for (const [name, course, source] of [
+      ["Luca Ferraro", "Spanish beginners", "metaLeadAds"],
       ["Nadia Rahimi", "IELTS evening", "metaLeadAds"],
       ["Wei Chen", "IELTS evening", "metaLeadAds"],
       ["Zainab Yusuf", "Summer school", "metaLeadAds"],
-      ["Tunde Bakare", "Summer school", "csv"],
+      ["Tunde Bakare", "Summer school", "metaLeadAds"],
       ["Diego Salazar", "Spanish beginners", "metaLeadAds"],
       ["Ingrid Solberg", "German A1", "metaLeadAds"],
       ["Ravi Menon", "Summer school", "metaLeadAds"],
       ["Farah Siddiqui", "IELTS evening", "metaLeadAds"],
-      ["Emil Novak", "German A1", "webForm"],
-      ["Oskar Nowak", "German A1", "webForm"],
+      ["Emil Novak", "IELTS evening", "metaLeadAds"],
+      ["Oskar Nowak", "German A1", "metaLeadAds"],
       ["Thabo Nkosi", "Summer school", "metaLeadAds"],
       ["Chiara Russo", "Summer school", "metaLeadAds"],
       ["Marek Dvorak", "Summer school", "metaLeadAds"],
@@ -343,6 +344,104 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       );
       const won = await work(id, { kind: "close", closing: { kind: "won" } }, owner);
       accountIds.set(name, required(won.accountId));
+    }
+    const targets = [
+      ["IELTS evening", "metaLeadAds", 142, 6, 97, 21],
+      ["Business English", "metaLeadAds", 88, 0, 61, 9],
+      ["Spanish beginners", "metaLeadAds", 76, 4, 49, 13],
+      ["German A1", "metaLeadAds", 54, 2, 31, 6],
+      ["Summer school", "metaLeadAds", 39, 11, 12, 1],
+      ["German A1", "webForm", 8, 0, 7, 3],
+      ["No campaign", "csv", 5, 0, 4, 1],
+    ] as const;
+    const existing = await store.campaignFunnel(manager);
+    const firstNames = [
+      "Amina",
+      "Ben",
+      "Celia",
+      "Dario",
+      "Elena",
+      "Felix",
+      "Greta",
+      "Hugo",
+      "Imani",
+      "Jules",
+      "Lina",
+      "Marco",
+      "Nia",
+      "Omar",
+      "Petra",
+      "Rosa",
+      "Soren",
+      "Talia",
+      "Vera",
+      "Yara",
+    ];
+    const surnames = [
+      "Abadi",
+      "Berg",
+      "Costa",
+      "Diallo",
+      "Evans",
+      "Flores",
+      "Gupta",
+      "Hart",
+      "Ibrahim",
+      "Jensen",
+      "Khan",
+      "Lopes",
+      "Martin",
+      "Nilsen",
+      "Ortiz",
+      "Patel",
+      "Quinn",
+      "Reyes",
+      "Silva",
+      "Torres",
+    ];
+    let generated = 0;
+    for (const [course, source, received, unassigned, contacted, won] of targets) {
+      const row = existing.rows.find(
+        (row) => row.source === source && row.campaign === (courses[course] ?? null),
+      );
+      let waiting = unassigned - (row?.unassigned ?? 0);
+      let conversations = contacted - (row?.contacted ?? 0);
+      let wins = won - (row?.won ?? 0);
+      if (Math.min(waiting, conversations, wins) < 0)
+        throw new Error("Named demo stories exceed the campaign totals.");
+      for (let n = row?.received ?? 0; n < received; n++) {
+        const number = generated++;
+        const name = `${required(firstNames[number % firstNames.length])} ${required(surnames[Math.floor(number / firstNames.length)])}`;
+        const id = await lead(name, course, source);
+        if (waiting-- > 0) continue;
+        await assign(id, ffion);
+        const spoke = conversations-- > 0;
+        await work(
+          id,
+          {
+            kind: "attempt",
+            attempt: {
+              channel: "call",
+              outcome: spoke ? "spokeToThem" : "noAnswer",
+              note: spoke
+                ? "Discussed the course schedule and fees."
+                : "No answer after the course enquiry.",
+            },
+          },
+          ffion,
+        );
+        await work(
+          id,
+          {
+            kind: "close",
+            closing:
+              wins-- > 0
+                ? { kind: "won" }
+                : { kind: "lost", note: "Chose a different course date." },
+          },
+          ffion,
+        );
+      }
     }
     const deliveryStates = new Map<string, "failed" | "unknown">();
     let command = 0;

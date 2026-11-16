@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
 
-vi.setConfig({ testTimeout: 120_000 });
+vi.setConfig({ testTimeout: 600_000 });
 import { AccountId, UserId, PaymentId, parseExternalId } from "@relay/domain";
 import { seedDemo, resetDemo } from "../src/demo.ts";
 import { DEMO_PEOPLE } from "../src/demo-state.ts";
@@ -237,3 +237,84 @@ test.for(["Asia/Tokyo", "America/Los_Angeles"])(
     ).toEqual([{ count: 0 }]);
   },
 );
+
+test("demo matches the funnel totals and keeps the board's named pool and accounts", async ({
+  db,
+}) => {
+  await seedDemo(options(db));
+  expect(await db.rows("SELECT count(*)::int AS count FROM leads WHERE status='new'")).toEqual([
+    { count: 23 },
+  ]);
+  const userId = UserId.parse(DEMO_PEOPLE.manager.id);
+  if (!userId) throw new Error("Missing manager");
+  const funnel = await db.store.campaignFunnel({ userId, role: "manager", team: null });
+  expect(
+    funnel.rows.map(({ source, campaign, received, unassigned, contacted, won }) => ({
+      source,
+      campaign,
+      received,
+      unassigned,
+      contacted,
+      won,
+    })),
+  ).toEqual([
+    {
+      source: "metaLeadAds",
+      campaign: "IELTS evening · January intake",
+      received: 142,
+      unassigned: 6,
+      contacted: 97,
+      won: 21,
+    },
+    {
+      source: "metaLeadAds",
+      campaign: "Business English · lunchtime online",
+      received: 88,
+      unassigned: 0,
+      contacted: 61,
+      won: 9,
+    },
+    {
+      source: "metaLeadAds",
+      campaign: "Spanish beginners · weekend",
+      received: 76,
+      unassigned: 4,
+      contacted: 49,
+      won: 13,
+    },
+    {
+      source: "metaLeadAds",
+      campaign: "German A1 · evening",
+      received: 54,
+      unassigned: 2,
+      contacted: 31,
+      won: 6,
+    },
+    {
+      source: "metaLeadAds",
+      campaign: "Summer school · early bird",
+      received: 39,
+      unassigned: 11,
+      contacted: 12,
+      won: 1,
+    },
+    {
+      source: "webForm",
+      campaign: "German A1 · evening",
+      received: 8,
+      unassigned: 0,
+      contacted: 7,
+      won: 3,
+    },
+    { source: "csv", campaign: null, received: 5, unassigned: 0, contacted: 4, won: 1 },
+  ]);
+  expect(await db.rows("SELECT count(*)::int AS count FROM accounts")).toEqual([{ count: 54 }]);
+  expect(
+    await db.rows(
+      "SELECT name FROM leads WHERE status='new' AND name IN ('Luca Ferraro','Tunde Bakare','Emil Novak','Oskar Nowak') ORDER BY name",
+    ),
+  ).toHaveLength(4);
+  expect(
+    await db.rows("SELECT count(*)::int AS count FROM payments WHERE status='pendingApproval'"),
+  ).toEqual([{ count: 4 }]);
+});
