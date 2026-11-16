@@ -8,6 +8,45 @@ import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
 
+test("the payment read supplies review closure rights using the current role and record scope", async ({
+  db,
+}) => {
+  const manager = await person(db, "manager");
+  const accountant = await person(db, "accountant");
+  const agent = await person(db, "agent");
+  const stranger = await person(db, "agent");
+  const accountId = await account(db, agent);
+  const payment = await db.store.createPayment(
+    agent,
+    { key: randomUUID(), accountId, money, kind: "first", mode: "normal" },
+    0,
+    randomUUID(),
+  );
+  expect((await db.store.getPayment(manager, payment.id)).actions).toMatchObject({
+    closeReview: false,
+  });
+  await db.store.receivePaymentWebhook({
+    eventId: randomUUID(),
+    paymentId: payment.id,
+    payloadHash: "fake",
+    observed: { status: "completed", money: { ...money, minor: 1n } },
+  });
+  for (const actor of [manager, accountant])
+    expect((await db.store.getPayment(actor, payment.id)).actions).toMatchObject({
+      closeReview: true,
+    });
+  expect((await db.store.getPayment(agent, payment.id)).actions).toMatchObject({
+    closeReview: false,
+  });
+  await expect(db.store.getPayment(stranger, payment.id)).rejects.toMatchObject({
+    code: "accessDenied",
+  });
+  await db.ownerRows("UPDATE users SET role='agent' WHERE id=$1", [manager.userId]);
+  await expect(db.store.getPayment(manager, payment.id)).rejects.toMatchObject({
+    code: "accessDenied",
+  });
+});
+
 test("the accountant gets accounts with postings first across pages without widening agent scope", async ({
   db,
 }) => {

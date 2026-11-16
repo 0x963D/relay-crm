@@ -73,7 +73,9 @@ test("sandbox choices are applied on the provider page only in demo mode", async
     if (demo) {
       const deliver = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null));
       try {
-        await tasks[0]!();
+        const task = tasks[0];
+        if (!task) throw new Error("No delivery task");
+        await task();
         expect(deliver).toHaveBeenCalledWith(
           "http://app:3107/api/payments/webhook",
           expect.objectContaining({ method: "POST" }),

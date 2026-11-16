@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, Loading, Refusal, Empty } from "./pieces";
 import { PaymentStatus, PaymentPart } from "./payment-pieces";
 import { Button } from "./ui/button";
+import { ShowMore } from "./show-more";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
 export function PaymentsScreen({
@@ -211,16 +212,12 @@ export function PaymentsScreen({
           )}
           {(more || limit > 20) && (
             <div className="p-4">
-              <Button
-                variant="outline"
+              <ShowMore
+                more={more}
                 busy={query.isFetching}
-                aria-disabled={!more}
-                onClick={() => {
-                  if (more) setLimit((value) => value + 20);
-                }}
-              >
-                {more ? "Show more payments" : "All payments shown"}
-              </Button>
+                noun="payments"
+                onMore={() => { setLimit((value) => value + 20); }}
+              />
             </div>
           )}
         </section>

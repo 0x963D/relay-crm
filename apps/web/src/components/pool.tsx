@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Avatar, Empty, Loading, PageHeader, Refusal, Slip } from "./pieces";
 import { Icon } from "./icons";
 import { Button } from "./ui/button";
+import { ShowMore } from "./show-more";
 import { Checkbox } from "./ui/checkbox";
 import { Field } from "./ui/field";
 import { NativeSelect } from "./ui/native-select";
@@ -338,17 +339,13 @@ export function PoolScreen({ zone }: { zone: string }) {
                 : `Showing ${String(rows.length)} of ${String(pool.total)}, newest first`}
             </p>
             {(hasMore || limit > 14) && plan.kind !== "stale" && (
-              <Button
-                variant="outline"
+              <ShowMore
                 size="sm"
+                more={hasMore}
                 busy={pageQuery.isFetching}
-                aria-disabled={!hasMore || pageQuery.isFetching}
-                onClick={() => {
-                  if (hasMore) setLimit((value) => value + 14);
-                }}
-              >
-                {hasMore ? "Show more leads" : "All leads shown"}
-              </Button>
+                noun="leads"
+                onMore={() => { setLimit((value) => value + 14); }}
+              />
             )}
           </div>
         </section>

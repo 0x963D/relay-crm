@@ -1297,6 +1297,8 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
         })),
     ],
     actions: {
+      closeReview:
+        row.status === "needsReview" && recordScope(actor, "payment", "closeReview").kind === "all",
       closeCheckout:
         row.status === "checkoutCreated" &&
         Boolean(

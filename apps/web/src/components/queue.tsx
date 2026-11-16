@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { Avatar, Empty, Loading, PageHeader, Refusal, Slip } from "./pieces";
 import { NativeSelect } from "./ui/native-select";
 import { Button } from "./ui/button";
+import { attemptOutcomes } from "@/lib/display";
+import { ShowMore } from "./show-more";
 import { Icon } from "./icons";
 export type Profile = Outputs["session"]["profile"];
 type Queue = Outputs["leads"]["queue"];
@@ -78,10 +80,12 @@ function QueueSlip({
     );
   const last = item.lastNoteOrOutcome;
   return last?.kind === "attempt" && last.outcome === "spokeToThem" ? (
-    <Slip icon="check">Spoke to them</Slip>
+    <Slip icon="check">{attemptOutcomes.spokeToThem}</Slip>
   ) : (
     <Slip icon="missed">
-      {item.noAnswerCount ? `No answer ×${String(item.noAnswerCount)}` : "Attempt logged"}
+      {item.noAnswerCount
+        ? `${attemptOutcomes.noAnswer} ×${String(item.noAnswerCount)}`
+        : "Attempt logged"}
     </Slip>
   );
 }
@@ -313,17 +317,13 @@ export function QueueScreen({
             </Refusal>
           )}
           {(hasMore || limit > 20) && (
-            <Button
-              variant="outline"
+            <ShowMore
               className="m-4"
+              more={hasMore}
               busy={pageQuery.isFetching}
-              aria-disabled={!hasMore || pageQuery.isFetching}
-              onClick={() => {
-                if (hasMore) setLimit((value) => value + 20);
-              }}
-            >
-              {hasMore ? "Show more leads" : "All leads shown"}
-            </Button>
+              noun="leads"
+              onMore={() => { setLimit((value) => value + 20); }}
+            />
           )}
           {people.isError && (
             <Refusal title="Agents could not be loaded">

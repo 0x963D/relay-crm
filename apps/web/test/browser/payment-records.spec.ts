@@ -2,6 +2,11 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error("Expected fixture or browser result.");
+  return value;
+}
+
 test("account and checkout navigation moves keyboard focus into the opened record", async ({
   page,
 }) => {
@@ -11,7 +16,7 @@ test("account and checkout navigation moves keyboard focus into the opened recor
     .getByRole("link", { name: "Accounts", exact: true })
     .click();
   const accounts = await rpc(page).accounts.list.query({ limit: 100 });
-  const account = accounts.items.find((item) => item.mayEdit && !item.pendingPayment)!;
+  const account = required(accounts.items.find((item) => item.mayEdit && !item.pendingPayment));
   await page.locator(`a[href="/accounts/${account.id}"]`).click();
   await expect(
     page.getByRole("heading", { name: account.person?.name ?? "Account", exact: true }),
@@ -33,7 +38,7 @@ test("money routes show their loading state while navigation waits", async ({ pa
     ["accounts", "Accounts", "Loading accounts"],
     ["funnel", "Campaign funnel", "Loading funnel"],
   ] as const) {
-    let release = () => {};
+    let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -60,9 +65,9 @@ test("missing, foreign and malformed records have an unavailable message instead
 }) => {
   await signIn(page, "accountant");
   const payments = await rpc(page).payments.list.query({ limit: 100 });
-  const foreign = payments.waitingForApproval.find(
-    (payment) => payment.account?.name === "Mireille Dubois",
-  )!;
+  const foreign = required(
+    payments.waitingForApproval.find((payment) => payment.account?.name === "Mireille Dubois"),
+  );
   await page.context().clearCookies();
   await signIn(page, "agent");
   for (const id of ["00000000-0000-4000-8000-000000000999", foreign.id, "not-an-id"]) {
@@ -84,7 +89,7 @@ test("both money forms belong to Payments in the address, header and navigation"
 }) => {
   await signIn(page, "manager");
   const accounts = await rpc(page).accounts.list.query({ limit: 100 });
-  const id = accounts.items[0]!.id;
+  const id = required(accounts.items[0]).id;
   for (const label of ["Create card checkout", "Record manual payment"]) {
     await page.goto(`${browserState().url}/accounts/${id}`);
     await page.getByRole("link", { name: label, exact: true }).click();
@@ -104,11 +109,15 @@ test("completed manual payments name their approvers and edits do not invent voi
   await signIn(page, "accountant");
   const api = rpc(page);
   const accounts = await api.accounts.list.query({ limit: 100 });
-  const account = accounts.items.find((account) => account.person?.name === "Jonas Weber")!;
+  const account = required(
+    accounts.items.find((account) => account.person?.name === "Jonas Weber"),
+  );
   const ledger = await api.accounts.ledger.query({ id: account.id });
-  const entry = ledger.balances
-    .flatMap((balance) => balance.entries)
-    .find((entry) => entry.method === "manual")!;
+  const entry = required(
+    ledger.balances
+      .flatMap((balance) => balance.entries)
+      .find((entry) => entry.method === "manual"),
+  );
   const payment = await api.payments.get.query({ id: entry.paymentId });
   await page.goto(`${browserState().url}/payments/${payment.id}`);
   for (const [index, label] of [
@@ -116,14 +125,16 @@ test("completed manual payments name their approvers and edits do not invent voi
     "Second approval · a different person",
   ].entries()) {
     await expect(page.getByText(label, { exact: true }).locator("..")).toContainText(
-      payment.approvals[index]!.approver!.name,
+      required(required(payment.approvals[index]).approver).name,
     );
   }
   await expect(page.getByRole("region", { name: "Payment outcome" })).not.toContainText(
     "Later deliveries",
   );
   const pending = await api.payments.list.query({ limit: 100 });
-  const edited = pending.waitingForApproval.find((row) => row.account?.name === "Yusuf Demir")!;
+  const edited = required(
+    pending.waitingForApproval.find((row) => row.account?.name === "Yusuf Demir"),
+  );
   await page.goto(`${browserState().url}/payments/${edited.id}`);
   await expect(
     page
@@ -139,7 +150,7 @@ test("the approval panel names the missing approver and keeps decisions together
   const payments = await rpc(page).payments.list.query({ limit: 100 });
   const pending = payments.waitingForApproval.find((payment) => payment.actions.approve);
   expect(pending).toBeDefined();
-  await page.goto(`${browserState().url}/payments/${pending!.id}`);
+  await page.goto(`${browserState().url}/payments/${required(pending).id}`);
   await expect(page.getByText("Waiting for a second approver", { exact: true })).toBeVisible();
   const approve = page.getByRole("button", { name: /^Approve as/ });
   const reject = page.getByRole("button", { name: "Reject payment", exact: true });
@@ -149,7 +160,7 @@ test("the approval panel names the missing approver and keeps decisions together
   const rejectBox = await reject.boundingBox();
   expect(approveBox).not.toBeNull();
   expect(rejectBox).not.toBeNull();
-  expect(Math.abs(approveBox!.y - rejectBox!.y)).toBeLessThan(2);
+  expect(Math.abs(required(approveBox).y - required(rejectBox).y)).toBeLessThan(2);
 });
 
 test("payment groups share columns and align amount headers with their figures", async ({
@@ -195,7 +206,7 @@ test("payment rows and ledger amounts fit at phone width", async ({ page }) => {
   const accounts = await rpc(page).accounts.list.query({ limit: 100 });
   const funded = accounts.items.find((account) => account.balances?.length);
   expect(funded).toBeDefined();
-  await page.goto(`${browserState().url}/accounts/${funded!.id}/ledger`);
+  await page.goto(`${browserState().url}/accounts/${required(funded).id}/ledger`);
   await noOverflow();
   const ledger = page.getByRole("region", { name: "Account ledger", exact: true });
   await expect(ledger).toContainText("Credit");
@@ -206,7 +217,7 @@ test("payment rows and ledger amounts fit at phone width", async ({ page }) => {
 test("opening a payment moves focus without outlining its amount", async ({ page }) => {
   await signIn(page, "accountant");
   const payments = await rpc(page).payments.list.query({ limit: 100 });
-  await page.goto(`${browserState().url}/payments/${payments.needsReview[0]!.id}`);
+  await page.goto(`${browserState().url}/payments/${required(payments.needsReview[0]).id}`);
   const amount = page
     .getByRole("article", { name: "Payment detail" })
     .getByRole("heading", { level: 2 });
@@ -222,7 +233,7 @@ test("payment events show causes before effects and omit an unowed webhook", asy
       payment.state.status === "needsReview" && payment.state.reason === "paid after close",
   );
   expect(late).toBeDefined();
-  await page.goto(`${browserState().url}/payments/${late!.id}`);
+  await page.goto(`${browserState().url}/payments/${required(late).id}`);
   const events = page.getByRole("list", { name: "Payment events" });
   await expect(events.getByRole("heading")).toHaveText([
     "Checkout created",
@@ -244,7 +255,7 @@ test("review compares the fact that differs, including a paid report after expir
       payment.state.status === "needsReview" && payment.state.reason === "paid after close",
   );
   expect(late).toBeDefined();
-  await page.goto(`${browserState().url}/payments/${late!.id}`);
+  await page.goto(`${browserState().url}/payments/${required(late).id}`);
   const comparison = page.getByRole("region", { name: "Review comparison" });
   await expect(
     page
@@ -255,17 +266,17 @@ test("review compares the fact that differs, including a paid report after expir
   await expect(comparison).toContainText("Paid");
   await expect(comparison).toContainText("The state");
   await expect(comparison).toContainText("The amount and the currency match.");
-  const record = await rpc(page).payments.get.query({ id: late!.id });
+  const record = await rpc(page).payments.get.query({ id: required(late).id });
   expect(record.soldBy).not.toBeNull();
   await expect(
     page.getByRole("article", { name: "Payment detail" }).getByText(/Sold by/),
-  ).toContainText(record.soldBy!.name);
+  ).toContainText(required(record.soldBy).name);
   const mismatch = payments.needsReview.find(
     (payment) =>
       payment.state.status === "needsReview" && payment.state.reason === "amount mismatch",
   );
   expect(mismatch).toBeDefined();
-  await page.goto(`${browserState().url}/payments/${mismatch!.id}`);
+  await page.goto(`${browserState().url}/payments/${required(mismatch).id}`);
   await expect(comparison).toContainText("The amount. The currency matches.");
   await expect(comparison).not.toContainText("The state");
 });

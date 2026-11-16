@@ -1,3 +1,5 @@
+import { DEAD_REASONS } from "@relay/domain";
+import { attemptOutcomes, deadReasons } from "@/lib/display";
 import type { Outputs } from "@/lib/api";
 import { shortDate, sourceLabel, callbackDate } from "@/lib/display";
 import type { IconName } from "./icons";
@@ -47,17 +49,16 @@ function timelineEntry(
   }
   if (entry.kind === "closure") {
     const closing = object(detail?.closing);
+    const reason = DEAD_REASONS.find((reason) => reason === closing?.reason);
     return {
       title: `Closed as ${typeof closing?.kind === "string" ? closing.kind : "recorded"}`,
       body:
         typeof closing?.note === "string"
           ? closing.note
           : typeof closing?.reason === "string"
-            ? closing.reason === "wrongNumber"
-              ? "Wrong number"
-              : closing.reason === "doNotContact"
-                ? "Do not contact"
-                : "Duplicate"
+            ? reason
+              ? deadReasons[reason]
+              : "Reason recorded"
             : "",
       icon: "done",
     };
@@ -84,8 +85,8 @@ export function LeadTimeline({ lead, zone, limit }: { lead: Lead; zone: string; 
               {entry.summary?.kind === "attempt" && (
                 <Slip icon={entry.summary.outcome === "noAnswer" ? "missed" : "check"}>
                   {entry.summary.outcome === "noAnswer"
-                    ? `No answer ×${String(entry.summary.noAnswerCount ?? 1)}`
-                    : "Spoke to them"}
+                    ? `${attemptOutcomes.noAnswer} ×${String(entry.summary.noAnswerCount ?? 1)}`
+                    : attemptOutcomes.spokeToThem}
                 </Slip>
               )}
               {entry.summary?.kind === "attempt" && entry.summary.callbackAt && (

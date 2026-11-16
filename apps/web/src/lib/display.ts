@@ -1,7 +1,17 @@
-import { CURRENCIES, isCurrencyCode } from "@relay/domain";
+import { CURRENCIES, isCurrencyCode, type Attempt, type DeadReason } from "@relay/domain";
+
+export const attemptOutcomes = {
+  noAnswer: "No answer",
+  spokeToThem: "Spoke to them",
+} satisfies Record<Attempt["outcome"], string>;
+export const deadReasons = {
+  duplicate: "Duplicate",
+  wrongNumber: "Wrong number",
+  doNotContact: "Do not contact",
+} satisfies Record<DeadReason, string>;
 
 export function countLabel(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 export function shortDate(at: Date | null, zone: string): string {

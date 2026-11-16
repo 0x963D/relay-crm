@@ -1,4 +1,5 @@
 "use client";
+import { attemptOutcomes, deadReasons } from "@/lib/display";
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { DEAD_REASONS } from "@relay/domain";
 import type { Inputs, Outputs } from "@/lib/api";
@@ -237,14 +238,9 @@ export function LeadComposer({
                         outcome === value && "border-primary bg-accent",
                       )}
                     >
-                      <RadioGroupItem
-                        value={value}
-                        aria-label={value === "noAnswer" ? "No answer" : "Spoke to them"}
-                      />
+                      <RadioGroupItem value={value} aria-label={attemptOutcomes[value]} />
                       <span>
-                        <span className="font-semibold">
-                          {value === "noAnswer" ? "No answer" : "Spoke to them"}
-                        </span>
+                        <span className="font-semibold">{attemptOutcomes[value]}</span>
                         <span className="block text-xs text-muted-foreground">
                           {value === "noAnswer"
                             ? `Counts as no answer number ${String(lead.noAnswerCount + 1)}`
@@ -347,9 +343,11 @@ export function LeadComposer({
                     if (reason) setDeadReason(reason);
                   }}
                 >
-                  <option value="duplicate">Duplicate</option>
-                  <option value="wrongNumber">Wrong number</option>
-                  <option value="doNotContact">Do not contact</option>
+                  {DEAD_REASONS.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {deadReasons[reason]}
+                    </option>
+                  ))}
                 </NativeSelect>
               )}
             </Field>

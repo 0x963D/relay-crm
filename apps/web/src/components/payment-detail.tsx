@@ -23,15 +23,7 @@ import { Textarea } from "./ui/textarea";
 import { Icon } from "./icons";
 
 type Action = "approve" | "reject" | "cancel" | "closeReview" | "closeCheckout" | "requeueReceipt";
-export function PaymentDetail({
-  id,
-  zone,
-  canCloseReview,
-}: {
-  id: string;
-  zone: string;
-  canCloseReview: boolean;
-}) {
+export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
   const trpc = useTRPC();
   const api = useTRPCClient();
   const client = useQueryClient();
@@ -135,7 +127,7 @@ export function PaymentDetail({
       eventDetail(event.detail).providerStatus === "completed",
   ).length;
   const decisionPanel = (payment.actions.closeCheckout ||
-    (reviewing && canCloseReview) ||
+    (reviewing && payment.actions.closeReview) ||
     payment.actions.reject ||
     payment.actions.cancel) && (
     <form

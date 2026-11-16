@@ -10,6 +10,7 @@ import { failureMessage } from "@/lib/failures";
 import { cn } from "@/lib/utils";
 import { PageHeader, Loading, Refusal, Empty, Slip } from "./pieces";
 import { Button } from "./ui/button";
+import { ShowMore } from "./show-more";
 import {
   Table,
   TableBody,
@@ -116,16 +117,12 @@ export function AccountsScreen({
           )}
           {(more || limit > 20) && (
             <div className="p-4">
-              <Button
-                variant="outline"
+              <ShowMore
+                more={more}
                 busy={query.isFetching}
-                aria-disabled={!more}
-                onClick={() => {
-                  if (more) setLimit((value) => value + 20);
-                }}
-              >
-                {more ? "Show more accounts" : "All accounts shown"}
-              </Button>
+                noun="accounts"
+                onMore={() => { setLimit((value) => value + 20); }}
+              />
             </div>
           )}
         </section>
