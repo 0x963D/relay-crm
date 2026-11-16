@@ -138,6 +138,7 @@ test("scope hides other accounts and all ledger lines from agents", async ({ db 
   await db.store.receivePaymentWebhook(event);
   await expect(db.store.getPayment(other, id)).rejects.toMatchObject({ code: "accessDenied" });
   expect(await db.store.listPayments(other, 100)).toEqual({
+    counts: { waitingForApproval: 0, waitingForProvider: 0, needsReview: 0, decidedThisWeek: 0 },
     waitingForApproval: [],
     waitingForProvider: [],
     needsReview: [],
