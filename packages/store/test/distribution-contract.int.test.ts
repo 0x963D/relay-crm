@@ -451,3 +451,30 @@ test("a foreign agent named with the caller's team is outside scope", async ({ d
     ),
   ).rejects.toMatchObject({ code: "accessDenied" });
 });
+
+test("request writes remove only a bounded number of expired windows", async ({ db }) => {
+  await db.rows(
+    "INSERT INTO auth_request_limits(key,count,started_at) SELECT 'expired-' || n,1,now()-interval '2 minutes' FROM generate_series(1,105) AS n",
+  );
+  expect(await db.store.takeRequestLimit("live", 1, 60)).toBe(true);
+  expect(
+    await db.rows("SELECT count(*)::int AS n FROM auth_request_limits WHERE key LIKE 'expired-%'"),
+  ).toEqual([{ n: 5 }]);
+  expect(await db.store.takeRequestLimit("live", 1, 60)).toBe(false);
+  expect(await db.rows("SELECT key,count FROM auth_request_limits")).toEqual([
+    { key: "live", count: 1 },
+  ]);
+});
+
+test("cleanup respects the duration stored on each window", async ({ db }) => {
+  expect(await db.store.takeRequestLimit("long", 1, 3600)).toBe(true);
+  await db.rows(
+    "UPDATE auth_request_limits SET started_at=now()-interval '61 seconds' WHERE key='long'",
+  );
+  expect(await db.store.takeRequestLimit("short", 1, 60)).toBe(true);
+  expect(await db.store.takeRequestLimit("long", 1, 3600)).toBe(false);
+  expect(await db.rows("SELECT key FROM auth_request_limits ORDER BY key")).toEqual([
+    { key: "long" },
+    { key: "short" },
+  ]);
+});

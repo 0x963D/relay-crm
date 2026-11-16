@@ -287,10 +287,12 @@ model AuthVerification {
 }
 
 model AuthRequestLimit {
+  windowSeconds Int @default(60) @map("window_seconds")
   key       String   @id
   count     Int
   startedAt DateTime @map("started_at") @db.Timestamptz(3)
 
+  @@index([startedAt])
   @@map("auth_request_limits")
 }
 

@@ -77,7 +77,10 @@ Each client may make 10 requests per 60-second fixed window. All clients share a
 1,000-request window. A refused request returns 429 with `Retry-After: 60` and records no intake.
 A client refused by its own budget does not consume the global budget. Invalid submissions count.
 The window starts with the first request and resets on the first request after expiry.
-The shared counter uses one conditional PostgreSQL upsert. The row lock serializes increments
+The shared counter uses one conditional PostgreSQL upsert. In that same statement, it removes at
+most 100 other expired windows, with locked rows skipped. Each window stores its duration, so
+cleanup preserves longer windows. `pnpm exec dotenv -- vitest run --project integration packages/store/test/distribution-contract.int.test.ts`
+checks the cleanup bound and duration handling. The row lock serializes increments
 and refuses increments past the budget. `pnpm test:int -- packages/store/test/distribution-contract.int.test.ts`
 checks concurrent admission, saturation and expiry.
 
