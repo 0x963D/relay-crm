@@ -366,7 +366,8 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 The integration tests create a template database and one database per test, and drop each test's
 database when the test ends. Only `MIGRATION_DATABASE_URL` needs `CREATEDB`.
 The app and test operations use the restricted `DATABASE_URL` role. Test fixtures use an explicit
-owner connection only to create schemas, install failure triggers or verify owner-level defences.
+owner connection to create schemas, set up fixture rows, install failure triggers, restore marked
+demos and verify owner-level defences.
 Database test files run sequentially.
 
 ## Sign in and assign through the API
