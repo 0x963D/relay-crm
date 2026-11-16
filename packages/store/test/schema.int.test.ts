@@ -5,7 +5,7 @@ import { describe, expect } from "vitest";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const CHECK_VIOLATION = "23514";
-const RESTRICT_VIOLATION = "42501";
+const INSUFFICIENT_PRIVILEGE = "42501";
 const AT = "2026-03-02T09:00:00.000Z";
 
 type Row = Readonly<Record<string, unknown>>;
@@ -315,7 +315,7 @@ describe("append-only logs", () => {
   ] as const)("refuse %s", async ([, statement], { db }) => {
     await db.store.intake(submissionExample());
 
-    await expect(db.rows(statement)).rejects.toMatchObject({ code: RESTRICT_VIOLATION });
+    await expect(db.rows(statement)).rejects.toMatchObject({ code: INSUFFICIENT_PRIVILEGE });
     expect(await db.counts()).toEqual({ leads: 1, intakeEvents: 1, activities: 1 });
   });
 });

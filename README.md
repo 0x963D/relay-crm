@@ -122,7 +122,9 @@ What works today:
 - A typed tRPC API parses inputs and uses superjson for dates.
 
 `pnpm test` runs unit tests. `pnpm test:int` runs integration tests against real PostgreSQL,
-including forced races and catalog checks for unique indexes, grants and triggers.
+including forced races, catalog checks for unique indexes and grants, and an enabled-trigger
+catalog check for every append-only row guard. Owner-connection tests attempt both updates and
+deletes on every append-only table.
 `pnpm test:prod` checks the production build, SMTP sign-in and scoped API errors.
 `pnpm test:mutations <output-directory>` removes each covered safety check in turn, requires its
 named test to fail, restores the source in `finally`, and reruns the unchanged tests.

@@ -1,3 +1,4 @@
+import { APPEND_ONLY_TABLES } from "./append-only-tables.ts";
 import { spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -387,6 +388,16 @@ definitions.push(
     test: "account lists sort by person name with a scoped total and payment summary",
     testFile: "packages/store/test/work.int.test.ts",
   },
+);
+definitions.push(
+  ...APPEND_ONLY_TABLES.map(([table, , migration]) => ({
+    name: `append-only-${table}`,
+    file: `packages/store/prisma/migrations/${migration}/migration.sql`,
+    before: `CREATE TRIGGER ${table}_append_only BEFORE DELETE OR UPDATE ON public.${table} FOR EACH ROW EXECUTE FUNCTION public.reject_mutation();`,
+    after: "",
+    test: `owner append-only ${table}`,
+    testFile: "packages/store/test/append-only.int.test.ts",
+  })),
 );
 const filter = process.argv[3];
 definitions.push(
