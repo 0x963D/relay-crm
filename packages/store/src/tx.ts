@@ -80,6 +80,7 @@ export interface TransactionReport {
 
 /** Publishes a `TransactionReport` after every `transact` call, so contention can be observed. */
 export const transactionReports = channel("relay:store:transaction");
+const transactionRetries = channel("relay:store:transaction-retry");
 
 function report(outcome: TransactionReport): void {
   transactionReports.publish(outcome);
@@ -106,6 +107,7 @@ export async function transact<T>(db: Db, body: (tx: Tx) => Promise<T>): Promise
         report({ attempts: attempt, committed: false });
         throw error;
       }
+      transactionRetries.publish(driverFailure(error));
       await sleep(Math.random() * Math.min(MAX_BACKOFF_MS, 10 * 2 ** attempt));
     }
   }

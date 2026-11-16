@@ -1,3 +1,6 @@
+import { settlePayment } from "../src/payments.ts";
+import { connect } from "../src/tx.ts";
+import { channel } from "node:diagnostics_channel";
 import { createHash, randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import { type Actor, type ProviderPayment } from "@relay/domain";
@@ -334,4 +337,75 @@ test("ledger lines expose positive credit and debit amounts", async ({ db }) => 
     { side: "credit", amount: 39500n, kind: "customer" },
     { side: "debit", amount: 39500n, kind: "cardProviderSandbox" },
   ]);
+});
+
+test("the database transition guard itself refuses review completion", async ({ db }) => {
+  const { id, event } = await setup(db);
+  await db.store.receivePaymentWebhook({
+    ...event,
+    observed: { status: "completed", money: { ...money, minor: 1n } },
+  });
+  await db.rows("BEGIN");
+  try {
+    await expect(
+      db.rows(
+        "UPDATE payments SET status='completed',completed_by='reconciler',reason=NULL,reported_amount=NULL,reported_currency=NULL WHERE id=$1",
+        [id],
+      ),
+    ).rejects.toMatchObject({ code: "23514", message: "Illegal payment transition" });
+  } finally {
+    await db.rows("ROLLBACK");
+  }
+});
+
+test("two settlements collide at the posting unique index and retry from a fresh snapshot", async ({
+  db,
+}) => {
+  const { id, accountId } = await setup(db);
+  await db.rows(
+    "INSERT INTO ledger_accounts(id,account_id,kind,currency) VALUES (gen_random_uuid(),$1,'customer','GBP'),(gen_random_uuid(),NULL,'cardProviderSandbox','GBP')",
+    [accountId],
+  );
+  const token = await db.store.claimPaymentCheck(id, new Date(), 300000);
+  if (!token) throw new Error("No claim");
+  const failures: unknown[] = [];
+  const retries = channel("relay:store:transaction-retry");
+  const record = (value: unknown) => {
+    failures.push(value);
+  };
+  retries.subscribe(record);
+  await db.gate.close("payments");
+  const contender = connect(db.connectionString);
+  // A non-serializable writer makes the unique-index retry observable without SSI preempting it.
+  const first = contender.$transaction(
+    (tx) =>
+      settlePayment(
+        tx,
+        { kind: "system", name: "reconciler" },
+        id,
+        { type: "provider", by: "reconciler", result: observed },
+        randomUUID(),
+        new Date(),
+      ),
+    { isolationLevel: "ReadCommitted" },
+  );
+  const attempts = (async () => {
+    await db.gate.waitForWaiters(1);
+    const second = db.store.finishPaymentCheck(id, token, observed);
+    await db.gate.waitForWaiters(2);
+    await db.gate.open();
+    return Promise.all([first, second]);
+  })();
+  try {
+    expect((await attempts).filter((r) => r.changed)).toHaveLength(1);
+    expect(failures).toContainEqual({
+      sqlState: "23505",
+      constraint: "ledger_transactions_payment_id_key",
+    });
+    expect(await counts(db)).toEqual([{ postings: 1, lines: 2, total: "0", outbox: 1 }]);
+  } finally {
+    await db.gate.open();
+    await contender.$disconnect();
+    retries.unsubscribe(record);
+  }
 });

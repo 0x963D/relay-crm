@@ -218,7 +218,7 @@ export interface SettlementResult {
   readonly status: PaymentState["status"];
   readonly changed: boolean;
 }
-async function settlePayment(
+export async function settlePayment(
   tx: Tx,
   principal: SystemPrincipal | Actor,
   paymentId: string,
@@ -242,6 +242,10 @@ async function settlePayment(
   const outcome = { status: next.status, changed: next !== before };
   await recordObservation?.(outcome);
   if (next === before) return outcome;
+  const posting =
+    next.status === "completed"
+      ? await tx.ledgerTransaction.create({ data: { paymentId: row.id, at } })
+      : null;
   const updated = await tx.payment.update({ where: { id: row.id }, data: columns(next) });
   const cause = { kind: "request", id: requestId } as const;
   await writeAudit(tx, principal, {
@@ -252,7 +256,7 @@ async function settlePayment(
     cause,
     at,
   });
-  if (next.status === "completed") {
+  if (posting) {
     let customer = await tx.ledgerAccount.findUnique({
       where: { accountId_currency: { accountId: row.accountId, currency: row.currency } },
     });
@@ -266,7 +270,6 @@ async function settlePayment(
     provider ??= await tx.ledgerAccount.create({
       data: { currency: row.currency, kind: debitKind },
     });
-    const posting = await tx.ledgerTransaction.create({ data: { paymentId: row.id, at } });
     await tx.ledgerLine.createMany({
       data: [
         {
