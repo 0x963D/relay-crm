@@ -3,10 +3,21 @@
 Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone.
 It is a local build. Nothing has been published. The name is a working title.
 
+## The money invariant
+
+A completed payment credits its account exactly once through a balanced, immutable ledger posting.
+Webhook redelivery and reconciliation use the same settlement transaction, so concurrent completion cannot credit it again.
+
+The real-PostgreSQL test [payments.int.test.ts](packages/store/test/payments.int.test.ts),
+`a webhook, its duplicate and the reconciler collide and credit exactly once`, holds a database
+write gate until every caller has reached it. Run it with
+`pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts -t "collide and credit exactly once"`.
+
 ## Status
 
 Lead intake, email code sign-in, scoped access and lead assignment work through the API.
-The only screen is the existing lead list. The work queue, payments and their screens are not built.
+The CRM screen is the existing lead list. Card payments work through the API and a plain sandbox checkout page.
+The work queue and CRM payment screens are not built.
 
 What works today:
 
@@ -74,11 +85,11 @@ that context and puts requests without a trusted forwarded address in one `unkno
 
 `pnpm -r list --depth -1` lists the workspace packages. Each one holds one kind of knowledge.
 
-| Package           | What it knows                                                 | What it must not do                 |
-| ----------------- | ------------------------------------------------------------- | ----------------------------------- |
-| `packages/domain` | The rules: lead states, access scopes, email identity, intake | Import a dependency, read the clock |
-| `packages/store`  | Every SQL statement and every transaction                     | Export the Prisma client            |
-| `apps/web`        | HTTP: the intake sources, their routes and the lead list      | Depend on a database client         |
+| Package           | What it knows                                                  | What it must not do                 |
+| ----------------- | -------------------------------------------------------------- | ----------------------------------- |
+| `packages/domain` | The rules: lead states, access scopes, email identity, intake  | Import a dependency, read the clock |
+| `packages/store`  | Every SQL statement and every transaction                      | Export the Prisma client            |
+| `apps/web`        | HTTP: intake, authentication, payment routes and the lead list | Depend on a database client         |
 
 The build enforces the right-hand column. The domain declares no dependencies and loads no ambient
 types, so `process`, `fetch` and `node:*` do not typecheck there. Lint forbids `Date.now()` and
@@ -214,10 +225,12 @@ Distribution uses this helper. Its former receipt table and lookup no longer exi
 
 `Principal` includes the named system actors `intake`, `providerWebhook` and `reconciler`.
 `recordScope` grants intake only lead identity lookup and reopening. It denies full-record reads,
-contact-field edits and assignment to every system actor. The payment jobs have no record permissions yet.
+contact-field edits and assignment to every system actor. The providerWebhook and reconciler system actors may settle payments. Only the reconciler may scan due payments.
+Neither has human record-read or edit access.
 The database requires an audit actor to be either a user or a named system actor, never both or neither.
 
-Audit actions are currently `leadAssigned` and `leadReopened`. Subjects are typed as leads or accounts.
+Audit actions include lead assignment and reopening, checkout creation, payment state changes, review closure
+and ledger posting. Subjects are typed as leads, accounts, payments or ledger transactions.
 The database enforces these closed sets and object snapshots, and refuses audit updates and deletes.
 Each manual assignment operation generates a request ID, shared by all changed leads in its batch.
 Reopening uses its intake event ID. A distribution submission uses its idempotency receipt ID for
@@ -283,7 +296,8 @@ The planned journeys are:
    are not built.
 3. A payment credits its account exactly once through a balanced ledger posting. Card webhooks and
    reconciliation share settlement with the final manual approval. Notifications use an outbox.
-   Payments, the ledger, reconciliation and the outbox are not built.
+   Card payments, the ledger and reconciliation work. Settlement queues an outbox row.
+   Manual payments, approvals and receipt delivery are not built.
 
 Other work not built:
 
@@ -350,3 +364,57 @@ These checks reject obvious weak values. They do not measure entropy. Use the ge
 than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a
 repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
 `AUTH_URL` and SMTP are also unset.
+
+## Card payments and reconciliation
+
+Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` to the app's HTTP
+origin, and distinct `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` values. The sandbox
+moves no real money. It stores its checkout status separately from the CRM payment and signs
+webhooks over the timestamp, a period and the raw body with HMAC-SHA256.
+
+`payments.createCheckout` takes `accountId`, a request `key`, `amount` as a positive integer string
+in minor units, `currency`, `kind` of `first` or `repeat`, and an optional sandbox `mode`.
+Modes are `normal`, `drop`, `twice`, `late` and `differentAmount`. The last reports an amount greater
+than the requested amount. The returned checkout URL has a plain pay form. The account's existing
+edit scope decides who may create it. The request receipt is immutable; a replay can retry provider
+checkout creation after an interrupted request. The provider uses the payment ID as its checkout key.
+`recordedById` and `soldById` are fixed at creation.
+
+`payments.list` groups scoped results as `waitingForProvider`, `needsReview` and `decidedThisWeek`.
+The last group uses the UTC calendar week. `limit` bounds each group. `payments.get` returns state
+and an event log ordered by its database sequence. Each accepted webhook delivery has an event,
+including duplicates and late arrivals, with the observed money and whether state changed.
+It includes the posting only for accountants, managers, admins and owners. Those roles can call
+`accounts.ledger`, whose entries and running balances come from immutable lines, grouped by currency.
+An empty ledger has no currency balances. Agents can read their own payments but receive no posting
+and cannot read the ledger endpoint.
+
+The SERIALIZABLE settlement function re-reads the payment. Matching provider money can complete it.
+Mismatched amount or currency moves it to `needsReview` without a posting. `payments.closeReview`
+takes an ID and a written reason; accountants and management may close review as `failed`.
+The audit preserves the reported money. Review has no transition to completed.
+
+PostgreSQL checks the payment state shape and transitions. Deferred constraint triggers require a
+completed payment to have a posting with balanced lines matching its account, currency and amount.
+The unique payment index refuses another posting. Triggers refuse updates and deletes on ledger
+accounts, postings and lines. Settlement writes the state, posting, audit and `paymentCompleted`
+outbox row in the same transaction. The outbox worker and receipt delivery are not implemented.
+A replay writes no new state, posting, audit or outbox row; delivery/check history remains observable.
+
+Run `pnpm reconcile` using the repository environment. A scheduler can instead send
+`POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`.
+Both scan candidates outside settlement, then claim each due payment with a conditional update.
+A competing job that loses the claim skips the provider call. The claim moves `nextCheckAt` forward,
+so a stopped job becomes eligible again. Provider read errors record an unsuccessful check and
+leave the payment for its next check. Provider failures and expiry close the payment without credit.
+
+`pnpm test -- apps/web/test/env.test.ts` verifies the timing defaults. `RELAY_RECONCILE_FIRST_MS`
+defaults to 900000 and `RELAY_RECONCILE_INTERVAL_MS` to 300000. `RELAY_SANDBOX_LATE_MS` defaults to 30000. For a local interview run, set the first delay to zero and the late delay long enough to
+call the reconciler before delivery. Signature, timestamp tolerance and replay behavior run in
+`pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`.
+
+Sandbox delivery runs after the pay response in the serving process. A process exit can lose that
+delivery; reconciliation recovers the completed provider status. This is a sandbox failure mode,
+not a durable notification worker. `pnpm test:prod` signs in an agent through SMTP, submits the
+sandbox form, reconciles a late delivery, and checks duplicate delivery and an amount mismatch
+through the production API. Its `LIVE_PAYMENT` output records each event log, posting and balance.
