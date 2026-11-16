@@ -440,7 +440,8 @@ A refusal stops those checks, so it cannot consume the later budgets.
 
 `pnpm test:int -- apps/web/test/rpc.int.test.ts apps/web/test/auth.int.test.ts` verifies that
 unexpected failures return `Something went wrong.` and a generated `requestId`. The server
-logs the original error with that ID. The tRPC formatter preserves typed domain failures in
+logs the error class and code with that ID, without its message or submitted data.
+The tRPC formatter preserves typed domain failures in
 `data.accessFailure` and their messages. It removes stack traces from every error response.
 The auth and intake HTTP boundaries catch unexpected exceptions. The form keeps its retryable
 503 response for intake failures, with the same fixed message and a logged request ID.
@@ -464,9 +465,9 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 ```
 
 `pnpm test -- apps/web/test/env.test.ts` verifies that `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`,
-`RELAY_RECONCILE_SECRET` and `RELAY_OUTBOX_SECRET` each need at least
+`RELAY_RECONCILE_SECRET`, `RELAY_OUTBOX_SECRET`, and `RELAY_DEMO_RESET_SECRET` each need at least
 32 characters and 12 distinct characters, and refuses the exact placeholder in `.env.example`.
-The four secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather
+Configured secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather
 than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a
 repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
 `AUTH_URL` and SMTP are also unset.
@@ -826,7 +827,7 @@ Someone holding the app's database credentials can add makers or attribute a SQL
 
 `accounts.ledger` returns each entry's `completion` with `by` and `at`. A manual completion also
 includes the second approver's name in `approver`, read from the final ordered approval event. System
-completions identify `reconciler` or `providerWebhook`. The reader batches payments, audits,
+completions identify `reconciler` or `providerWebhook`. The reader batches payments, approval events,
 people and postings without a query per payment. Agents still receive no ledger or balance.
 Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payment-reads.int.test.ts`
 for detail fields, scoped group totals, completion provenance and query counts with one payment and several payments.
