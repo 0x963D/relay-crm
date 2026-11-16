@@ -1,5 +1,5 @@
 "use client";
-import type { ComponentProps } from "react";
+import { useSyncExternalStore, type ComponentProps } from "react";
 import { Tabs as Primitive } from "radix-ui";
 import { cn } from "@/lib/utils";
 export const Tabs = Primitive.Root;
@@ -14,5 +14,14 @@ export function TabsList({ className, ...props }: ComponentProps<typeof Primitiv
     />
   );
 }
-export const TabsTrigger = Primitive.Trigger;
+const hydration = {
+  subscribe: () => () => undefined,
+  client: () => true,
+  server: () => false,
+};
+export function TabsTrigger({ disabled, ...props }: ComponentProps<typeof Primitive.Trigger>) {
+  // Radix's mouse-down handler must be attached before a tab accepts input.
+  const ready = useSyncExternalStore(hydration.subscribe, hydration.client, hydration.server);
+  return <Primitive.Trigger {...props} disabled={ready ? disabled : true} />;
+}
 export const TabsContent = Primitive.Content;
