@@ -71,30 +71,22 @@ async function serve(
 }
 
 describe("the production server with no session", () => {
-  test.for([
-    ["no dev variables", {}],
-    ["RELAY_DEV_ACTOR=1", { RELAY_DEV_ACTOR: "1" }],
-    [
-      "RELAY_DEV_ACTOR=1 and RELAY_DEV_ROLE=owner",
-      { RELAY_DEV_ACTOR: "1", RELAY_DEV_ROLE: "owner" },
-    ],
-  ] as const)(
-    "answers the lead list with 401 and the not-signed-in screen, with %s",
-    async ([, variables]) => {
-      const server = await serve(variables);
-      try {
-        const response = await fetch(server.url("/"));
-
-        expect(response.status).toBe(401);
-        expect(await response.text()).toContain("You are not signed in");
-      } finally {
-        await server.stop();
-      }
-    },
-  );
+  test("answers the lead list and RPC with 401 without a session", async () => {
+    const server = await serve({});
+    try {
+      const response = await fetch(server.url("/"));
+      expect(response.status).toBe(401);
+      expect(await response.text()).toContain("You are not signed in");
+      expect(
+        (await fetch(server.url("/api/trpc/leads.list?input=%7B%22json%22%3A%7B%7D%7D"))).status,
+      ).toBe(401);
+    } finally {
+      await server.stop();
+    }
+  });
 
   test("keeps both intake endpoints open, because neither needs an actor", async () => {
-    const server = await serve({ RELAY_DEV_ACTOR: "1" });
+    const server = await serve({});
     try {
       const form = await fetch(server.url("/api/intake/form"), {
         method: "POST",
@@ -188,5 +180,26 @@ databaseTest(
       await server.stop();
       await inbox.close();
     }
+  },
+);
+
+databaseTest(
+  "refuses the development owner in a production build even with runtime development variables",
+  async ({ db }) => {
+    const attempt = serve(
+      { NODE_ENV: "development", RELAY_DEV_ACTOR: "1", RELAY_DEV_ROLE: "owner" },
+      db.connectionString,
+    ).then(async (server) => {
+      try {
+        const response = await fetch(server.url("/")).catch(() => {
+          throw new Error(server.output());
+        });
+        expect(response.status).toBe(401);
+      } finally {
+        await server.stop();
+      }
+    });
+    await expect(attempt).rejects.toThrow(/RELAY_DEV_ACTOR.*production/);
+    expect(await db.rows("SELECT email FROM users")).toEqual([]);
   },
 );

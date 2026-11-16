@@ -114,20 +114,30 @@ function authEnv(v: z.infer<typeof Variables>): AuthEnv | null {
   };
 }
 
-export function parseEnv(variables: Readonly<Record<string, string | undefined>>): Env {
+export function parseEnv(
+  variables: Readonly<Record<string, string | undefined>>,
+  developmentBuild = process.env.RELAY_DEVELOPMENT_BUILD === "true",
+): Env {
   const parsed = Variables.safeParse(withoutEmpty(variables));
   if (!parsed.success) {
     throw new EnvError(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
   }
   const { DATABASE_URL, NODE_ENV, RELAY_DEV_ACTOR, RELAY_DEV_ROLE } = parsed.data;
+  if (RELAY_DEV_ACTOR && !developmentBuild)
+    throw new EnvError(
+      "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
+    );
   return {
     auth: authEnv(parsed.data),
     databaseUrl: DATABASE_URL,
     meta: metaEnv(parsed.data),
-    devRole: NODE_ENV === "development" && RELAY_DEV_ACTOR === "1" ? RELAY_DEV_ROLE : null,
+    devRole:
+      developmentBuild && NODE_ENV === "development" && RELAY_DEV_ACTOR === "1"
+        ? RELAY_DEV_ROLE
+        : null,
   };
 }
 
-export function readEnv(): Env {
-  return parseEnv(process.env);
+export function readEnv(developmentBuild?: boolean): Env {
+  return parseEnv(process.env, developmentBuild);
 }

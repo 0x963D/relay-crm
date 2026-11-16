@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { devActor } from "../src/server/dev-actor.ts";
 import { parseEnv } from "../src/server/env.ts";
 
@@ -6,8 +6,11 @@ const DATABASE_URL = "postgresql://relay:relay@localhost:5432/relay";
 const DEV_USER_ID = "00000000-0000-7000-8000-000000000001";
 
 function actorFor(variables: Readonly<Record<string, string>>) {
+  vi.stubEnv("RELAY_DEVELOPMENT_BUILD", "true");
   return devActor(parseEnv({ DATABASE_URL, ...variables }));
 }
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("devActor", () => {
   it("acts as the dev user with the agent role, the least a sales user can do", () => {

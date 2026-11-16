@@ -107,7 +107,10 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 
    The lead list is at <http://localhost:3000>. Without a session it shows the not-signed-in page.
    To use the existing development grant, set `RELAY_DEV_ACTOR=1`. Its role defaults to agent.
-   Set `RELAY_DEV_ROLE=owner` to see the pool. The grant works only under `pnpm dev`.
+   Set `RELAY_DEV_ROLE=owner` to see the pool. The grant works only in development-server bundles.
+   The build fixes that fact using Next's configuration phase and an inlined flag.
+   Production startup refuses a nonempty `RELAY_DEV_ACTOR`, even with `NODE_ENV=development`.
+   `pnpm test:prod` reproduces that startup and checks that no development user is created.
 
 4. Send a lead through the web form endpoint.
 
