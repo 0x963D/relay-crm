@@ -70,11 +70,13 @@ export function Signoff({
   name,
   time,
   icon,
+  emptyLabel = "Not assigned",
 }: {
   caption: string;
   name: string | null;
   time?: string | undefined;
   icon?: IconName;
+  emptyLabel?: string;
 }) {
   return (
     <div className="min-w-0">
@@ -88,7 +90,7 @@ export function Signoff({
       >
         {icon ? <Icon name={icon} /> : name ? <Avatar name={name} /> : <Icon name="wait" />}
         <span className="min-w-0 truncate" title={name ?? undefined}>
-          {name ?? "Not assigned"}
+          {name ?? emptyLabel}
         </span>
         {time && (
           <span className="ms-auto shrink-0 whitespace-nowrap text-xs font-normal text-secondary-foreground">

@@ -121,6 +121,89 @@ export function PaymentDetail({
       ["reconcilerCheck", "webhookDelivery"].includes(event.kind) &&
       eventDetail(event.detail).providerStatus === "completed",
   ).length;
+  const decisionPanel = (payment.actions.closeCheckout ||
+    (reviewing && canCloseReview) ||
+    payment.actions.reject ||
+    payment.actions.cancel) && (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (reason.trim())
+          run(
+            payment.actions.closeCheckout
+              ? "closeCheckout"
+              : reviewing
+                ? "closeReview"
+                : payment.actions.cancel
+                  ? "cancel"
+                  : "reject",
+          );
+      }}
+    >
+      <h3 className="font-semibold">
+        {manualWaiting ? "Record a decision" : "Close this payment as failed"}
+      </h3>
+      <p className="text-caption text-secondary-foreground">
+        {reviewing
+          ? "A payment in review cannot be completed. Close it with a written reason. Any refund happens outside Relay CRM."
+          : waiting
+            ? "For a checkout the customer will not use. If the customer has already paid, it goes to review."
+            : "A written reason is kept with your decision."}
+      </p>
+      <Field label="Reason" hint="A written reason is required.">
+        {(control) => (
+          <Textarea
+            {...control}
+            required
+            maxLength={2000}
+            value={reason}
+            onChange={(event) => {
+              setReason(event.target.value);
+            }}
+          />
+        )}
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        {payment.actions.approve && (
+          <Button
+            type="button"
+            busy={command.isPending}
+            onClick={() => {
+              run("approve");
+            }}
+          >
+            Approve as {approvals.length ? "second" : "first"} approver
+          </Button>
+        )}
+        <Button
+          type="submit"
+          variant="destructive"
+          busy={command.isPending}
+          disabled={!reason.trim()}
+        >
+          {manualWaiting
+            ? payment.actions.cancel
+              ? "Cancel payment"
+              : "Reject payment"
+            : "Close as failed"}
+        </Button>
+        {payment.actions.cancel && payment.actions.reject && (
+          <Button
+            type="button"
+            variant="outline"
+            busy={command.isPending}
+            disabled={!reason.trim()}
+            onClick={() => {
+              run("reject");
+            }}
+          >
+            Reject payment
+          </Button>
+        )}
+      </div>
+    </form>
+  );
   return (
     <article aria-label="Payment detail" className="@container/payment">
       <h1 className="sr-only md:hidden">Payment detail</h1>
@@ -159,11 +242,13 @@ export function PaymentDetail({
             <>
               <Signoff
                 caption="First approval"
+                emptyLabel="Waiting for a first approver"
                 name={approvals[0]?.approver?.name ?? null}
                 time={approvals[0] ? callbackDate(approvals[0].at, zone) : undefined}
               />
               <Signoff
                 caption="Second approval · a different person"
+                emptyLabel="Waiting for a second approver"
                 name={approvals[1]?.approver?.name ?? null}
               />
             </>
@@ -348,19 +433,10 @@ export function PaymentDetail({
                 </div>
                 {payment.actions.approvalRefusal && (
                   <p className="text-caption text-secondary-foreground">
-                    {failureMessage({ data: { accessFailure: payment.actions.approvalRefusal } })}
+                    {failureMessages[payment.actions.approvalRefusal]}
                   </p>
                 )}
-                {payment.actions.approve && (
-                  <Button
-                    busy={command.isPending}
-                    onClick={() => {
-                      run("approve");
-                    }}
-                  >
-                    Approve as {approvals.length ? "second" : "first"} approver
-                  </Button>
-                )}
+                {decisionPanel}
                 {payment.actions.editManual && (
                   <Button variant="outline" asChild>
                     <Link href={`/payments/${id}/edit`}>Edit payment</Link>
@@ -394,76 +470,7 @@ export function PaymentDetail({
           </div>
           <div className="space-y-6 @2xl/payment:border-s @2xl/payment:ps-6">
             <LedgerPosting payment={payment} />
-            {(payment.actions.closeCheckout ||
-              (reviewing && canCloseReview) ||
-              payment.actions.reject ||
-              payment.actions.cancel) && (
-              <form
-                className="space-y-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (reason.trim())
-                    run(
-                      payment.actions.closeCheckout
-                        ? "closeCheckout"
-                        : reviewing
-                          ? "closeReview"
-                          : payment.actions.cancel
-                            ? "cancel"
-                            : "reject",
-                    );
-                }}
-              >
-                <h3 className="font-semibold">
-                  {manualWaiting ? "Record a decision" : "Close this payment as failed"}
-                </h3>
-                <p className="text-caption text-secondary-foreground">
-                  {reviewing
-                    ? "A payment in review cannot be completed. Close it with a written reason. Any refund happens outside Relay CRM."
-                    : waiting
-                      ? "For a checkout the customer will not use. If the customer has already paid, it goes to review."
-                      : "A written reason is kept with your decision."}
-                </p>
-                <Field label="Reason" hint="A written reason is required.">
-                  {(control) => (
-                    <Textarea
-                      {...control}
-                      required
-                      maxLength={2000}
-                      value={reason}
-                      onChange={(event) => {
-                        setReason(event.target.value);
-                      }}
-                    />
-                  )}
-                </Field>
-                <Button
-                  type="submit"
-                  variant="destructive"
-                  busy={command.isPending}
-                  disabled={!reason.trim()}
-                >
-                  {manualWaiting
-                    ? payment.actions.cancel
-                      ? "Cancel payment"
-                      : "Reject payment"
-                    : "Close as failed"}
-                </Button>
-                {payment.actions.cancel && payment.actions.reject && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    busy={command.isPending}
-                    disabled={!reason.trim()}
-                    onClick={() => {
-                      run("reject");
-                    }}
-                  >
-                    Reject payment
-                  </Button>
-                )}
-              </form>
-            )}
+            {!manualWaiting && decisionPanel}
             {!payment.postingCount && (
               <p className="text-caption text-secondary-foreground">
                 No ledger posting was written. A payment is credited only when it completes.

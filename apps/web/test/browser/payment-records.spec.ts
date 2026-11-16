@@ -2,6 +2,26 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("the approval panel names the missing approver and keeps decisions together", async ({
+  page,
+}) => {
+  await signIn(page, "accountant");
+  const payments = await rpc(page).payments.list.query({ limit: 100 });
+  const pending = payments.waitingForApproval.find((payment) => payment.actions.approve);
+  expect(pending).toBeDefined();
+  await page.goto(`${browserState().url}/payments/${pending!.id}`);
+  await expect(page.getByText("Waiting for a second approver", { exact: true })).toBeVisible();
+  const approve = page.getByRole("button", { name: /^Approve as/ });
+  const reject = page.getByRole("button", { name: "Reject payment", exact: true });
+  await expect(reject).toBeDisabled();
+  await approve.scrollIntoViewIfNeeded();
+  const approveBox = await approve.boundingBox();
+  const rejectBox = await reject.boundingBox();
+  expect(approveBox).not.toBeNull();
+  expect(rejectBox).not.toBeNull();
+  expect(Math.abs(approveBox!.y - rejectBox!.y)).toBeLessThan(2);
+});
+
 test("payment groups share columns and align amount headers with their figures", async ({
   page,
 }) => {

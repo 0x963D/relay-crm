@@ -10,6 +10,7 @@ import {
   recordScope,
   transitionPayment,
   type Actor,
+  type AccessFailure,
   type PaymentEvent,
   type Money,
   type PaymentState,
@@ -1241,7 +1242,7 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
     where: { id: { in: makers.map((entry) => entry.userId) } },
     select: { id: true, name: true },
   });
-  const refusal =
+  const refusal: AccessFailure | null =
     row.recordedById === actor.userId
       ? "paymentRecorder"
       : maker
