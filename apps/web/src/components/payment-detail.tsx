@@ -8,13 +8,14 @@ import {
   eventDetail,
   reportedMoney,
   groupPaymentEvents,
+  receiptPresentation,
   type PaymentView,
 } from "@/lib/payments";
 import { callbackDate, formatMoney, shortDate } from "@/lib/display";
 import { failureMessage, failureMessages } from "@/lib/failures";
 import { cn } from "@/lib/utils";
 import { PaymentStatus, LedgerPosting } from "./payment-pieces";
-import { Signoff, Refusal } from "./pieces";
+import { Signoff, Refusal, Slip } from "./pieces";
 import { Timeline, TimelineEntry } from "./timeline";
 import { Button } from "./ui/button";
 import { Field } from "./ui/field";
@@ -34,7 +35,19 @@ export function PaymentDetail({
   const trpc = useTRPC();
   const api = useTRPCClient();
   const client = useQueryClient();
-  const { data: payment } = useSuspenseQuery(trpc.payments.get.queryOptions({ id }));
+  const { data: payment } = useSuspenseQuery(
+    trpc.payments.get.queryOptions(
+      { id },
+      {
+        refetchInterval: (query) =>
+          query.state.data?.state.status === "checkoutCreated" ||
+          query.state.data?.receipt?.processing ||
+          query.state.data?.receipt?.nextAttemptAt
+            ? 5000
+            : false,
+      },
+    ),
+  );
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const result = useRef<HTMLDivElement>(null);
@@ -644,6 +657,21 @@ function Receipt({
   sendAgain: () => void;
 }) {
   const receipt = payment.receipt;
+  const [now, setNow] = useState(() => Date.now());
+  const retryAt = receipt?.nextAttemptAt?.getTime();
+  useEffect(() => {
+    if (retryAt === undefined) return;
+    const timer = setTimeout(
+      () => {
+        setNow(Date.now());
+      },
+      Math.max(0, retryAt - Date.now()),
+    );
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [retryAt]);
+  const presentation = receipt ? receiptPresentation(receipt, now) : null;
   const atCap = receipt !== null && receipt.attempts >= payment.receiptAttemptLimit;
   return (
     <section aria-label="Receipt" className="space-y-3">
@@ -657,26 +685,45 @@ function Receipt({
           <div className="flex items-center gap-2">
             <Icon name="mail" />
             <strong>Receipt email</strong>
-            <span className="ms-auto text-caption">
-              {receipt.processing
-                ? "Sending"
-                : receipt.state === "sent"
-                  ? "Sent"
-                  : receipt.state === "unknown"
-                    ? "Delivery unknown"
-                    : receipt.state === "suppressed"
-                      ? "Not sent"
-                      : receipt.nextAttemptAt
-                        ? `Next attempt ${callbackDate(receipt.nextAttemptAt, zone)}`
-                        : "Failed"}
-            </span>
+            {presentation && (
+              <span className="ms-auto">
+                <Slip
+                  kind={
+                    presentation.outcome === "sent"
+                      ? "complete"
+                      : presentation.outcome === "failed" || presentation.outcome === "unknown"
+                        ? "refused"
+                        : "waiting"
+                  }
+                  icon={
+                    presentation.outcome === "sent"
+                      ? "done"
+                      : presentation.outcome === "suppressed"
+                        ? "ban"
+                        : "mail"
+                  }
+                >
+                  {presentation.nextAttemptAt
+                    ? `Next attempt ${callbackDate(presentation.nextAttemptAt, zone)}`
+                    : {
+                        sending: "Sending",
+                        sent: "Sent",
+                        unknown: "Delivery unknown",
+                        suppressed: "Not sent",
+                        failed: "Failed",
+                        queued: "Queued for retry",
+                        scheduled: "Retry scheduled",
+                      }[presentation.outcome]}
+                </Slip>
+              </span>
+            )}
           </div>
           <p className="text-caption text-secondary-foreground">
             {receipt.recipient ? `To ${receipt.recipient}.` : "No email address was recorded."}{" "}
             {receipt.attempts} {receipt.attempts === 1 ? "attempt" : "attempts"} of{" "}
             {payment.receiptAttemptLimit} allowed.
           </p>
-          {receipt.state === "unknown" && (
+          {presentation?.explainUnknown && (
             <p className="text-caption">
               The message left Relay CRM without a clear delivery answer. It will not retry by
               itself. Sending again may deliver a duplicate receipt.
@@ -691,7 +738,25 @@ function Receipt({
                 <strong>
                   {attempt.number === 0 ? "Not sent" : `Attempt ${String(attempt.number)}`}
                 </strong>{" "}
-                · {shortDate(attempt.startedAt, zone)} · {attempt.state}
+                · {shortDate(attempt.startedAt, zone)}{" "}
+                <Slip
+                  kind={
+                    attempt.state === "sent"
+                      ? "complete"
+                      : attempt.state === "suppressed"
+                        ? "neutral"
+                        : "refused"
+                  }
+                  icon={attempt.state === "sent" ? "done" : "mail"}
+                >
+                  {attempt.state === "unknown"
+                    ? "Delivery unknown"
+                    : attempt.state === "suppressed"
+                      ? "Not sent"
+                      : attempt.state === "sent"
+                        ? "Sent"
+                        : "Failed"}
+                </Slip>
                 {attempt.reason && (
                   <p className="mt-1 text-secondary-foreground">{attempt.reason}</p>
                 )}

@@ -3,6 +3,29 @@ import type { Outputs } from "./api";
 
 export type PaymentView = Outputs["payments"]["get"];
 export type PaymentRow = Outputs["payments"]["list"]["waitingForApproval"][number];
+export function receiptPresentation(
+  receipt: Pick<NonNullable<PaymentView["receipt"]>, "processing" | "state" | "nextAttemptAt">,
+  now: number,
+) {
+  const nextAttemptAt =
+    !receipt.processing &&
+    receipt.state === "failed" &&
+    receipt.nextAttemptAt &&
+    receipt.nextAttemptAt.getTime() > now
+      ? receipt.nextAttemptAt
+      : null;
+  return {
+    outcome: receipt.processing
+      ? ("sending" as const)
+      : receipt.state === "failed" && receipt.nextAttemptAt
+        ? nextAttemptAt
+          ? ("scheduled" as const)
+          : ("queued" as const)
+        : receipt.state,
+    explainUnknown: !receipt.processing && receipt.state === "unknown",
+    nextAttemptAt,
+  };
+}
 export const paymentGroups = [
   ["needsReview", "Needs review"],
   ["waitingForApproval", "Waiting for approval"],
