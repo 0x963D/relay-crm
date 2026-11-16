@@ -189,3 +189,30 @@ test("system dark works without JavaScript", async ({ browser }) => {
   await page.screenshot({ path: join(browserDirectory, "nojs-dark.png") });
   await context.close();
 });
+
+test("server hydration and cached navigation avoid repeated reads", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/trpc/") || request.headers().rsc === "1")
+      requests.push(request.url());
+  });
+  await signIn(page, "agent");
+  await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
+  expect(requests).toEqual([]);
+  const html = await page.request.get(browserState().url);
+  expect(await html.text()).toMatch(/<h2>Hye-jin Park<\/h2>/);
+  const row = (name: string) =>
+    page.getByRole("button").filter({ has: page.getByText(name, { exact: true }) });
+  await row("Hye-jin Park").click();
+  await expect(page).toHaveURL(/lead=/);
+  expect(requests).toEqual([]);
+  await row("Mateus Carvalho").click();
+  await expect(page.getByRole("heading", { name: "Mateus Carvalho", exact: true })).toBeVisible();
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain("leads.get");
+  await row("Hye-jin Park").click();
+  await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Mateus Carvalho", exact: true })).toBeVisible();
+  expect(requests).toHaveLength(1);
+});

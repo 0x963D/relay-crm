@@ -1,7 +1,7 @@
 "use client";
 import { NativeSelect } from "./ui/native-select";
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { type Outputs } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { reads, readState } from "@/lib/reads";
@@ -82,7 +82,6 @@ export function QueueScreen({
   zone: string;
   onTotalChange: (total: number) => void;
 }) {
-  const router = useRouter();
   const params = useSearchParams();
   const agentId =
     profile.role === "agent" ? profile.userId : (params.get("agent") ?? agents[0]?.ownerId);
@@ -137,7 +136,7 @@ export function QueueScreen({
     const next = new URLSearchParams({ view: "queue", lead: id });
     if (agentId && profile.role !== "agent") next.set("agent", agentId);
     if (action) next.set("action", action);
-    router.push(`/?${next}`, { scroll: false });
+    window.history.pushState(null, "", `/?${next}`);
     setSelected(id);
   }
   async function loadMore() {
@@ -182,7 +181,7 @@ export function QueueScreen({
               aria-label="View agent queue"
               value={agentId ?? ""}
               onChange={(e) => {
-                router.push(`/?view=queue&agent=${e.target.value}`);
+                window.history.pushState(null, "", `/?view=queue&agent=${e.target.value}`);
               }}
             >
               {agentOptions.map((agent) => (
@@ -355,7 +354,9 @@ export function QueueScreen({
                 refresh();
               }}
               onBack={() => {
-                router.push(
+                window.history.pushState(
+                  null,
+                  "",
                   profile.role === "agent" ? "/?view=queue" : `/?view=queue&agent=${agentId ?? ""}`,
                 );
               }}

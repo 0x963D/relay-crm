@@ -5,7 +5,7 @@ import { reads } from "@/lib/reads";
 import { failureMessage } from "@/lib/failures";
 import { NativeSelect } from "./ui/native-select";
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type { Outputs } from "@/lib/api";
 import { api } from "@/lib/api";
 import { authFailure } from "@/lib/failures";
@@ -43,7 +43,6 @@ export function Workspace({
 }) {
   const people = useQuery(reads.agents());
   const agents = people.data ?? initialAgents;
-  const router = useRouter();
   const params = useSearchParams();
   const isManager = isLeadManager(profile.role);
   const view = workspaceView(profile.role, params.get("view"));
@@ -115,7 +114,7 @@ export function Workspace({
             aria-current={view === item.id ? "page" : undefined}
             onClick={(event) => {
               event.preventDefault();
-              router.push(`/?view=${item.id}`);
+              window.history.pushState(null, "", `/?view=${item.id}`);
             }}
           >
             <Icon name={item.icon} />
