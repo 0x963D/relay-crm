@@ -359,3 +359,16 @@ test.for([
     });
   },
 );
+
+test("startup restores an interrupted building marker with partial data", async ({ db }) => {
+  const partial = await db.seedUser("manager");
+  await db.ownerRows(
+    "INSERT INTO demo_seed(key,company,state,seeded_at) VALUES ('tidewell-language-school/v1','Tidewell Language School','building',$1)",
+    [today],
+  );
+  expect(await db.store.demoReady()).toBe(false);
+  expect(await seedDemo(options(db))).toMatchObject({ changed: true });
+  expect(await db.store.demoReady()).toBe(true);
+  expect(await db.rows("SELECT id FROM users WHERE id=$1", [partial])).toEqual([]);
+  expect(await db.rows("SELECT count(*)::int AS count FROM leads")).toEqual([{ count: 412 }]);
+});

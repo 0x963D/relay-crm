@@ -627,8 +627,7 @@ export function seedDemo(options: DemoOptions) {
     const rows = await owner.$queryRaw<{ state: string }[]>`SELECT state FROM demo_seed`;
     if (rows.length) {
       const row = await marker(owner);
-      if (row.state !== "ready")
-        throw new Error("Demo seed is incomplete. Run demo:reset in demo mode.");
+      if (row.state !== "ready") return resetDemo({ ...options, demo: true });
       return { changed: false, company: DEMO_COMPANY };
     }
     return demoLease(owner, () => seed(owner, app, options));

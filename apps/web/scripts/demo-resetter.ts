@@ -15,7 +15,15 @@ const migration = await promisify(execFile)("pnpm", ["db:migrate"], {
   env: commandEnvironment({ MIGRATION_DATABASE_URL: migrationUrl }),
 });
 process.stdout.write(migration.stdout);
-await seedDemo(demoOptions(env, migrationUrl));
+for (;;) {
+  try {
+    await seedDemo(demoOptions(env, migrationUrl));
+    break;
+  } catch {
+    process.stderr.write("Demo setup has not finished. Retrying in five seconds.\n");
+    await sleep(5000);
+  }
+}
 process.stdout.write("Demo setup is ready.\n");
 for (;;) {
   try {
