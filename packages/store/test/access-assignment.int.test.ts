@@ -1,3 +1,4 @@
+import { submissionExample } from "@relay/domain/testing";
 import { ROLES, type Actor, type Assignment, type LeadId, type Role } from "@relay/domain";
 import { expect, describe } from "vitest";
 import { test, type TestDatabase } from "../src/testing/index.ts";
@@ -405,4 +406,26 @@ test("lead lists reload the current role and membership", async ({ db }) => {
   await db.rows("UPDATE users SET role='teamLead' WHERE id=$1", [w.actor.userId]);
   await db.rows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
   expect((await db.store.listLeads(w.actor, { limit: 100 })).map((l) => l.id)).toEqual([w.own]);
+});
+
+test("reassigning the current owner reports no change and writes no history", async ({ db }) => {
+  const w = await world(db);
+  const before = await db.rows("SELECT version FROM leads WHERE id=$1", [w.teammate]);
+  expect(await db.store.reassignLead(w.actor, w.teammate, w.agent)).toEqual({
+    items: [],
+    changed: false,
+  });
+  expect(await db.rows("SELECT version FROM leads WHERE id=$1", [w.teammate])).toEqual(before);
+  expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
+});
+
+test("intake reopening records the removed owner under its system actor", async ({ db }) => {
+  const w = await world(db);
+  await db.rows("UPDATE leads SET status='lost',lost_reason='badTiming' WHERE id=$1", [w.teammate]);
+  const result = await db.store.intake(submissionExample({ email: "teammate@example.com" }));
+  expect(result.outcome.kind).toBe("leadReopened");
+  expect(await db.rows("SELECT actor_id,system_actor,action,subject_id FROM audit_log")).toEqual([
+    { actor_id: null, system_actor: "intake", action: "leadReopened", subject_id: w.teammate },
+  ]);
+  expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.state.status).toBe("new");
 });

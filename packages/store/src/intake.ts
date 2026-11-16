@@ -1,3 +1,4 @@
+import { auditActor } from "./audit.ts";
 import {
   AccountId,
   IntakeEventId,
@@ -14,8 +15,8 @@ import {
   type ReopenReason,
 } from "@relay/domain";
 import { Prisma, type $Enums } from "./generated/client.ts";
-import { InvariantError } from "./lead-row.ts";
-import { findLeadIdentity, insertLead, updateLifecycle } from "./leads.ts";
+import { InvariantError, lifecycleFromRow } from "./lead-row.ts";
+import { findLeadIdentity, insertLead, scopedLead, updateLifecycle } from "./leads.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
 
 const IN_THE_POOL: LeadLifecycle = {
@@ -76,6 +77,8 @@ async function applyDecision(
     case "attach":
       return record(tx, submission, { kind: "attachedToOpenLead", leadId: decision.leadId });
     case "reopen": {
+      const principal = { kind: "system", name: "intake" } as const;
+      const before = lifecycleFromRow(await scopedLead(tx, principal, decision.leadId, "reopen"));
       await updateLifecycle(tx, decision.leadId, decision.next);
       const result = await record(tx, submission, {
         kind: "leadReopened",
@@ -90,6 +93,16 @@ async function applyDecision(
             decision.next.state.status,
             decision.reason,
           ),
+          at: submission.receivedAt,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          ...auditActor(principal),
+          action: "leadReopened",
+          subjectId: decision.leadId,
+          before: { lifecycle: JSON.stringify(before) },
+          after: { lifecycle: JSON.stringify(decision.next) },
           at: submission.receivedAt,
         },
       });

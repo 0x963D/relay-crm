@@ -19,6 +19,7 @@ export interface DistributionPreview {
 }
 
 export interface DistributionResult {
+  readonly changed: boolean;
   readonly items: readonly DistributionItem[];
 }
 

@@ -63,7 +63,7 @@ async function applyAssignment(
   actor: Actor,
   item: DistributionItem,
   mode: "pool" | "owned",
-): Promise<void> {
+): Promise<boolean> {
   const row = await scopedLead(tx, actor, item.leadId, "assign");
   if ((mode === "pool" && row.status !== "new") || (mode === "owned" && row.status === "new"))
     throw new AccessError("conflict");
@@ -72,7 +72,7 @@ async function applyAssignment(
   const at = new Date();
   const next = transition(before, { type: "assign", to: item.to }, at);
   if (!next.ok) throw new AccessError("conflict");
-  if (JSON.stringify(before) === JSON.stringify(next.value)) return;
+  if (JSON.stringify(before) === JSON.stringify(next.value)) return false;
   await updateLifecycle(tx, item.leadId, next.value);
   const detail = {
     to: { ...item.to },
@@ -97,6 +97,7 @@ async function applyAssignment(
       at,
     },
   });
+  return true;
 }
 
 export async function assignPool(
@@ -110,7 +111,7 @@ export async function assignPool(
     const items = [...new Set(leadIds)].sort().map((leadId) => ({ leadId, to }));
     if (items.length === 0) throw new AccessError("conflict");
     for (const item of items) await applyAssignment(tx, current, item, "pool");
-    return { items };
+    return { items, changed: true };
   });
 }
 export async function reassignLead(
@@ -122,8 +123,8 @@ export async function reassignLead(
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const item = { leadId, to };
-    await applyAssignment(tx, current, item, "owned");
-    return { items: [item] };
+    const changed = await applyAssignment(tx, current, item, "owned");
+    return { items: changed ? [item] : [], changed };
   });
 }
 
@@ -215,7 +216,7 @@ export async function submitDistribution(
         prior.requestHash !== digest({ fingerprint: input.fingerprint, previewId: input.previewId })
       )
         throw new AccessError("idempotencyConflict");
-      return { items: storedItems(prior.result) };
+      return { items: storedItems(prior.result), changed: true };
     }
     if (!scopeHasRecords(recordScope(current, "lead", "assign")))
       throw new AccessError("accessDenied");
@@ -263,6 +264,6 @@ export async function submitDistribution(
         result: plan.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
       },
     });
-    return { items: plan.value };
+    return { items: plan.value, changed: true };
   });
 }
