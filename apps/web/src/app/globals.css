@@ -90,6 +90,12 @@
   --text-title--line-height: 1.875rem;
   --spacing-rail: 14.5rem;
   --spacing-queue: 30.5rem;
+  --spacing-pay-list: 25rem;
+  --color-funnel-received: light-dark(#c5cbf4, #3a4199);
+  --color-funnel-won: light-dark(#1f8f49, #5fd08a);
+}
+@utility grid-cols-payment-detail {
+  grid-template-columns: minmax(0, 1fr) 21.25rem;
 }
 @utility grid-cols-label-value {
   grid-template-columns: auto 1fr;

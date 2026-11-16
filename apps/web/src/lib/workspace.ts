@@ -3,5 +3,5 @@ export function isLeadManager(role: Role): boolean {
   return role === "owner" || role === "admin" || role === "manager" || role === "teamLead";
 }
 export function homeFor(role: Role): string {
-  return role === "accountant" ? "/accountant" : role === "agent" ? "/queue" : "/pool";
+  return role === "accountant" ? "/payments" : role === "agent" ? "/queue" : "/pool";
 }

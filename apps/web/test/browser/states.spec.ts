@@ -303,8 +303,6 @@ test("empty and failed workspaces tell the viewer what happened", async ({ page 
   });
   expect(deniedRole.status()).toBe(200);
   await page.goto(`${browserState().url}/pool`);
-  await expect(
-    page.getByRole("heading", { name: "Accountant screens are not built yet", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Assign leads", exact: true })).toHaveCount(0);
 });

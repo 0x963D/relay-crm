@@ -88,10 +88,9 @@ databaseTest(
           expect(await session.json()).toMatchObject({ user: { id: DEMO_PEOPLE[role].id } });
           const landing = await fetch(server.url("/"), { headers: { cookie } });
           expect(new URL(landing.url).pathname).toBe(
-            role === "manager" ? "/pool" : role === "agent" ? "/queue" : "/accountant",
+            role === "manager" ? "/pool" : role === "agent" ? "/queue" : "/payments",
           );
-          if (role === "accountant")
-            expect(await landing.text()).toContain("Accountant screens are not built yet");
+          if (role === "accountant") expect(await landing.text()).toContain("Payments");
         }
         const email = DEMO_PEOPLE.manager.email;
         expect(

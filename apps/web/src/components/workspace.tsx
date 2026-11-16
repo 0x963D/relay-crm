@@ -29,6 +29,9 @@ const agentCount = (data: Outputs["leads"]["agents"]) =>
   new Set(data.map((agent) => agent.ownerId)).size;
 const queueCount = (data: Outputs["leads"]["queue"]) =>
   Object.values(data.counts).reduce((sum, n) => sum + n, 0);
+const paymentCount = (data: Outputs["payments"]["list"]) =>
+  Object.values(data.counts).reduce((sum, n) => sum + n, 0);
+const accountCount = (data: Outputs["accounts"]["list"]) => data.total;
 export function Workspace({
   profile,
   demo,
@@ -52,6 +55,8 @@ export function Workspace({
     "/pool": poolTotal,
     "/agents": agentTotal,
     "/queue": queueTotal,
+    "/payments": useCachedCount(trpc.payments.list.queryKey(), paymentCount),
+    "/accounts": useCachedCount(trpc.accounts.list.queryKey(), accountCount),
   };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +79,12 @@ export function Workspace({
     : profile.role === "agent"
       ? [{ href: "/queue", label: "My queue", icon: "queue" }]
       : [];
+  nav.push(
+    { href: "/payments", label: "Payments", icon: "payments" },
+    { href: "/accounts", label: "Accounts", icon: "accounts" },
+  );
+  if (["owner", "admin", "manager"].includes(profile.role))
+    nav.push({ href: "/funnel", label: "Campaign funnel", icon: "funnel" });
   async function authAction(role?: string) {
     if (pending) return;
     setPending(true);

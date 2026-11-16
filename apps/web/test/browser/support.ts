@@ -22,14 +22,19 @@ export function rpc(page: Page) {
   });
 }
 const sessions = new Map<string, Awaited<ReturnType<BrowserContext["cookies"]>>>();
-export async function signIn(page: Page, role: "manager" | "agent") {
+export async function signIn(page: Page, role: "manager" | "agent" | "accountant") {
   const { url } = browserState();
   const key = `${url}:${role}`;
   const cookies = sessions.get(key);
   if (cookies) await page.context().addCookies(cookies);
   await page.goto(url);
   const login = page.getByRole("button", {
-    name: role === "manager" ? "Priya Raman Manager" : "Dele Akinwale Agent",
+    name:
+      role === "manager"
+        ? "Priya Raman Manager"
+        : role === "accountant"
+          ? "Esther Okafor Accountant"
+          : "Dele Akinwale Agent",
     exact: true,
   });
   if (!cookies || (await login.isVisible())) {
@@ -38,10 +43,16 @@ export async function signIn(page: Page, role: "manager" | "agent") {
     sessions.set(key, await page.context().cookies());
   }
   await expect(
-    page.getByRole("radio", { name: role === "manager" ? "Manager" : "Agent", exact: true }),
+    page.getByRole("radio", {
+      name: role === "manager" ? "Manager" : role === "accountant" ? "Accountant" : "Agent",
+      exact: true,
+    }),
   ).toBeChecked();
   await expect(
-    page.getByRole("heading", { name: role === "manager" ? "Lead pool" : "My queue", exact: true }),
+    page.getByRole("heading", {
+      name: role === "manager" ? "Lead pool" : role === "accountant" ? "Payments" : "My queue",
+      exact: true,
+    }),
   ).toBeVisible();
 }
 export async function settleFrame(page: Page) {

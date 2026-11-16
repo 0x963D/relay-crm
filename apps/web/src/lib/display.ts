@@ -1,4 +1,4 @@
-import { CURRENCIES, type Money } from "@relay/domain";
+import { CURRENCIES, isCurrencyCode } from "@relay/domain";
 
 export function shortDate(at: Date | null, zone: string): string {
   return at
@@ -119,7 +119,8 @@ export function custodyDate(
   return held ? `since ${text}` : text;
 }
 
-export function formatMoney(money: Money): string {
+export function formatMoney(money: { readonly minor: bigint; readonly currency: string }): string {
+  if (!isCurrencyCode(money.currency)) throw new Error("Unsupported currency");
   const digits = CURRENCIES[money.currency];
   const magnitude = money.minor < 0n ? -money.minor : money.minor;
   const factor = 10n ** BigInt(digits);

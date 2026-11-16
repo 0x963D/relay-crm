@@ -1,0 +1,187 @@
+"use client";
+import { useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
+import { usePagedQuery } from "@/lib/trpc/use-paged-query";
+import { paymentGroups } from "@/lib/payments";
+import { callbackDate, formatMoney } from "@/lib/display";
+import { failureMessage } from "@/lib/failures";
+import { cn } from "@/lib/utils";
+import { PageHeader, Loading, Refusal, Empty } from "./pieces";
+import { PaymentStatus } from "./payment-pieces";
+import { Button } from "./ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+
+export function PaymentsScreen({
+  zone,
+  selected,
+  children,
+}: {
+  zone: string;
+  selected?: string;
+  children?: ReactNode;
+}) {
+  const trpc = useTRPC();
+  const api = useTRPCClient();
+  const [limit, setLimit] = useState(20);
+  const query = usePagedQuery(trpc.payments.list.queryOptions({ limit, offset: 0 }), "payments", {
+    limit,
+    read: (page, signal) => api.payments.list.query(page, { signal }),
+    merge: (a, b) => ({
+      ...b,
+      needsReview: [...a.needsReview, ...b.needsReview],
+      waitingForApproval: [...a.waitingForApproval, ...b.waitingForApproval],
+      waitingForProvider: [...a.waitingForProvider, ...b.waitingForProvider],
+      decidedThisWeek: [...a.decidedThisWeek, ...b.decidedThisWeek],
+    }),
+  });
+  const data = query.data;
+  if (!data)
+    return query.error ? (
+      <Refusal retry={() => void query.refetch()}>{failureMessage(query.error, "read")}</Refusal>
+    ) : (
+      <Loading label="Loading payments" />
+    );
+  const total = Object.values(data.counts).reduce((sum, count) => sum + count, 0);
+  const more = Object.values(data.counts).some((count) => count > limit);
+  return (
+    <>
+      <PageHeader
+        title="Payments"
+        className={selected ? "max-md:hidden" : undefined}
+        action={
+          <Button variant="outline" asChild>
+            <Link href="/accounts">Open accounts</Link>
+          </Button>
+        }
+      >
+        {data.counts.waitingForApproval} waiting for approval · {data.counts.waitingForProvider}{" "}
+        waiting for the provider
+      </PageHeader>
+      <div className="flex min-h-0 flex-1">
+        <section
+          aria-label="Payments"
+          className={cn(
+            "min-w-0 overflow-auto",
+            selected ? "hidden w-pay-list shrink-0 border-e xl:block" : "flex-1",
+          )}
+        >
+          {!total && (
+            <Empty icon="payments" title="No payments yet">
+              Open an account to record a payment or create a checkout.
+            </Empty>
+          )}
+          {paymentGroups.map(
+            ([key, label]) =>
+              data.counts[key] > 0 && (
+                <section key={key} aria-label={label}>
+                  <h2 className="flex gap-2 px-6 pb-2 pt-5 text-caption font-semibold text-secondary-foreground">
+                    {label}
+                    <span>{data.counts[key]}</span>
+                  </h2>
+                  {selected ? (
+                    <ul>
+                      {data[key].map((payment) => (
+                        <li key={payment.id}>
+                          <Link
+                            href={`/payments/${payment.id}`}
+                            aria-current={payment.id === selected ? "page" : undefined}
+                            className="block border-b px-6 py-3 hover:bg-muted aria-[current=page]:bg-accent"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate font-semibold">
+                                {payment.account?.name ?? payment.account?.email ?? "Account"}
+                              </span>
+                              <PaymentStatus payment={payment} compact={!!selected} />
+                            </div>
+                            <p className="mt-1 text-caption text-secondary-foreground">
+                              <strong className="text-foreground">
+                                {formatMoney(payment.money)}
+                              </strong>{" "}
+                              · {payment.method === "manual" ? "Manual" : "Card"} ·{" "}
+                              {payment.kind === "first" ? "First" : "Repeat"}
+                            </p>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <Table aria-label={label}>
+                      <TableHeader>
+                        <TableRow>
+                          {[
+                            "Account",
+                            "Amount",
+                            "Method",
+                            "Kind",
+                            "Recorded by",
+                            "Status",
+                            key === "waitingForProvider" ? "Next check" : "When",
+                          ].map((name) => (
+                            <TableHead key={name}>{name}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data[key].map((payment) => (
+                          <TableRow key={payment.id}>
+                            <TableCell>
+                              <Link
+                                href={`/payments/${payment.id}`}
+                                className="font-semibold text-primary underline-offset-4 hover:underline"
+                              >
+                                {payment.account?.name ?? payment.account?.email ?? "Account"}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="font-semibold">
+                              {formatMoney(payment.money)}
+                            </TableCell>
+                            <TableCell>{payment.method === "manual" ? "Manual" : "Card"}</TableCell>
+                            <TableCell>{payment.kind === "first" ? "First" : "Repeat"}</TableCell>
+                            <TableCell>{payment.recordedBy?.name ?? "Staff member"}</TableCell>
+                            <TableCell>
+                              <PaymentStatus payment={payment} compact={!!selected} />
+                            </TableCell>
+                            <TableCell>
+                              {callbackDate(
+                                key === "waitingForProvider"
+                                  ? payment.nextCheckAt
+                                  : "at" in payment.state
+                                    ? payment.state.at
+                                    : payment.createdAt,
+                                zone,
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </section>
+              ),
+          )}
+          {query.error && (
+            <Refusal retry={() => void query.refetch()}>
+              {failureMessage(query.error, "read")}
+            </Refusal>
+          )}
+          {(more || limit > 20) && (
+            <div className="p-4">
+              <Button
+                variant="outline"
+                busy={query.isFetching}
+                aria-disabled={!more}
+                onClick={() => {
+                  if (more) setLimit((value) => value + 20);
+                }}
+              >
+                {more ? "Show more payments" : "All payments shown"}
+              </Button>
+            </div>
+          )}
+        </section>
+        {children && <div className="min-w-0 flex-1 overflow-auto">{children}</div>}
+      </div>
+    </>
+  );
+}
