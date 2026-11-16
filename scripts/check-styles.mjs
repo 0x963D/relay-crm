@@ -5,7 +5,13 @@ import ts from "typescript";
 const root = process.argv[2] ?? "apps/web/src";
 const allow = JSON.parse(readFileSync("scripts/style-allowlist.json", "utf8"));
 const violations = [];
-const counts = { arbitraryValues: 0, classCoupling: 0, numericWeights: 0, inlineLiterals: 0 };
+const counts = {
+  arbitraryValues: 0,
+  classCoupling: 0,
+  numericWeights: 0,
+  inlineLiterals: 0,
+  defaultTheme: 0,
+};
 
 for (const file of readdirSync(root, { recursive: true }).filter((file) =>
   /\.(tsx?|css)$/.test(file),
@@ -26,12 +32,18 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
     if (value.startsWith("--spacing(var(--")) continue;
     report("arbitraryValues", match[0], match.index);
   }
+  for (const match of source.matchAll(/\[[\w-]+:[^\]\r\n]+\](?!:)/g))
+    report("arbitraryValues", match[0], match.index);
+  for (const match of source.matchAll(
+    /(?<![\w-])(?:bg|text|border(?:-[xysetblr])?|ring(?:-offset)?|outline|fill|stroke|decoration|accent|caret|from|via|to|divide|shadow)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)(?![\w-])|(?<![\w-])(?:bg|text|border|ring|outline|fill|stroke|from|via|to)-(?:black|white)(?![\w-])|(?<![\w-])(?:inset-|drop-)?shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl))?(?![\w-])/g,
+  ))
+    report("defaultTheme", match[0], match.index);
   for (const match of source.matchAll(
     /\[(?:[^\]\r\n]|\[[^\]\r\n]*\])*\.[a-zA-Z_-][^\]\r\n]*\](?=:)/g,
   ))
     report("classCoupling", match[0], match.index);
   for (const match of source.matchAll(
-    /(?:font-\[(?:number:)?_?\d+\]|\[font-weight:_?\d+\]|(?<![\w-])(?:font-weight|fontWeight)\s*:\s*["']?_?\d+)/g,
+    /(?:font-\[(?:number:)?_?\d+\]|\[font-weight:_?\d+\]|(?<![\w-])(?:font-weight|fontWeight)\s*:\s*["']?_?(?:\d+|bold\b|bolder\b|lighter\b))/g,
   ))
     report("numericWeights", match[0], match.index);
 
@@ -54,15 +66,30 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
       file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
     const sizing =
-      /^(?:width|height|minWidth|maxWidth|minHeight|maxHeight|padding\w*|margin\w*|gap|rowGap|columnGap|top|right|bottom|left|inset\w*|fontSize|lineHeight|borderRadius|borderWidth|color|background\w*|borderColor|fill|stroke|fontWeight)$/;
+      /^(?:width|height|minWidth|maxWidth|minHeight|maxHeight|padding\w*|margin\w*|gap|rowGap|columnGap|top|right|bottom|left|inset\w*|fontSize|lineHeight|borderRadius|borderWidth|color|background\w*|borderColor|fill|stroke|fontWeight|boxShadow|opacity)$/;
     function visit(node) {
+      const key =
+        ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name)
+          ? node.name.expression
+          : null;
+      let inStyle = false;
+      for (let parent = node.parent; parent; parent = parent.parent)
+        if (ts.isJsxAttribute(parent) && parent.name.getText(tree) === "style") inStyle = true;
       if (
         ts.isPropertyAssignment(node) &&
-        sizing.test(node.name.getText(tree).replace(/["']/g, ""))
+        ((key && inStyle) ||
+          sizing.test(
+            key && ts.isStringLiteralLike(key)
+              ? key.text
+              : node.name.getText(tree).replace(/["']/g, ""),
+          ))
       ) {
         const value = node.initializer;
         if (
+          (key && inStyle) ||
           ts.isNumericLiteral(value) ||
+          ts.isPrefixUnaryExpression(value) ||
+          ts.isTemplateExpression(value) ||
           (ts.isStringLiteralLike(value) &&
             !/^(?:var\(--|inherit$|currentColor$|transparent$|auto$|none$)/.test(value.text))
         )
@@ -75,7 +102,7 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
   }
   for (const match of source.matchAll(/style=["']([^"']+)["']/g)) {
     if (
-      /(?:width|height|padding|margin|gap|font-size|color|background|border)[\w-]*\s*:\s*(?:\d|#|rgb|hsl)/.test(
+      /(?:width|height|padding|margin|gap|font-size|color|background|border|box-shadow|opacity)[\w-]*\s*:\s*(?:\d|#|rgb|hsl)/.test(
         match[1],
       )
     )

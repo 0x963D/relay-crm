@@ -19,6 +19,11 @@ test("the style guard rejects literal values and class-coupled styles in every s
     "[font-weight:_600]",
     "[&_.queue-row]:p-1",
     "in-[.lead-open]:hidden",
+    "[width:13px]",
+    "[color:#f00]",
+    "text-red-500",
+    "bg-blue-600",
+    "shadow-2xl",
   ];
   try {
     for (const extension of ["ts", "tsx", "css"]) {
@@ -55,3 +60,27 @@ test("the style guard rejects literal values and class-coupled styles in every s
     rmSync(root, { recursive: true });
   }
 }, 30_000);
+
+test("the style guard rejects computed and template style literals and named font weights", () => {
+  mkdirSync(evidenceDirectory, { recursive: true });
+  const root = mkdtempSync(join(evidenceDirectory, "style-guard-"));
+  try {
+    for (const source of [
+      'export const View = () => <div style={{ ["width"]: 13 }} />;',
+      "export const View = () => <div style={{ [key]: 13 }} />;",
+      "export const View = () => <div style={{ width: `13px` }} />;",
+      "export const View = () => <div style={{ width: `${13}px` }} />;",
+      'export const View = () => <div style={{ boxShadow: "0 1px 2px red" }} />;',
+      "export const View = () => <div style={{ opacity: 0.5 }} />;",
+      "export const css = `.title{font-weight:bold}`;",
+    ]) {
+      writeFileSync(join(root, "fixture.tsx"), source);
+      const result = spawnSync(process.execPath, ["scripts/check-styles.mjs", root], {
+        encoding: "utf8",
+      });
+      expect.soft(result.status, `${source}\n${result.stdout}${result.stderr}`).toBe(1);
+    }
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});

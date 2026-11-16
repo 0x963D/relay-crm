@@ -3,5 +3,10 @@
     "file": "apps/web/src/components/ui/dialog.tsx",
     "value": "max-w-[calc(100%-2rem)]",
     "reason": "The unmodified registry dialog keeps a one-rem gutter on either side of a phone. This exact width formula is the only literal layout exception."
+  },
+  {
+    "file": "apps/web/src/server/payments/sandbox-page.ts",
+    "value": "font-weight:bold",
+    "reason": "The invented sandbox provider is deliberately a separate company's page. Its fixed monochrome and yellow stylesheet follows the provider frame rather than the CRM theme."
   }
 ]
