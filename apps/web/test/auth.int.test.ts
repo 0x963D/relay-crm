@@ -1,5 +1,6 @@
 import { expect, describe } from "vitest";
 import { test } from "@relay/store/testing";
+import { appRouter } from "../src/server/rpc.ts";
 import { createAuthentication } from "../src/server/auth.ts";
 import type { AuthEnv } from "../src/server/env.ts";
 
@@ -106,8 +107,18 @@ describe("email sign-in", () => {
     expect(signed.response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(signed.response.headers.get("set-cookie")).toContain("SameSite=Lax");
     const headers = new Headers({ cookie });
+    expect(await db.rows("SELECT current_team_id FROM auth_sessions")).toEqual([
+      { current_team_id: teamId },
+    ]);
     const principal = await auth.principal(headers);
-    expect(principal?.actor).toEqual({ userId, role: "teamLead", team: null });
+    expect(principal?.actor).toMatchObject({
+      userId,
+      role: "teamLead",
+      team: { id: teamId, kind: "sales", isLead: true },
+    });
+    expect(await db.rows("SELECT current_team_id FROM auth_sessions")).toEqual([
+      { current_team_id: teamId },
+    ]);
     if (principal?.kind !== "session") throw new Error("No authenticated principal");
     await expect(db.store.selectTeam(principal.session.id, foreign)).rejects.toMatchObject({
       code: "accessDenied",
@@ -204,4 +215,37 @@ describe("email sign-in", () => {
     ).toBe(403);
     expect(await db.rows("SELECT id FROM users")).toEqual([]);
   });
+});
+
+test("multiple memberships require a team choice and the session API returns the choices", async ({
+  db,
+}) => {
+  const userId = await db.seedUser("teamLead");
+  const teams = [await db.seedTeam("sales"), await db.seedTeam("sales")];
+  for (const teamId of teams)
+    await db.rows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
+      userId,
+      teamId,
+    ]);
+  const { post, sent, auth } = setup(db.store);
+  await post("/email-otp/send-verification-otp", { email: "user-1@team.example", type: "sign-in" });
+  const signed = await post("/sign-in/email-otp", {
+    email: "user-1@team.example",
+    otp: sent[0]?.code,
+  });
+  const headers = new Headers({ cookie: await cookieOf(signed.response) });
+  const principal = await auth.principal(headers);
+  if (principal?.kind !== "session") throw new Error("No session");
+  await expect(db.store.listLeads(principal.actor, { limit: 100 })).rejects.toMatchObject({
+    code: "teamSelectionRequired",
+    message: "Choose a current team before using team-scoped operations.",
+  });
+  const caller = appRouter.createCaller({ store: db.store, principal });
+  const current = await caller.session.current();
+  expect(current.actor.teams?.map((team) => team.id).sort()).toEqual([...teams].sort());
+  await caller.session.selectTeam({ teamId: teams[0] ?? null });
+  const selected = await auth.principal(headers);
+  expect(selected?.actor.team?.id).toBe(teams[0]);
+  if (!selected) throw new Error("No selected session");
+  expect(await db.store.listLeads(selected.actor, { limit: 100 })).toEqual([]);
 });

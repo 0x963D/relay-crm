@@ -13,6 +13,7 @@ import { listAccounts, getAccount } from "./accounts.ts";
 import {
   authenticationDatabase,
   sessionPrincipal,
+  initialSessionTeam,
   selectTeam,
   takeAuthRequest,
   ensureDevelopmentActor,
@@ -37,6 +38,7 @@ export function openStore(config: { readonly connectionString: string }) {
     intake: intakeWith(db) satisfies Intake,
     authenticationDatabase: authenticationDatabase(db),
     sessionPrincipal: (id: string) => sessionPrincipal(db, id),
+    initialSessionTeam: (userId: string) => initialSessionTeam(db, userId),
     selectTeam: (sessionId: string, teamId: TeamId | null) => selectTeam(db, sessionId, teamId),
     takeAuthRequest: (key: string, max: number, windowSeconds: number) =>
       takeAuthRequest(db, key, max, windowSeconds),

@@ -130,6 +130,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ctx.store.submitDistribution(ctx.actor, input)),
   }),
   session: t.router({
+    current: authenticated.query(({ ctx }) => ctx.principal),
     selectTeam: authenticated
       .input(z.object({ teamId: identifier(TeamId).nullable() }).strict())
       .mutation(async ({ ctx, input }) => {

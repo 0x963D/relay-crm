@@ -32,6 +32,7 @@ export const ACCESS_FAILURES = [
   "accessDenied",
   "conflict",
   "idempotencyConflict",
+  "teamSelectionRequired",
   "stalePreview",
   "invalidAgent",
   "noEligibleAgent",

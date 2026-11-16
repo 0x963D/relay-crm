@@ -1,15 +1,7 @@
-import { ACCESS_FAILURES, type AccessFailure } from "@relay/domain";
+import { ACCESS_FAILURES } from "@relay/domain";
 
-export class AccessError extends Error {
-  override readonly name = "AccessError";
-  readonly code: AccessFailure;
-  constructor(code: AccessFailure) {
-    super(
-      code === "idempotencyConflict" ? "The key was already used for a different request." : code,
-    );
-    this.code = code;
-  }
-}
+export { AccessError } from "@relay/domain";
+import type { AccessError } from "@relay/domain";
 
 // Page and API bundles can hold different constructors for the shared store.
 export function isAccessError(value: unknown): value is AccessError {

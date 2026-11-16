@@ -80,3 +80,5 @@ export type {
 export { planDistribution } from "./distribution-plan.ts";
 
 export { ACCESS_FAILURES } from "./distribution.ts";
+
+export { AccessError } from "./access-error.ts";

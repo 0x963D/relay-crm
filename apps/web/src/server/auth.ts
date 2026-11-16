@@ -33,6 +33,15 @@ export function createAuthentication(
     baseURL: env.baseUrl,
     secret: env.secret,
     database: store.authenticationDatabase,
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session) => ({
+            data: { ...session, currentTeamId: await store.initialSessionTeam(session.userId) },
+          }),
+        },
+      },
+    },
     user: { modelName: "user" },
     session: {
       modelName: "authSession",

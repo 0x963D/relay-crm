@@ -8,29 +8,39 @@ export function authenticationDatabase(db: Db) {
   return prismaAdapter(db, { provider: "postgresql" });
 }
 
-export async function currentActor(tx: Tx, actor: Actor): Promise<Actor> {
+export async function currentActor(
+  tx: Tx,
+  actor: { readonly userId: UserId; readonly team: { readonly id: TeamId } | null },
+): Promise<Actor> {
   const user = await tx.user.findUnique({ where: { id: actor.userId } });
   if (!user) throw new AccessError("accessDenied");
-  const teamId = actor.team?.id ?? null;
-  const membership =
-    teamId === null
-      ? null
-      : await tx.membership.findUnique({
-          where: { userId_teamId: { userId: actor.userId, teamId } },
-          include: { team: true },
-        });
+  const memberships = await tx.membership.findMany({
+    where: { userId: actor.userId },
+    include: { team: true },
+    orderBy: { teamId: "asc" },
+  });
+  const teams = memberships.map((member) => {
+    const id = TeamId.parse(member.teamId);
+    if (!id) throw new InvariantError("A membership contains an invalid team UUID");
+    return { id, name: member.team.name, kind: member.team.kind, isLead: member.isLead };
+  });
+  const selected =
+    teams.find((team) => team.id === actor.team?.id) ?? (teams.length === 1 ? teams[0] : null);
   return {
     userId: actor.userId,
     role: user.role,
-    team:
-      membership === null || teamId === null
-        ? null
-        : {
-            id: teamId,
-            kind: membership.team.kind,
-            isLead: membership.isLead,
-          },
+    teams,
+    team: selected ? { id: selected.id, kind: selected.kind, isLead: selected.isLead } : null,
   };
+}
+
+export async function initialSessionTeam(db: Db, value: string): Promise<TeamId | null> {
+  const userId = UserId.parse(value);
+  if (!userId) throw new AccessError("accessDenied");
+  return transact(
+    db,
+    async (tx) => (await currentActor(tx, { userId, team: null })).team?.id ?? null,
+  );
 }
 
 export async function sessionPrincipal(db: Db, id: string): Promise<SessionPrincipal | null> {
@@ -44,12 +54,14 @@ export async function sessionPrincipal(db: Db, id: string): Promise<SessionPrinc
     }
     const actor = await currentActor(tx, {
       userId,
-      role: "agent",
-      team: teamId === null ? null : { id: teamId, kind: "sales", isLead: false },
+      team: teamId === null ? null : { id: teamId },
     });
+    const currentTeamId = actor.team?.id ?? null;
+    if (session.currentTeamId !== currentTeamId)
+      await tx.authSession.update({ where: { id }, data: { currentTeamId } });
     return {
       kind: "session",
-      session: { id, userId, currentTeamId: teamId, expiresAt: session.expiresAt },
+      session: { id, userId, currentTeamId, expiresAt: session.expiresAt },
       actor,
     };
   });

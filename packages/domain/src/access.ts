@@ -1,3 +1,4 @@
+import { AccessError } from "./access-error.ts";
 import type { TeamId, UserId } from "./ids.ts";
 import { assigneeOf, type LeadState } from "./lead.ts";
 import type { Account, RecordAccess, RecordKind, RecordScope } from "./account.ts";
@@ -7,7 +8,15 @@ export type Role = (typeof ROLES)[number];
 export const TEAM_KINDS = ["sales", "accounts"] as const;
 export type TeamKind = (typeof TEAM_KINDS)[number];
 
+export interface TeamMembership {
+  readonly id: TeamId;
+  readonly name: string;
+  readonly kind: TeamKind;
+  readonly isLead: boolean;
+}
+
 export interface Actor {
+  readonly teams?: readonly TeamMembership[];
   readonly userId: UserId;
   readonly role: Role;
   readonly team: {
@@ -49,6 +58,8 @@ export function recordScope(actor: Actor, record: RecordKind, access: RecordAcce
     const rule = RULES[actor.role][record][access];
     if (rule === "all" || rule === "none") return { kind: rule };
     if (rule === "team") {
+      if (actor.team === null && (actor.teams?.length ?? 0) > 1)
+        throw new AccessError("teamSelectionRequired");
       if (actor.team?.kind === "sales" && actor.team.isLead) {
         return { kind: record === "lead" ? "teamAndPool" : "team", teamId: actor.team.id };
       }
