@@ -477,7 +477,9 @@ export function PoolScreen({
                     <Refusal announce={false} title="Nothing was assigned">
                       <p>
                         {preview.changed.length
-                          ? `${String(preview.changed.length)} of these ${String(selected.length)} leads changed hands after your preview.`
+                          ? selected.length === 1
+                            ? "This lead changed hands after your preview."
+                            : `${String(preview.changed.length)} of these ${String(selected.length)} leads changed hands after your preview.`
                           : "These leads changed or are no longer visible after your preview."}
                       </p>
                       {[
@@ -501,8 +503,11 @@ export function PoolScreen({
                         );
                       })}
                       <p>
-                        {preview.remaining.length} still have no owner. Make a new preview to share
-                        them out.
+                        {preview.remaining.length === 0
+                          ? "No selected leads remain in the pool. Cancel this preview to choose other leads."
+                          : preview.remaining.length === 1
+                            ? "1 still has no owner. Make a new preview to assign it."
+                            : `${String(preview.remaining.length)} still have no owner. Make a new preview to share them out.`}
                       </p>
                     </Refusal>
                   ) : null}
@@ -610,19 +615,21 @@ export function PoolScreen({
                 <div className="pool-submit mt-auto flex-none max-pane:mt-content col flex flex-col">
                   {preview.kind === "stale" ? (
                     <>
-                      <Button
-                        className="btn--block w-full [.sign-sheet_&]:flex max-phone:[.pool-panel_&]:min-h-[44px]"
-                        size="lg"
-                        data-repreview
-                        disabled={pending || preview.remaining.length === 0}
-                        onClick={() => {
-                          void makePreview(preview.remaining);
-                        }}
-                      >
-                        <Icon name="refresh" />
-                        Preview the remaining {preview.remaining.length}{" "}
-                        {preview.remaining.length === 1 ? "lead" : "leads"}
-                      </Button>
+                      {preview.remaining.length > 0 && (
+                        <Button
+                          className="btn--block w-full [.sign-sheet_&]:flex max-phone:[.pool-panel_&]:min-h-[44px]"
+                          size="lg"
+                          data-repreview
+                          disabled={pending}
+                          onClick={() => {
+                            void makePreview(preview.remaining);
+                          }}
+                        >
+                          <Icon name="refresh" />
+                          Preview the remaining {preview.remaining.length}{" "}
+                          {preview.remaining.length === 1 ? "lead" : "leads"}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         onClick={() => {
