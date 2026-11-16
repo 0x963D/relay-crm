@@ -22,7 +22,15 @@ describe("account and assignment scopes", () => {
         ? { kind: "all" }
         : role === "accountant"
           ? { kind: "none" }
-          : { kind: "own", userId: ana.ownerId },
+          : role === "teamLead"
+            ? {
+                kind: "intersection",
+                scopes: [
+                  { kind: "own", userId: ana.ownerId },
+                  { kind: "team", teamId: ana.teamId },
+                ],
+              }
+            : { kind: "own", userId: ana.ownerId },
     );
     expect(recordScope(actor, "lead", "assign")).toEqual(
       management

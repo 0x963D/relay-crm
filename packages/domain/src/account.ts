@@ -10,6 +10,7 @@ export interface Account {
 export type RecordKind = "lead" | "account";
 export type RecordAccess = "read" | "edit" | "assign";
 export type RecordScope =
+  | { readonly kind: "intersection"; readonly scopes: readonly RecordScope[] }
   | { readonly kind: "all" }
   | { readonly kind: "teamAndPool"; readonly teamId: TeamId }
   | { readonly kind: "team"; readonly teamId: TeamId }

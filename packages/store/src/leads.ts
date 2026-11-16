@@ -21,6 +21,8 @@ export interface LeadListItem extends Lead {
 
 function recordScopeWhere(scope: LeadScope): Prisma.LeadWhereInput {
   switch (scope.kind) {
+    case "intersection":
+      return { AND: scope.scopes.map(recordScopeWhere) };
     case "all":
       return {};
     case "team":

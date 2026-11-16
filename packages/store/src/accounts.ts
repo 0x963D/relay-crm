@@ -16,6 +16,8 @@ import { transact, type Db } from "./tx.ts";
 
 function whereScope(scope: RecordScope): Prisma.AccountWhereInput {
   switch (scope.kind) {
+    case "intersection":
+      return { AND: scope.scopes.map(whereScope) };
     case "all":
       return {};
     case "own":

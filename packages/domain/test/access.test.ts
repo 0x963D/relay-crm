@@ -53,7 +53,10 @@ const EXPECTED: Readonly<Record<Role, Readonly<Record<TeamSituation, Expected>>>
   manager: everywhere({ read: all, edit: all }),
   teamLead: {
     ...everywhere({ read: own, edit: own }),
-    "a sales team they lead": { read: teamAndPool, edit: own },
+    "a sales team they lead": {
+      read: teamAndPool,
+      edit: { kind: "intersection", scopes: [own, teamAndPool] },
+    },
   },
   agent: everywhere({ read: own, edit: own }),
   accountant: everywhere({ read: none, edit: none }),
@@ -76,10 +79,15 @@ describe("recordScope", () => {
 
   it.each(CASES)("never lets a $role in $situation edit a lead they cannot read", ({ actor }) => {
     const read = recordScope(actor, "lead", "read");
-    const edit = recordScope(actor, "lead", "edit");
-    for (const state of ALL_STATES) {
-      if (scopeAdmits(edit, state)) {
-        expect(scopeAdmits(read, state), describeState(state)).toBe(true);
+    for (const access of ["edit", "assign"] as const) {
+      const scope = recordScope(actor, "lead", access);
+      for (const state of [
+        ...ALL_STATES,
+        { status: "assigned", assignee: anaOnOtherTeam } as const,
+      ]) {
+        if (scopeAdmits(scope, state)) {
+          expect(scopeAdmits(read, state), `${access} ${describeState(state)}`).toBe(true);
+        }
       }
     }
   });

@@ -45,20 +45,30 @@ const RULES: Readonly<Record<Role, Rules>> = {
 };
 
 export function recordScope(actor: Actor, record: RecordKind, access: RecordAccess): RecordScope {
-  const rule = RULES[actor.role][record][access];
-  if (rule === "all" || rule === "none") return { kind: rule };
-  if (rule === "team") {
-    if (actor.team?.kind === "sales" && actor.team.isLead) {
-      return { kind: record === "lead" ? "teamAndPool" : "team", teamId: actor.team.id };
+  const scope: RecordScope = (() => {
+    const rule = RULES[actor.role][record][access];
+    if (rule === "all" || rule === "none") return { kind: rule };
+    if (rule === "team") {
+      if (actor.team?.kind === "sales" && actor.team.isLead) {
+        return { kind: record === "lead" ? "teamAndPool" : "team", teamId: actor.team.id };
+      }
+      if (access === "assign") return { kind: "none" };
     }
-    if (access === "assign") return { kind: "none" };
-  }
-  return { kind: "own", userId: actor.userId };
+    return { kind: "own", userId: actor.userId };
+  })();
+  if (access === "read") return scope;
+  const read = recordScope(actor, record, "read");
+  if (read.kind === "none" || scope.kind === "none") return { kind: "none" };
+  if (read.kind === "all" || read.kind === scope.kind) return scope;
+  if (scope.kind === "all") return read;
+  return { kind: "intersection", scopes: [scope, read] };
 }
 
 export function scopeAdmits(scope: RecordScope, record: LeadState | Account): boolean {
   const owner = "status" in record ? assigneeOf(record) : record;
   switch (scope.kind) {
+    case "intersection":
+      return scope.scopes.every((part) => scopeAdmits(part, record));
     case "all":
       return true;
     case "teamAndPool":
