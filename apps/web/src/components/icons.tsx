@@ -75,7 +75,13 @@ export function Icon({
   return (
     <Component
       aria-hidden="true"
-      className={size === "small" ? "i-14" : size === "large" ? "i-20" : "i"}
+      className={
+        size === "small"
+          ? "i-14 w-[14px] h-[14px] flex-none"
+          : size === "large"
+            ? "i-20 w-[20px] h-[20px] flex-none"
+            : "i w-[16px] h-[16px] flex-none"
+      }
     />
   );
 }

@@ -1,7 +1,10 @@
+import { isAccessError } from "@relay/store";
+import { TRPCError } from "@trpc/server";
 import { QueryClient, dehydrate } from "@tanstack/react-query";
 import { DataProvider } from "@/components/data-provider";
+import { workspaceView } from "@/lib/workspace";
 import { reads } from "@/lib/reads";
-import { failureMessage, failureCode } from "@/lib/failures";
+import { failureMessage } from "@/lib/failures";
 import { connection } from "next/server";
 import { headers } from "next/headers";
 import { composition } from "@/server/composition.ts";
@@ -22,27 +25,21 @@ export default async function HomePage({
   const caller = appRouter.createCaller({
     store: app.store,
     principal,
+    timeZone: app.env.timeZone,
   });
   const profile = await caller.session.profile();
   const params = await searchParams;
   const client = new QueryClient();
   const read = async <T,>(key: readonly unknown[], load: () => Promise<T>) =>
-    client.fetchQuery({
+    client.query({
       queryKey: key,
       retry: false,
-      queryFn: async () => {
-        try {
-          return await load();
-        } catch (error) {
-          throw {
-            message: failureMessage(error, "read"),
-            data: { accessFailure: failureCode(error) },
-          };
-        }
-      },
+      queryFn: load,
     });
-  const view =
-    typeof params.view === "string" ? params.view : profile.role === "agent" ? "queue" : "pool";
+  const view = workspaceView(
+    profile.role,
+    typeof params.view === "string" ? params.view : undefined,
+  );
   const requestedAgent = typeof params.agent === "string" ? params.agent : undefined;
   const leadId = typeof params.lead === "string" ? params.lead : undefined;
   const agentsRead = read(reads.agents().queryKey, () => caller.leads.agents({ offset: 0 }));
@@ -89,10 +86,35 @@ export default async function HomePage({
         read(reads.lead(first.id).queryKey, () => caller.leads.get({ id: first.id })),
       ]);
   }
-  const state = dehydrate(client, {
+  const dehydrated = dehydrate(client, {
     shouldDehydrateQuery: () => true,
     shouldRedactErrors: () => false,
   });
+  const state = {
+    ...dehydrated,
+    queries: dehydrated.queries.map((query) => {
+      const error: unknown = query.state.error;
+      const cause = error instanceof TRPCError ? error.cause : error;
+      const failure = {
+        data: {
+          code: error instanceof TRPCError ? error.code : "INTERNAL_SERVER_ERROR",
+          accessFailure: isAccessError(cause) ? cause.code : null,
+        },
+      };
+      return {
+        ...query,
+        state: {
+          ...query.state,
+          error: error
+            ? { ...failure, name: "ReadError", message: failureMessage(failure, "read") }
+            : null,
+          fetchFailureReason: error
+            ? { ...failure, name: "ReadError", message: failureMessage(failure, "read") }
+            : null,
+        },
+      };
+    }),
+  };
   return (
     <DataProvider state={state}>
       <Workspace

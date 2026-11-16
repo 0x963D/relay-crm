@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { failureCode } from "./failures";
 import { api, type Inputs } from "./api";
 export const reads = {
   agents: () =>
@@ -22,3 +23,19 @@ export const reads = {
       queryFn: ({ signal }) => api.leads.get.query({ id }, { signal }),
     }),
 };
+
+export type Remote<T> =
+  { status: "loading" } | { status: "error"; error: unknown } | { status: "ready"; value: T };
+export function readState<T>({
+  data,
+  isError,
+  error,
+}: {
+  data: T | undefined;
+  isError: boolean;
+  error: unknown;
+}): Remote<T> {
+  if (isError && (data === undefined || failureCode(error) === "accessDenied"))
+    return { status: "error", error };
+  return data === undefined ? { status: "loading" } : { status: "ready", value: data };
+}

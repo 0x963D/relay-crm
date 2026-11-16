@@ -11,7 +11,12 @@ export function DataProvider({ state, children }: { state: DehydratedState; chil
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: { staleTime: 60_000, retry: false, refetchOnWindowFocus: false },
+          queries: {
+            staleTime: 60_000,
+            retry: false,
+            retryOnMount: false,
+            refetchOnWindowFocus: false,
+          },
         },
       }),
   );

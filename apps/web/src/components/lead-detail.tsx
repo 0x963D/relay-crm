@@ -1,4 +1,5 @@
 "use client";
+import { NativeSelect } from "./ui/native-select";
 import { useEffect, useState, useRef, type SyntheticEvent } from "react";
 import { DEAD_REASONS, recordScope, scopeAdmits } from "@relay/domain";
 import { api, type Inputs, type Outputs } from "@/lib/api";
@@ -23,8 +24,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Checkbox } from "./ui/checkbox";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { reads } from "@/lib/reads";
-import type { Profile, Remote } from "./queue";
+import { reads, readState } from "@/lib/reads";
+import type { Profile } from "./queue";
 type Lead = Outputs["leads"]["get"];
 type Mode = "rest" | "attempt" | "callback" | "note" | "close";
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -111,11 +112,7 @@ export function LeadDetail({
 }) {
   const client = useQueryClient();
   const query = useQuery(reads.lead(id));
-  const remote: Remote<Lead> = query.data
-    ? { status: "ready", value: query.data }
-    : query.isError
-      ? { status: "error", error: query.error }
-      : { status: "loading" };
+  const remote = readState(query);
   const [mode, setMode] = useState<Mode>(action ? "attempt" : "rest");
   const [channel, setChannel] = useState<"call" | "whatsApp">(
     action === "whatsapp" ? "whatsApp" : "call",
@@ -123,7 +120,13 @@ export function LeadDetail({
   const [outcome, setOutcome] = useState<"noAnswer" | "spokeToThem">("noAnswer");
   const [closing, setClosing] = useState<"won" | "lost" | "dead">("lost");
   const [deadReason, setDeadReason] = useState<(typeof DEAD_REASONS)[number]>("duplicate");
-  const [note, setNote] = useState("");
+  const [notes, setNotes] = useState({ attempt: "", note: "", close: "" });
+  const noteKey = mode === "attempt" || mode === "close" ? mode : "note";
+  const note = notes[noteKey];
+  const setNote = (value: string) => {
+    setNotes((drafts) => ({ ...drafts, [noteKey]: value }));
+  };
+  const callbackDraft = useRef<string | null>(null);
   const [callback, setCallback] = useState(false);
   const [day, setDay] = useState("");
   const [time, setTime] = useState("");
@@ -138,9 +141,11 @@ export function LeadDetail({
   useEffect(() => {
     if (mode !== "rest")
       form.current
-        ?.querySelector<HTMLElement>("button:not([disabled]), input, textarea, select")
+        ?.querySelector<HTMLElement>(
+          'button[role="radio"][aria-checked="true"], button[role="tab"][aria-selected="true"], button:not([role="radio"]):not([role="tab"]):not([disabled]), input:not([type="hidden"]), textarea, select',
+        )
         ?.focus();
-  }, [mode]);
+  }, [mode, remote.status]);
   function closeComposer() {
     setMode("rest");
     setError(null);
@@ -158,7 +163,12 @@ export function LeadDetail({
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (next === "callback" && query.data) {
       const state = query.data.lifecycle.state;
-      if (state.status === "working" && state.stage.kind === "callBack") {
+      if (
+        state.status === "working" &&
+        state.stage.kind === "callBack" &&
+        callbackDraft.current !== state.stage.at.toISOString()
+      ) {
+        callbackDraft.current = state.stage.at.toISOString();
         const fields = callbackFields(state.stage.at, zone);
         setDay(fields.day);
         setTime(fields.time);
@@ -231,6 +241,7 @@ export function LeadDetail({
       setNote("");
       await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
       onSaved();
+      if (mode === "close") await client.invalidateQueries({ queryKey: ["agents"] });
     } catch (error) {
       setError(failureMessage(error));
     } finally {
@@ -260,7 +271,11 @@ export function LeadDetail({
   if (remote.status === "error")
     return (
       <>
-        <Button variant="ghost" className="mobile-back" onClick={onBack}>
+        <Button
+          variant="ghost"
+          className="mobile-back hidden max-pane:inline-flex"
+          onClick={onBack}
+        >
           <Icon name="back" />
           Back to queue
         </Button>
@@ -291,15 +306,19 @@ export function LeadDetail({
     state.status === "working" && state.stage.kind === "callBack" ? state.stage.at : null;
   return (
     <>
-      <div className="pad lead-head">
-        <Button variant="ghost" className="mobile-back" onClick={onBack}>
+      <div className="pad p-[18px_24px] max-phone:p-content lead-head [border-block-end:1px_solid_var(--color-rule)] flex flex-col gap-[14px] flex-none">
+        <Button
+          variant="ghost"
+          className="mobile-back hidden max-pane:inline-flex"
+          onClick={onBack}
+        >
           <Icon name="back" />
           Back to queue
         </Button>
         <div>
-          <div className="row lead-title">
+          <div className="row flex items-center max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] lead-title gap-control flex-wrap [&_h2]:text-(length:--text-lead) [&_h2]:leading-[26px] [&_h2]:font-[720] [&_h2]:[font-variation-settings:'wdth'_84] max-phone:[&_h2]:w-full phone:max-poolcompact:gap-x-compact phone:max-poolcompact:[&_h2]:[flex-basis:100%]">
             <h2>{lead.name ?? lead.email}</h2>
-            <span className="sp" />
+            <span className="sp flex-1 max-laptop:[.lead-title_&]:hidden max-phone:[.q-top_&]:hidden phone:max-poolcompact:[.q-top_&]:hidden" />
             {canEdit && (
               <>
                 <Button
@@ -332,7 +351,7 @@ export function LeadDetail({
               </>
             )}
           </div>
-          <div className="row sm t2 lead-contact">
+          <div className="row flex items-center max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground lead-contact mt-tight gap-control flex-wrap">
             {!isOpen ? (
               <Slip
                 kind={state.status === "won" ? "green" : "mute"}
@@ -359,7 +378,7 @@ export function LeadDetail({
             <span>{lead.email}</span>
           </div>
         </div>
-        <div className="signoff">
+        <div className="signoff grid gap-[20px] [grid-template-columns:repeat(3,_minmax(0,_1fr))] max-laptop:gap-group max-phone:[grid-template-columns:1fr] max-phone:gap-control">
           <Signoff
             caption="Received from"
             name={sourceLabel(lead.custody.receivedFrom?.source)}
@@ -377,7 +396,7 @@ export function LeadDetail({
             time={custodyDate(lead.custody.heldBy?.since ?? null, zone, true)}
           />
         </div>
-        <dl className="attribution">
+        <dl className="attribution grid [grid-template-columns:1.5fr_1fr_1.15fr_0.75fr] gap-[20px] [&_dd]:[overflow-wrap:anywhere] max-laptop:[grid-template-columns:1fr_1fr] max-laptop:gap-group max-phone:gap-group">
           {(
             [
               ["Campaign", lead.attribution?.campaign],
@@ -387,16 +406,30 @@ export function LeadDetail({
             ] as const
           ).map(([caption, value]) => (
             <div key={caption}>
-              <dt className="cap">{caption}</dt>
-              <dd className="sm">{value ?? "Unknown"}</dd>
+              <dt className="cap text-(length:--text-caption) leading-[16px] text-tertiary [font-stretch:94%] [.sec_&]:font-[400] [.sec_&]:ms-auto [.timeline-heading_&]:flex-1 max-phone:[.queue-list_.sec_&]:text-(length:--text-caption)">
+                {caption}
+              </dt>
+              <dd className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap">
+                {value ?? "Unknown"}
+              </dd>
             </div>
           ))}
         </dl>
       </div>
-      <div className="pad lead-body">
+      <div className="pad p-[18px_24px] max-phone:p-content lead-body flex flex-col gap-content">
+        {query.isError && (
+          <Refusal
+            title="The latest lead could not be loaded"
+            retry={() => {
+              void query.refetch();
+            }}
+          >
+            {failureMessage(query.error, "read")}
+          </Refusal>
+        )}
         <div role="status" aria-live="polite" aria-atomic="true" tabIndex={-1} ref={feedback}>
           {success && (
-            <div className="alert alert--info">
+            <div className="alert flex gap-control p-[12px_14px] rounded-group border-[1px] border-solid border-control-border alert--info bg-selected [border-color:transparent] text-foreground">
               <Icon name="check" />
               <span>{success}</span>
             </div>
@@ -413,7 +446,7 @@ export function LeadDetail({
           )}
         </div>
         {mode !== "rest" && canEdit && (
-          <Card className="composer">
+          <Card className="composer p-[14px_16px] flex flex-col gap-group border-control-border">
             <Tabs
               value={tabValue}
               onValueChange={(value) => {
@@ -431,13 +464,13 @@ export function LeadDetail({
                     closeComposer();
                   }
                 }}
-                className="col composer-form"
+                className="col flex flex-col composer-form gap-[12px]"
                 onSubmit={(event) => {
                   void save(event);
                 }}
               >
-                <div className="row panel-head">
-                  <h3 className="h2">
+                <div className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] panel-head flex-wrap">
+                  <h3 className="h2 text-(length:--text-panel) leading-[22px] font-[700] [font-variation-settings:'wdth'_86] [.pool-panel_&]:flex-none">
                     {mode === "attempt"
                       ? "Log an attempt"
                       : mode === "callback"
@@ -448,10 +481,10 @@ export function LeadDetail({
                           ? "Add a note"
                           : "Close this lead"}
                   </h3>
-                  <span className="sp" />
+                  <span className="sp flex-1 max-laptop:[.lead-title_&]:hidden max-phone:[.q-top_&]:hidden phone:max-poolcompact:[.q-top_&]:hidden" />
                   {mode === "attempt" && (
                     <RadioGroup
-                      className="tabs channel-choices"
+                      className="channel-choices inline-flex flex-row p-[3px] rounded-group bg-muted gap-[2px] max-phone:[&_button]:min-h-[36px]"
                       aria-label="Attempt channel"
                       value={channel}
                       onValueChange={(value) => {
@@ -486,7 +519,7 @@ export function LeadDetail({
                   )}
                 </div>
                 <TabsContent
-                  className="composer-content"
+                  className="composer-content flex flex-col gap-group"
                   value={tabValue}
                   aria-labelledby={undefined}
                   aria-label="Lead work"
@@ -494,44 +527,55 @@ export function LeadDetail({
                 >
                   {mode === "attempt" && (
                     <>
-                      <div className="field">
-                        <span className="label" id="attempt-outcome">
+                      <div className="field flex flex-col gap-compact">
+                        <span
+                          className="label text-(length:--text-small) font-[600]"
+                          id="attempt-outcome"
+                        >
                           What happened?
                         </span>
                         <RadioGroup
-                          className="attempt-options"
+                          className="attempt-options grid [grid-template-columns:1fr_1fr] gap-control max-phone:[grid-template-columns:1fr]"
                           aria-labelledby="attempt-outcome"
                           value={outcome}
                           onValueChange={(v) => {
                             if (v === "noAnswer" || v === "spokeToThem") setOutcome(v);
                           }}
                         >
-                          <label className="opt" data-checked={outcome === "noAnswer"}>
+                          <label
+                            className="opt flex items-center gap-control min-h-[40px] p-[8px_10px] border-[1px] border-solid border-rule rounded-control [&[data-checked='true']]:border-primary [&[data-checked='true']]:bg-selected [.pool-people_&]:min-h-[44px] [.pool-people_&]:py-compact"
+                            data-checked={outcome === "noAnswer"}
+                          >
                             <RadioGroupItem value="noAnswer" />
                             <span>
-                              <span className="b">No answer</span>
+                              <span className="b font-[620]">No answer</span>
                               <br />
-                              <span className="help">
+                              <span className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
                                 Counts as no answer number {lead.noAnswerCount + 1}
                               </span>
                             </span>
                           </label>
-                          <label className="opt" data-checked={outcome === "spokeToThem"}>
+                          <label
+                            className="opt flex items-center gap-control min-h-[40px] p-[8px_10px] border-[1px] border-solid border-rule rounded-control [&[data-checked='true']]:border-primary [&[data-checked='true']]:bg-selected [.pool-people_&]:min-h-[44px] [.pool-people_&]:py-compact"
+                            data-checked={outcome === "spokeToThem"}
+                          >
                             <RadioGroupItem value="spokeToThem" />
                             <span>
-                              <span className="b">Spoke to them</span>
+                              <span className="b font-[620]">Spoke to them</span>
                               <br />
-                              <span className="help">Marks the lead as contacted</span>
+                              <span className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
+                                Marks the lead as contacted
+                              </span>
                             </span>
                           </label>
                         </RadioGroup>
                       </div>
                       {lead.phone && (
-                        <p className="help">
+                        <p className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
                           Use your own {channel === "call" ? "phone" : "WhatsApp"}, then save what
                           happened.{" "}
                           <a
-                            className="link"
+                            className="link [a&]:text-primary [a&]:font-[600] [a&]:[text-decoration:underline] [a&]:[text-underline-offset:3px] [a&]:[text-decoration-thickness:1px] [.alert--refused_a&]:text-refused-foreground"
                             href={
                               channel === "call"
                                 ? `tel:${lead.phone}`
@@ -547,24 +591,26 @@ export function LeadDetail({
                     </>
                   )}
                   {(mode === "attempt" || mode === "callback") && (
-                    <div className="callback-fields">
+                    <div className="callback-fields grid [grid-template-columns:auto_minmax(0,_1fr)_132px] gap-control [align-items:end] max-phone:[grid-template-columns:1fr_1fr]">
                       {mode === "attempt" && (
-                        <label className="row callback-check">
+                        <label className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] callback-check h-[36px] max-phone:[grid-column:1/-1] max-phone:min-h-[44px]">
                           <Checkbox
                             checked={callback}
                             onCheckedChange={(v) => {
                               setCallback(v === true);
                             }}
                           />
-                          <span className="b">Call back</span>
+                          <span className="b font-[620]">Call back</span>
                         </label>
                       )}
                       {(mode === "callback" || callback) && (
                         <>
-                          <label className="field">
-                            <span className="label">Day</span>
+                          <label className="field flex flex-col gap-compact">
+                            <span className="label text-(length:--text-small) font-[600]">Day</span>
                             <Input
                               type="date"
+                              aria-label="Day"
+                              aria-describedby="callback-day-words"
                               required
                               value={day}
                               onChange={(e) => {
@@ -572,13 +618,18 @@ export function LeadDetail({
                               }}
                             />
                             {day && (
-                              <span className="help">
+                              <span
+                                id="callback-day-words"
+                                className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1"
+                              >
                                 {dayLabel(new Date(`${day}T12:00:00Z`), "UTC")}
                               </span>
                             )}
                           </label>
-                          <label className="field">
-                            <span className="label">Time</span>
+                          <label className="field flex flex-col gap-compact">
+                            <span className="label text-(length:--text-small) font-[600]">
+                              Time
+                            </span>
                             <Input
                               type="time"
                               required
@@ -588,7 +639,9 @@ export function LeadDetail({
                               }}
                             />
                           </label>
-                          <p className="help">Times use {zone}.</p>
+                          <p className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
+                            Times use {zone}.
+                          </p>
                         </>
                       )}
                     </div>
@@ -596,18 +649,17 @@ export function LeadDetail({
                   {(mode === "attempt" ||
                     mode === "note" ||
                     (mode === "close" && closing === "lost")) && (
-                    <label className="field">
-                      <span className="label" id="work-note-label">
+                    <label className="field flex flex-col gap-compact">
+                      <span
+                        className="label text-(length:--text-small) font-[600]"
+                        id="work-note-label"
+                      >
                         {mode === "close" ? "Why was it lost?" : "Note"}
                       </span>
                       <Textarea
                         aria-labelledby="work-note-label"
                         aria-describedby={mode === "close" ? "lost-help" : undefined}
-                        required={
-                          mode === "attempt" ||
-                          mode === "note" ||
-                          (mode === "close" && closing === "lost")
-                        }
+                        required={mode === "attempt" || mode === "note" || closing === "lost"}
                         maxLength={4000}
                         value={note}
                         onChange={(e) => {
@@ -615,7 +667,10 @@ export function LeadDetail({
                         }}
                       />
                       {mode === "close" && (
-                        <span className="help" id="lost-help">
+                        <span
+                          className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1"
+                          id="lost-help"
+                        >
                           Required, in your own words. There are no categories to pick. The reason
                           is saved on the timeline with your name.
                         </span>
@@ -623,10 +678,12 @@ export function LeadDetail({
                     </label>
                   )}
                   {mode === "close" && closing === "dead" && (
-                    <label className="field">
-                      <span className="label">Why is this lead dead?</span>
-                      <select
-                        className="input"
+                    <label className="field flex flex-col gap-compact">
+                      <span className="label text-(length:--text-small) font-[600]">
+                        Why is this lead dead?
+                      </span>
+                      <NativeSelect
+                        className="input flex items-center gap-related h-[36px] px-control border-[1px] border-solid border-control-border rounded-control bg-surface text-foreground text-(length:--text-body) [.sign-sheet_&]:h-[44px] [.sign-sheet_&]:w-full max-phone:min-h-[44px] [&:focus-visible]:[outline:none] [&:focus-visible]:border-primary [&:focus-visible]:[box-shadow:0_0_0_3px_var(--color-selected)]"
                         value={deadReason}
                         onChange={(e) => {
                           const reason = DEAD_REASONS.find((v) => v === e.target.value);
@@ -636,29 +693,29 @@ export function LeadDetail({
                         <option value="duplicate">Duplicate</option>
                         <option value="wrongNumber">Wrong number</option>
                         <option value="doNotContact">Do not contact</option>
-                      </select>
-                      <span className="help">
+                      </NativeSelect>
+                      <span className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
                         Wrong number needs an attempt in this assignment first.
                       </span>
                     </label>
                   )}
                   {mode === "close" && (
-                    <dl className="kv closure-info">
-                      <dt className="b">Won</dt>
+                    <dl className="kv grid gap-[4px_12px] text-(length:--text-small) leading-[18px] [&_dt]:text-tertiary closure-info [grid-template-columns:52px_1fr] bg-muted p-group rounded-control">
+                      <dt className="b font-[620]">Won</dt>
                       <dd>Creates an account and keeps this history. Final.</dd>
-                      <dt className="b">Lost</dt>
+                      <dt className="b font-[620]">Lost</dt>
                       <dd>Needs a written reason. Reopens only if they enquire again.</dd>
-                      <dt className="b">Dead</dt>
+                      <dt className="b font-[620]">Dead</dt>
                       <dd>For a duplicate, wrong number or do-not-contact request. Final.</dd>
                     </dl>
                   )}
-                  <div className="row form-actions">
-                    <span className="help">
+                  <div className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] form-actions flex-wrap">
+                    <span className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
                       {mode === "close"
                         ? "Closing is saved to the timeline and cannot be undone here."
                         : mode === "attempt"
                           ? outcome === "noAnswer"
-                            ? `Saves as ${channel === "call" ? "call" : "WhatsApp"} attempt, no answer �${String(lead.noAnswerCount + 1)}${callback && localCallback(`${day}T${time}`, zone) ? `, callback ${callbackDate(localCallback(`${day}T${time}`, zone), zone)}` : ""}. The lead moves to ${callback ? (day === callbackFields(new Date(), zone).day ? "Due today" : "Later") : "No callback set"} in the queue. This does not mark the lead as contacted.`
+                            ? `Saves as ${channel === "call" ? "call" : "WhatsApp"} attempt, no answer ×${String(lead.noAnswerCount + 1)}${callback && localCallback(`${day}T${time}`, zone) ? `, callback ${callbackDate(localCallback(`${day}T${time}`, zone), zone)}` : ""}. The lead moves to ${callback ? (day === callbackFields(new Date(), zone).day ? "Due today" : "Later") : "No callback set"} in the queue. This does not mark the lead as contacted.`
                             : `Saves a ${channel === "call" ? "call" : "WhatsApp"} attempt and marks the lead as contacted. The lead moves to ${callback ? (day === callbackFields(new Date(), zone).day ? "Due today" : "Later") : "No callback set"} in the queue.`
                           : "Saved entries cannot be edited or deleted."}
                     </span>
@@ -700,9 +757,11 @@ export function LeadDetail({
             </Tabs>
           </Card>
         )}
-        <div className="row timeline-heading">
-          <h3 className="h3">Timeline</h3>
-          <span className="cap">Saved entries cannot be edited or deleted</span>
+        <div className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] timeline-heading flex-wrap">
+          <h3 className="h3 text-(length:--text-body) leading-[20px] font-[650]">Timeline</h3>
+          <span className="cap text-(length:--text-caption) leading-[16px] text-tertiary [font-stretch:94%] [.sec_&]:font-[400] [.sec_&]:ms-auto [.timeline-heading_&]:flex-1 max-phone:[.queue-list_.sec_&]:text-(length:--text-caption)">
+            Saved entries cannot be edited or deleted
+          </span>
           {lead.timeline.length > (mode === "rest" || expanded ? visible : 1) && (
             <Button
               variant="ghost"
@@ -715,7 +774,7 @@ export function LeadDetail({
             </Button>
           )}
           {canEdit && (
-            <div className="tl-actions" hidden={mode !== "rest"}>
+            <div className="tl-actions flex gap-related flex-wrap" hidden={mode !== "rest"}>
               <Button
                 variant="outline"
                 size="sm"
@@ -748,17 +807,20 @@ export function LeadDetail({
             </div>
           )}
         </div>
-        <ul className="tl">
+        <ul className="tl flex flex-col">
           {lead.timeline.slice(0, mode === "rest" || expanded ? visible : 1).map((entry) => {
             const display = timelineEntry(entry, zone, lead);
             return (
-              <li className="tl-item" key={entry.id}>
-                <span className="tl-dot">
+              <li
+                className="tl-item grid [grid-template-columns:28px_1fr] gap-control pb-[14px] relative [&::before]:[content:''] [&::before]:absolute [&::before]:[inset-block:28px_0] [&::before]:[inset-inline-start:13.5px] [&::before]:w-[1px] [&::before]:bg-rule [&:last-child::before]:hidden"
+                key={entry.id}
+              >
+                <span className="tl-dot w-[28px] h-[28px] [border-radius:50%] bg-muted text-secondary grid place-items-center relative [z-index:1]">
                   <Icon name={display.icon} size="small" />
                 </span>
                 <div>
-                  <div className="tl-head">
-                    <span className="b">{display.title}</span>
+                  <div className="tl-head flex items-baseline gap-related flex-wrap">
+                    <span className="b font-[620]">{display.title}</span>
                     {entry.summary?.kind === "attempt" && (
                       <Slip icon={entry.summary.outcome === "noAnswer" ? "missed" : "check"}>
                         {entry.summary.outcome === "noAnswer"
@@ -771,13 +833,22 @@ export function LeadDetail({
                         Callback {callbackDate(entry.summary.callbackAt, zone)}
                       </Slip>
                     )}
-                    <time className="tl-time" dateTime={entry.at.toISOString()}>
+                    <time
+                      className="tl-time text-(length:--text-caption) text-tertiary ms-auto whitespace-nowrap"
+                      dateTime={entry.at.toISOString()}
+                    >
                       {shortDate(entry.at, zone)}
                     </time>
                   </div>
-                  {display.body && <p className="tl-body">{display.body}</p>}
+                  {display.body && (
+                    <p className="tl-body text-(length:--text-small) leading-[19px] text-secondary mt-[2px] [overflow-wrap:anywhere]">
+                      {display.body}
+                    </p>
+                  )}
                   {entry.actor && entry.kind !== "assignment" && (
-                    <div className="tl-body t3">{entry.actor.name}</div>
+                    <div className="tl-body text-(length:--text-small) leading-[19px] mt-[2px] [overflow-wrap:anywhere] text-secondary">
+                      {entry.actor.name}
+                    </div>
                   )}
                 </div>
               </li>

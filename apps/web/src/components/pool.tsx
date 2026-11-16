@@ -12,8 +12,7 @@ import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Card } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { reads } from "@/lib/reads";
-import type { Remote } from "./queue";
+import { reads, readState } from "@/lib/reads";
 type Pool = Outputs["leads"]["pool"];
 type Preview = Outputs["distribution"]["preview"];
 type Lead = Outputs["leads"]["get"];
@@ -39,16 +38,13 @@ export function PoolScreen({
   onTotalChange: (total: number) => void;
 }) {
   const feedback = useRef<HTMLDivElement>(null);
+  const refusal = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const client = useQueryClient();
   const query = useQuery(reads.pool());
   const people = useQuery(reads.agents());
   const agents = people.data ?? initialAgents;
-  const remote: Remote<Pool> = query.data
-    ? { status: "ready", value: query.data }
-    : query.isError
-      ? { status: "error", error: query.error }
-      : { status: "loading" };
+  const remote = readState(query);
   const refresh = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: ["pool"] }),
@@ -65,6 +61,7 @@ export function PoolScreen({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [moreError, setMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const pool = remote.status === "ready" ? remote.value : null;
   useEffect(() => {
@@ -88,15 +85,16 @@ export function PoolScreen({
   async function more() {
     if (!pool) return;
     setLoadingMore(true);
+    setMoreError(null);
     try {
-      const next = await client.fetchQuery(reads.pool({ limit: 14, offset: pool.rows.length }));
+      const next = await client.query(reads.pool({ limit: 14, offset: pool.rows.length }));
       client.setQueryData(reads.pool().queryKey, {
         total: next.total,
         oldestAt: next.oldestAt,
         rows: [...pool.rows, ...next.rows],
       });
     } catch (error) {
-      setError(failureMessage(error));
+      setMoreError(failureMessage(error, "read"));
     } finally {
       setLoadingMore(false);
     }
@@ -136,18 +134,21 @@ export function PoolScreen({
         } catch (error) {
           if (failureCode(error) !== "stalePreview") throw error;
           const current = await Promise.all(
-            selected.map((id) => client.fetchQuery(reads.lead(id))),
+            selected.map((id) => client.query({ ...reads.lead(id), staleTime: 0 })),
           );
           const changed = current.filter(
-            (lead): lead is Lead => lead !== null && lead.lifecycle.state.status !== "new",
+            (lead): lead is Lead => lead.lifecycle.state.status !== "new",
           );
           const remaining = current
-            .filter((lead): lead is Lead => lead !== null && lead.lifecycle.state.status === "new")
+            .filter((lead): lead is Lead => lead.lifecycle.state.status === "new")
             .map((lead) => lead.id);
           setPreview({ ...preview, kind: "stale", changed, remaining });
           await refresh();
           requestAnimationFrame(() => {
-            panel.current?.querySelector<HTMLElement>("[data-repreview]")?.focus();
+            const retry = panel.current?.querySelector<HTMLElement>(
+              "[data-repreview]:not([disabled])",
+            );
+            (retry ?? refusal.current)?.focus();
           });
           return;
         }
@@ -177,11 +178,13 @@ export function PoolScreen({
   let previewCard: ReactNode = null;
   if (preview.kind !== "editing")
     previewCard = (
-      <Card data-stale={preview.kind === "stale"}>
-        <div className="row preview-header">
-          <h3 className="h3">Preview</h3>
-          <span className="sm t2">made {shortDate(preview.at, zone)}</span>
-          <span className="sp" />
+      <Card className="data-[stale=true]:opacity-85" data-stale={preview.kind === "stale"}>
+        <div className="row flex items-center max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] preview-header p-[9px_12px] flex-nowrap gap-compact">
+          <h3 className="h3 text-(length:--text-body) leading-[20px] font-[650]">Preview</h3>
+          <span className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
+            made {shortDate(preview.at, zone)}
+          </span>
+          <span className="sp flex-1 max-laptop:[.lead-title_&]:hidden max-phone:[.q-top_&]:hidden phone:max-poolcompact:[.q-top_&]:hidden" />
           <Slip
             kind={preview.kind === "stale" ? "mute" : "canary"}
             icon={preview.kind === "stale" ? "history" : "wait"}
@@ -192,17 +195,20 @@ export function PoolScreen({
         {recipients.map((agent) => {
           const items = preview.preview.items.filter((item) => item.to.ownerId === agent.ownerId);
           return (
-            <div className="row preview-person" key={assignmentKey(agent)}>
+            <div
+              className="row flex max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] preview-person p-[9px_12px] [border-block-start:1px_solid_var(--color-rule)] items-start gap-control"
+              key={assignmentKey(agent)}
+            >
               <Avatar name={agent.name} />
-              <div className="sp">
-                <div className="row">
-                  <span className="b">{agent.name}</span>
-                  <span className="sp" />
-                  <span className="sm t2">
+              <div className="sp flex-1 max-laptop:[.lead-title_&]:hidden max-phone:[.q-top_&]:hidden phone:max-poolcompact:[.q-top_&]:hidden">
+                <div className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px]">
+                  <span className="b font-[620]">{agent.name}</span>
+                  <span className="sp flex-1 max-laptop:[.lead-title_&]:hidden max-phone:[.q-top_&]:hidden phone:max-poolcompact:[.q-top_&]:hidden" />
+                  <span className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
                     {items.length} {items.length === 1 ? "lead" : "leads"}
                   </span>
                 </div>
-                <div className="sm t2">
+                <div className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
                   {items
                     .map(
                       (item) =>
@@ -218,35 +224,52 @@ export function PoolScreen({
     );
   return (
     <>
-      <header className="ph">
+      <header className="ph flex items-end gap-content p-[18px_24px_14px] [border-block-end:1px_solid_var(--color-rule)] [&_h1]:text-(length:--text-title) [&_h1]:leading-[30px] [&_h1]:font-[720] [&_h1]:[font-variation-settings:'wdth'_84] [&_h1]:[letter-spacing:0] [&_h1]:whitespace-nowrap max-phone:p-[16px_16px_10px] max-phone:items-start max-phone:flex-wrap max-phone:gap-related max-phone:[&_h1]:[font-size:24px] max-phone:[&_h1]:leading-[28px]">
         <div>
           <h1>Lead pool</h1>
-          <div className="ph-sub">
+          <div className="ph-sub text-(length:--text-small) text-secondary mt-[2px] max-phone:text-(length:--text-small)">
             {pool
-              ? `${String(pool.total)} ${pool.total === 1 ? "lead has" : "leads have"} no owner${pool.oldestAt ? ` � the oldest has waited since ${shortDate(pool.oldestAt, zone)}` : ""}`
+              ? `${String(pool.total)} ${pool.total === 1 ? "lead has" : "leads have"} no owner${pool.oldestAt ? ` · the oldest has waited since ${shortDate(pool.oldestAt, zone)}` : ""}`
               : "New leads waiting for an owner"}
           </div>
         </div>
       </header>
       <div ref={feedback} role="status" aria-live="polite" aria-atomic="true" tabIndex={-1}>
         {success && (
-          <div className="sticky-feedback">
-            <Slip kind="green" icon="check">
-              Assigned
-            </Slip>{" "}
-            {success}
+          <div className="sticky-feedback p-[12px_24px] [border-block-end:1px_solid_var(--color-rule)]">
+            <Icon name="check" /> {success}
           </div>
         )}
       </div>
       <div
-        className="md workspace-pool"
+        className="md grid flex-1 min-h-0 max-phone:block workspace-pool [grid-template-columns:minmax(0,_1fr)_var(--pool-width)] max-laptop:[grid-template-columns:minmax(0,_1fr)_340px] max-pane:[grid-template-columns:minmax(0,_1fr)] max-pane:overflow-auto [&[data-has-pool='false']]:[grid-template-columns:1fr]"
         data-has-pool={remote.status === "ready" && (pool?.total !== 0 || preview.kind === "stale")}
       >
-        <div className="pane pool-list">
+        <div className="pane min-w-0 min-h-0 flex flex-col pool-list overflow-auto max-phone:overflow-visible max-phone:[&_thead]:hidden max-phone:[&_thead]:w-full max-phone:[&_tbody]:block max-phone:[&_tbody]:w-full max-phone:[&_tr]:grid max-phone:[&_tr]:w-full max-phone:[&_tr]:[grid-template-columns:44px_minmax(0,_1fr)] max-phone:[&_tr]:p-[8px_16px] max-phone:[&_tr]:[border-block-end:1px_solid_var(--color-rule)] max-phone:[&_td]:block max-phone:[&_td]:w-full max-phone:[&_td]:border-0 max-phone:[&_td]:h-auto max-phone:[&_td]:max-w-[none] max-phone:[&_td]:p-[2px_4px] max-phone:[&_td[data-label]::before]:[content:attr(data-label)_':_'] max-phone:[&_td[data-label]::before]:text-tertiary phone:max-poolwide:[&_[data-column='campaign']]:hidden phone:max-poolcompact:[&_[data-column='source']]:hidden phone:max-poolcompact:[&_[data-column='arrived']]:hidden">
+          {query.isError && query.data && (
+            <Refusal
+              title="The latest pool could not be loaded"
+              retry={() => {
+                void query.refetch();
+              }}
+            >
+              {failureMessage(query.error, "read")}
+            </Refusal>
+          )}
+          {moreError && (
+            <Refusal
+              title="More leads could not be loaded"
+              retry={() => {
+                void more();
+              }}
+            >
+              {moreError}
+            </Refusal>
+          )}
           {remote.status === "loading" ? (
             <Loading />
           ) : remote.status === "error" ? (
-            <div className="pad">
+            <div className="pad p-[18px_24px] max-phone:p-content">
               <Refusal
                 title="The lead pool could not be opened"
                 retry={() => {
@@ -265,8 +288,8 @@ export function PoolScreen({
               <Table aria-label="Leads waiting for an owner">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="check-cell">
-                      <label className="check-target">
+                    <TableHead className="check-cell [.pool-list_.tbl_&]:w-[44px] phone:[.pool-list_.tbl_&]:px-[16px_4px] max-phone:[.pool-list_&]:[grid-row:1/7] max-phone:[.pool-list_.tbl_&]:p-0 max-phone:[.pool-list_td:not(&)]:[grid-column:2]">
+                      <label className="check-target inline-flex items-center justify-center min-w-[28px] min-h-[28px] max-phone:min-w-[44px] max-phone:min-h-[44px]">
                         <Checkbox
                           aria-label="Select all shown leads"
                           disabled={pending || preview.kind === "stale"}
@@ -302,10 +325,10 @@ export function PoolScreen({
                       <TableRow
                         key={row.id}
                         aria-selected={selected.includes(row.id) && !change}
-                        className={change ? "is-gone" : undefined}
+                        className={change ? "is-gone [.tbl_tbody_tr&_td]:text-tertiary" : undefined}
                       >
-                        <TableCell className="check-cell">
-                          <label className="check-target">
+                        <TableCell className="check-cell [.pool-list_.tbl_&]:w-[44px] phone:[.pool-list_.tbl_&]:px-[16px_4px] max-phone:[.pool-list_&]:[grid-row:1/7] max-phone:[.pool-list_.tbl_&]:p-0 max-phone:[.pool-list_td:not(&)]:[grid-column:2]">
+                          <label className="check-target inline-flex items-center justify-center min-w-[28px] min-h-[28px] max-phone:min-w-[44px] max-phone:min-h-[44px]">
                             <Checkbox
                               aria-label={`Select ${row.name ?? row.email}`}
                               checked={selected.includes(row.id) && !change}
@@ -317,18 +340,35 @@ export function PoolScreen({
                           </label>
                         </TableCell>
                         <TableCell>
-                          <span className="q-name">{row.name ?? row.email}</span>
+                          <span className="q-name font-[620] [overflow-wrap:anywhere] [.tbl_tbody_tr.is-gone_&]:[text-decoration:line-through] [.tbl_tbody_tr.is-gone_&]:font-[500] max-phone:[order:0] [.pool-list_&]:whitespace-nowrap [.pool-list_&]:[overflow-wrap:normal] phone:max-poolcompact:[flex-basis:100%] max-phone:[.pool-list_&]:whitespace-nowrap">
+                            {row.name ?? row.email}
+                          </span>
                         </TableCell>
-                        <TableCell data-column="campaign" data-label="Campaign" className="t2">
+                        <TableCell
+                          data-column="campaign"
+                          data-label="Campaign"
+                          className="t2 text-secondary [.alert--refused_&]:text-refused-foreground"
+                        >
                           {campaignLabel(row.origin?.campaign)}
                         </TableCell>
-                        <TableCell data-column="source" data-label="Source" className="t2 sm">
+                        <TableCell
+                          data-column="source"
+                          data-label="Source"
+                          className="t2 text-secondary [.alert--refused_&]:text-refused-foreground sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap"
+                        >
                           {sourceLabel(row.source)}
                         </TableCell>
-                        <TableCell data-column="arrived" data-label="Arrived" className="t2 sm">
+                        <TableCell
+                          data-column="arrived"
+                          data-label="Arrived"
+                          className="t2 text-secondary [.alert--refused_&]:text-refused-foreground sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap"
+                        >
                           {shortDate(row.createdAt, zone)}
                         </TableCell>
-                        <TableCell data-label="Previous owner" className="sm t2">
+                        <TableCell
+                          data-label="Previous owner"
+                          className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground"
+                        >
                           {row.previousOwner?.name ?? "None"}
                         </TableCell>
                         {preview.kind !== "editing" && (
@@ -340,13 +380,13 @@ export function PoolScreen({
                                   : "No longer in the pool"}
                               </Slip>
                             ) : to ? (
-                              <span className="row">
+                              <span className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px]">
                                 <Icon name="next" size="small" />
                                 {agents.find((a) => a.ownerId === to.ownerId)?.name ??
                                   "Selected agent"}
                               </span>
                             ) : (
-                              <span className="t3">Not selected</span>
+                              <span className="t3 text-tertiary">Not selected</span>
                             )}
                           </TableCell>
                         )}
@@ -355,13 +395,13 @@ export function PoolScreen({
                   })}
                 </TableBody>
               </Table>
-              <div className="row sm t2 pool-pager">
+              <div className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground pool-pager p-[12px_16px] flex-wrap">
                 <span>
                   {preview.kind === "stale"
                     ? `Showing ${String(rows.length)} rows from the refused preview. ${String(pool?.total ?? 0)} leads remain in the pool.`
                     : `Showing ${String(rows.length)} of ${String(pool?.total ?? 0)} leads in the pool, newest first`}
                 </span>
-                <span className="sp" />
+                <span className="sp flex-1 max-laptop:[.lead-title_&]:hidden max-phone:[.q-top_&]:hidden phone:max-poolcompact:[.q-top_&]:hidden" />
                 {pool && pool.rows.length < pool.total && preview.kind !== "stale" && (
                   <Button
                     variant="outline"
@@ -381,17 +421,17 @@ export function PoolScreen({
         {remote.status === "ready" && (pool?.total !== 0 || preview.kind === "stale") && (
           <section
             ref={panel}
-            className="pane pane--side pad pool-panel"
+            className="pane min-w-0 min-h-0 overflow-hidden flex flex-col max-phone:overflow-visible pane--side [border-inline-start:1px_solid_var(--color-rule)] max-pane:[.workspace-queue_&]:hidden max-pane:[.workspace-queue[data-detail='true']_&]:flex max-pane:[.workspace-queue[data-detail='true']_&]:border-0 max-phone:[.workspace-queue_&]:hidden max-phone:[.workspace-queue[data-detail='true']_&]:flex pad p-[18px_24px] pool-panel gap-[14px] overflow-y-auto max-pane:[border-inline-start:0] max-pane:[border-block-start:1px_solid_var(--color-rule)] max-pane:overflow-visible max-phone:p-content"
             aria-label="Assign leads"
             aria-busy={pending}
           >
-            <h2 className="h2">
+            <h2 className="h2 text-(length:--text-panel) leading-[22px] font-[700] [font-variation-settings:'wdth'_86] [.pool-panel_&]:flex-none">
               {selected.length
                 ? `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}`
                 : "Assign leads"}
             </h2>
             <Tabs
-              className="pool-tabs"
+              className="pool-tabs flex flex-col gap-[14px] flex-1 min-h-0"
               value={method}
               onValueChange={(v) => {
                 if (v !== "hand" && v !== "round") return;
@@ -404,7 +444,10 @@ export function PoolScreen({
                 );
               }}
             >
-              <TabsList className="tabs--fill" aria-label="Assignment method">
+              <TabsList
+                className="tabs--fill flex [&_button]:flex-1 [&_button]:justify-center"
+                aria-label="Assignment method"
+              >
                 <TabsTrigger value="hand" disabled={pending}>
                   <Icon name="assign" size="small" />
                   To one person
@@ -414,13 +457,17 @@ export function PoolScreen({
                   Round-robin
                 </TabsTrigger>
               </TabsList>
-              <TabsContent value={method} className="pool-tab-panel">
-                {people.isError && (
-                  <Refusal title="Agents could not be loaded">
-                    {failureMessage(people.error, "read")}
-                  </Refusal>
-                )}
-                <div role="alert" aria-live="assertive" aria-atomic="true">
+              <TabsContent
+                value={method}
+                className="pool-tab-panel flex flex-col gap-[14px] flex-1 min-h-0"
+              >
+                <div
+                  ref={refusal}
+                  tabIndex={-1}
+                  role="alert"
+                  aria-live="assertive"
+                  aria-atomic="true"
+                >
                   {error && (
                     <Refusal announce={false} title="Nothing was assigned">
                       {error}
@@ -462,12 +509,15 @@ export function PoolScreen({
                 </div>
                 {preview.kind !== "stale" &&
                   (method === "hand" ? (
-                    <div className="field">
-                      <span className="label" id="recipient-label">
+                    <div className="field flex flex-col gap-compact">
+                      <span
+                        className="label text-(length:--text-small) font-[600]"
+                        id="recipient-label"
+                      >
                         Who gets them?
                       </span>
                       <RadioGroup
-                        className="pool-people"
+                        className="pool-people flex flex-col gap-compact"
                         aria-labelledby="recipient-label"
                         value={chosen[0] ?? ""}
                         onValueChange={(v) => {
@@ -477,25 +527,32 @@ export function PoolScreen({
                       >
                         {agents.map((agent) => (
                           <label
-                            className="opt"
+                            className="opt flex items-center gap-control min-h-[40px] p-[8px_10px] border-[1px] border-solid border-rule rounded-control [&[data-checked='true']]:border-primary [&[data-checked='true']]:bg-selected [.pool-people_&]:min-h-[44px] [.pool-people_&]:py-compact"
                             data-checked={chosen.includes(assignmentKey(agent))}
                             key={assignmentKey(agent)}
                           >
                             <RadioGroupItem value={assignmentKey(agent)} disabled={pending} />
                             <Avatar name={agent.name} />
-                            <span className="b">{agent.name}</span>
-                            <span className="sm t2">{agent.openCount} in queue</span>
+                            <span className="b font-[620]">{agent.name}</span>
+                            <span className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
+                              {agent.openCount} in queue
+                            </span>
                           </label>
                         ))}
                       </RadioGroup>
                     </div>
                   ) : (
                     <>
-                      <div className="field">
-                        <span className="label">Share between</span>
-                        <div className="share-agents">
+                      <div className="field flex flex-col gap-compact">
+                        <span className="label text-(length:--text-small) font-[600]">
+                          Share between
+                        </span>
+                        <div className="share-agents grid [grid-template-columns:1fr_1fr] gap-[0_12px] [&_label]:min-h-[32px] max-phone:[&_label]:min-h-[44px]">
                           {agents.map((agent) => (
-                            <label className="row" key={assignmentKey(agent)}>
+                            <label
+                              className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px]"
+                              key={assignmentKey(agent)}
+                            >
                               <Checkbox
                                 disabled={pending}
                                 checked={chosen.includes(assignmentKey(agent))}
@@ -509,12 +566,12 @@ export function PoolScreen({
                                 }}
                               />
                               <Avatar name={agent.name} />
-                              <span className="b">{agent.name}</span>
+                              <span className="b font-[620]">{agent.name}</span>
                             </label>
                           ))}
                         </div>
                       </div>
-                      <label className="row">
+                      <label className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px]">
                         <Checkbox
                           disabled={pending}
                           checked={exclude}
@@ -523,7 +580,7 @@ export function PoolScreen({
                             setExclude(v === true);
                           }}
                         />
-                        <span className="b">Skip a lead's previous owner</span>
+                        <span className="b font-[620]">Skip a lead's previous owner</span>
                       </label>
                     </>
                   ))}
@@ -539,22 +596,22 @@ export function PoolScreen({
                           preview.rows.find((row) => row.id === item.leadId)?.previousOwner?.id,
                       ),
                   ) && (
-                    <p className="help">
+                    <p className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
                       Each lead skips its previous owner and goes to the next eligible agent.
                     </p>
                   )}
                 {preview.kind !== "stale" && (
-                  <p className="help">
+                  <p className="help text-(length:--text-caption) leading-[16px] text-tertiary [.composer_&]:flex-1">
                     {method === "hand"
                       ? "Only agents have a queue, so only agents are listed. Assigned leads land in their queue as not yet called. Moving a lead to someone else later keeps its status."
                       : "Nothing moves until you confirm. If one of these leads changes hands first, the preview is refused and nothing is assigned."}
                   </p>
                 )}
-                <div className="pool-submit col">
+                <div className="pool-submit mt-auto flex-none max-pane:mt-content col flex flex-col">
                   {preview.kind === "stale" ? (
                     <>
                       <Button
-                        className="btn--block"
+                        className="btn--block w-full [.sign-sheet_&]:flex max-phone:[.pool-panel_&]:min-h-[44px]"
                         size="lg"
                         data-repreview
                         disabled={pending || preview.remaining.length === 0}
@@ -580,7 +637,7 @@ export function PoolScreen({
                   ) : method === "round" && preview.kind === "editing" ? (
                     <Button
                       size="lg"
-                      className="btn--block"
+                      className="btn--block w-full [.sign-sheet_&]:flex max-phone:[.pool-panel_&]:min-h-[44px]"
                       disabled={pending || selected.length === 0 || chosen.length === 0}
                       onClick={() => {
                         void makePreview();
@@ -591,13 +648,8 @@ export function PoolScreen({
                   ) : (
                     <Button
                       size="lg"
-                      className="btn--block"
-                      disabled={
-                        pending ||
-                        selected.length === 0 ||
-                        chosen.length === 0 ||
-                        remote.status !== "ready"
-                      }
+                      className="btn--block w-full [.sign-sheet_&]:flex max-phone:[.pool-panel_&]:min-h-[44px]"
+                      disabled={pending || selected.length === 0 || chosen.length === 0}
                       onClick={() => {
                         void assign();
                       }}
