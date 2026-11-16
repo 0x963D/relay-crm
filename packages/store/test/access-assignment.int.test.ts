@@ -234,7 +234,9 @@ describe("assignment under contention", () => {
     expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.previousOwnerId).toBe(
       w.agent.ownerId,
     );
-    await expect(db.rows("UPDATE audit_log SET action='changed'")).rejects.toThrow("append-only");
+    await expect(db.rows("UPDATE audit_log SET action='leadReopened'")).rejects.toThrow(
+      "append-only",
+    );
     await expect(db.rows("DELETE FROM audit_log")).rejects.toThrow("append-only");
   });
 
@@ -428,4 +430,23 @@ test("intake reopening records the removed owner under its system actor", async 
     { actor_id: null, system_actor: "intake", action: "leadReopened", subject_id: w.teammate },
   ]);
   expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.state.status).toBe("new");
+  expect(
+    await db.rows(
+      "SELECT request_id, before->'lifecycle'->'state'->'assignee'->>'ownerId' AS old_owner, after->'lifecycle'->'state'->>'status' AS status FROM audit_log",
+    ),
+  ).toEqual([{ request_id: result.eventId, old_owner: w.agent.ownerId, status: "new" }]);
+});
+
+test("an unavailable reopen audit rolls back intake and ownership together", async ({ db }) => {
+  const w = await world(db);
+  await db.rows("UPDATE leads SET status='lost',lost_reason='badTiming' WHERE id=$1", [w.teammate]);
+  await db.rows(
+    "CREATE FUNCTION fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$; CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION fail_audit()",
+  );
+  await expect(
+    db.store.intake(submissionExample({ email: "teammate@example.com" })),
+  ).rejects.toThrow();
+  expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.state.status).toBe("lost");
+  expect(await db.rows("SELECT id FROM intake_events")).toEqual([]);
+  expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
 });

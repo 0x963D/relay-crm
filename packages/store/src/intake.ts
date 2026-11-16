@@ -1,4 +1,4 @@
-import { auditActor } from "./audit.ts";
+import { writeAudit } from "./audit.ts";
 import {
   AccountId,
   IntakeEventId,
@@ -96,15 +96,13 @@ async function applyDecision(
           at: submission.receivedAt,
         },
       });
-      await tx.auditLog.create({
-        data: {
-          ...auditActor(principal),
-          action: "leadReopened",
-          subjectId: decision.leadId,
-          before: { lifecycle: JSON.stringify(before) },
-          after: { lifecycle: JSON.stringify(decision.next) },
-          at: submission.receivedAt,
-        },
+      await writeAudit(tx, principal, {
+        action: "leadReopened",
+        subject: { type: "lead", id: decision.leadId },
+        before: { lifecycle: before },
+        after: { lifecycle: decision.next },
+        cause: { kind: "request", id: result.eventId },
+        at: submission.receivedAt,
       });
       return result;
     }

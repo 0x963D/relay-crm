@@ -89,3 +89,5 @@ export {
   type SystemPrincipal,
   type Principal,
 } from "./session.ts";
+
+export { AUDIT_ACTIONS, type AuditAction, type AuditSubject, type AuditCause } from "./audit.ts";

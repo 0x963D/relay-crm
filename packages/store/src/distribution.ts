@@ -1,5 +1,6 @@
 import { idempotent, requestHash } from "./idempotency.ts";
-import { auditActor } from "./audit.ts";
+import { randomUUID } from "node:crypto";
+import { writeAudit } from "./audit.ts";
 import {
   LeadId,
   UserId,
@@ -11,6 +12,7 @@ import {
   scopeHasRecords,
   transition,
   type Actor,
+  type AuditCause,
   type Assignment,
   type DistributionRequest,
   type DistributionPreview,
@@ -59,6 +61,7 @@ async function applyAssignment(
   actor: Actor,
   item: DistributionItem,
   mode: "pool" | "owned",
+  cause: AuditCause,
 ): Promise<boolean> {
   const row = await scopedLead(tx, actor, item.leadId, "assign");
   if ((mode === "pool" && row.status !== "new") || (mode === "owned" && row.status === "new"))
@@ -83,15 +86,13 @@ async function applyAssignment(
       at,
     },
   });
-  await tx.auditLog.create({
-    data: {
-      ...auditActor(actor),
-      action: "leadAssigned",
-      subjectId: item.leadId,
-      before: { lifecycle: JSON.stringify(before) },
-      after: { lifecycle: JSON.stringify(next.value) },
-      at,
-    },
+  await writeAudit(tx, actor, {
+    action: "leadAssigned",
+    subject: { type: "lead", id: item.leadId },
+    before: { lifecycle: before },
+    after: { lifecycle: next.value },
+    cause,
+    at,
   });
   return true;
 }
@@ -106,7 +107,8 @@ export async function assignPool(
     const current = await currentActor(tx, actor);
     const items = [...new Set(leadIds)].sort().map((leadId) => ({ leadId, to }));
     if (items.length === 0) throw new AccessError("conflict");
-    for (const item of items) await applyAssignment(tx, current, item, "pool");
+    const cause = { kind: "request", id: randomUUID() } as const;
+    for (const item of items) await applyAssignment(tx, current, item, "pool", cause);
     return { items, changed: true };
   });
 }
@@ -119,7 +121,10 @@ export async function reassignLead(
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const item = { leadId, to };
-    const changed = await applyAssignment(tx, current, item, "owned");
+    const changed = await applyAssignment(tx, current, item, "owned", {
+      kind: "request",
+      id: randomUUID(),
+    });
     return { items: changed ? [item] : [], changed };
   });
 }
@@ -213,7 +218,7 @@ export async function submitDistribution(
         request: { fingerprint: input.fingerprint, previewId: input.previewId },
       },
       storedResult,
-      async () => {
+      async (requestId) => {
         if (!scopeHasRecords(recordScope(current, "lead", "assign")))
           throw new AccessError("accessDenied");
         const preview = await tx.distributionPreview.findUnique({ where: { id: input.previewId } });
@@ -251,7 +256,8 @@ export async function submitDistribution(
         for (const to of agents) await agentFor(tx, current, to);
         const plan = planDistribution(leads, agents, request.excludePreviousOwner);
         if (!plan.ok) throw new AccessError(plan.error);
-        for (const item of plan.value) await applyAssignment(tx, current, item, "pool");
+        for (const item of plan.value)
+          await applyAssignment(tx, current, item, "pool", { kind: "idempotency", id: requestId });
         return {
           items: plan.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
           changed: true,

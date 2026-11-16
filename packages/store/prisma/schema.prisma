@@ -325,11 +325,28 @@ enum SystemActor {
   @@map("system_actor")
 }
 
+enum AuditAction {
+  leadAssigned
+  leadReopened
+
+  @@map("audit_action")
+}
+
+enum AuditSubjectType {
+  lead
+  account
+
+  @@map("audit_subject_type")
+}
+
 model AuditLog {
+  requestId String @map("request_id") @db.Uuid
+  idempotencyId String? @map("idempotency_id") @db.Uuid
+  subjectType AuditSubjectType @map("subject_type")
   systemActor SystemActor? @map("system_actor")
   id        String   @id @default(uuid(7)) @db.Uuid
   actorId   String?   @map("actor_id") @db.Uuid
-  action    String
+  action    AuditAction
   subjectId String   @map("subject_id") @db.Uuid
   before    Json
   after     Json

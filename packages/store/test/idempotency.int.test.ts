@@ -119,3 +119,36 @@ test("a failed request leaves no key and the next attempt can commit", async ({ 
     await client.$disconnect();
   }
 });
+
+test("assignment audit stores JSON snapshots, a typed subject and its idempotency cause", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const ownerId = await db.seedUser("agent");
+  const teamId = await db.seedTeam("sales");
+  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
+  const leadId = await db.seedLead({
+    email: "audit@example.com",
+    lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
+  });
+  const preview = await db.store.previewDistribution(actor, {
+    leadIds: [leadId],
+    agents: [{ ownerId, teamId }],
+    excludePreviousOwner: false,
+  });
+  const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "audit" };
+  await db.store.submitDistribution(actor, input);
+  const [audit] = await db.rows("SELECT before,after FROM audit_log");
+  expect(audit?.before).toEqual({
+    lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
+  });
+  expect(
+    await db.rows(
+      "SELECT a.subject_type,a.subject_id,a.request_id=i.id AS request_matches,a.idempotency_id=i.id AS receipt_matches FROM audit_log a JOIN idempotency_records i ON a.idempotency_id=i.id",
+    ),
+  ).toEqual([
+    { subject_type: "lead", subject_id: leadId, request_matches: true, receipt_matches: true },
+  ]);
+  await db.store.submitDistribution(actor, input);
+  expect(await db.rows("SELECT count(*)::int AS count FROM audit_log")).toEqual([{ count: 1 }]);
+});

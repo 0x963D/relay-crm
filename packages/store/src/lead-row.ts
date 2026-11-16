@@ -5,6 +5,9 @@ import {
   TeamId,
   UserId,
   type Assignment,
+  type AuditAction,
+  type AuditSubject,
+  type SystemActor,
   type DeadReason,
   type EmailAddress,
   type IntakeOutcome,
@@ -24,6 +27,9 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Assert<T extends true> = T;
 
 export type EnumParity = [
+  Assert<Same<$Enums.AuditAction, AuditAction>>,
+  Assert<Same<$Enums.AuditSubjectType, AuditSubject["type"]>>,
+  Assert<Same<$Enums.SystemActor, SystemActor>>,
   Assert<Same<$Enums.LeadStatus, LeadStatus>>,
   Assert<Same<$Enums.WorkStage, WorkStage["kind"]>>,
   Assert<Same<$Enums.LostReason, LostReason>>,
