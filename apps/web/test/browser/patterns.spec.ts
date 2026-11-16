@@ -3,6 +3,21 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("composer choices are radios and the form adds no tab-panel stop", async ({ page }) => {
+  await signIn(page, "agent");
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+  await page.getByRole("button", { name: "Close lead", exact: true }).click();
+  const won = page.getByRole("radio", { name: "Won", exact: true });
+  await expect(won).toBeVisible();
+  await won.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Lost", exact: true })).toBeChecked();
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByRole("tabpanel")).toHaveCount(0);
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("textbox", { name: "Why was it lost?", exact: true })).toBeFocused();
+});
+
 test("field hints describe the control that owns them", async ({ page }) => {
   await signIn(page, "agent");
   await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();

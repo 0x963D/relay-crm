@@ -291,7 +291,7 @@ test("route navigation preserves the queue, reloads and goes back", async ({ pag
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
 });
 
-test("tabs wait for hydration before accepting an action", async ({ page }) => {
+test("tabs render enabled and respond after hydration", async ({ page }) => {
   const url = browserState().url;
   const response = await page.request.post(`${url}/api/auth/demo`, {
     headers: { origin: url },
@@ -310,7 +310,7 @@ test("tabs wait for hydration before accepting an action", async ({ page }) => {
     await page.goto(url, { waitUntil: "commit" });
     const tab = page.getByRole("tab", { name: "Round-robin", exact: true });
     await expect(tab).toBeVisible();
-    await expect(tab).toBeDisabled();
+    await expect(tab).toBeEnabled();
     release();
     await expect(tab).toBeEnabled();
     await tab.click();

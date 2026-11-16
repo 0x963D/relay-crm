@@ -12,7 +12,7 @@ import { Textarea } from "./ui/textarea";
 import { NativeSelect } from "./ui/native-select";
 import { Checkbox } from "./ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Icon } from "./icons";
 export type ComposerMode = "attempt" | "callback" | "note" | "close";
 type Command =
@@ -72,7 +72,6 @@ export function LeadComposer({
           : callbackAt
             ? "Move callback"
             : "Set a callback";
-  const tab = mode === "close" ? closing : mode;
   function keyFor(body: unknown) {
     const serialized = JSON.stringify(body);
     if (request.current?.body !== serialized)
@@ -132,280 +131,272 @@ export function LeadComposer({
       : `Saves a ${channel === "call" ? "call" : "WhatsApp"} attempt and marks the lead as contacted. The lead moves to ${destination} in the queue.`;
   return (
     <Card className="gap-3 rounded-lg border-input p-4 shadow-none">
-      <Tabs
-        value={tab}
-        onValueChange={(value) => {
-          if (value === "won" || value === "lost" || value === "dead") setClosing(value);
+      <form
+        onSubmit={submit}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !busy) {
+            event.preventDefault();
+            onCancel();
+          }
         }}
+        className="space-y-3"
       >
-        <form
-          onSubmit={submit}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && !busy) {
-              event.preventDefault();
-              onCancel();
-            }
-          }}
-          className="space-y-3"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 ref={heading} tabIndex={-1} className="text-panel font-bold">
-              {title}
-            </h3>
-            {mode === "attempt" && (
-              <RadioGroup
-                aria-label="Attempt channel"
-                value={channel}
-                className="flex rounded-md bg-muted p-1"
-                onValueChange={(value) => {
-                  if (value === "call" || value === "whatsApp") setChannel(value);
-                }}
-              >
-                {(["call", "whatsApp"] as const).map((value) => (
-                  <label
-                    key={value}
-                    className={cn(
-                      "flex min-h-11 items-center gap-2 rounded px-2 @lg/detail:min-h-7",
-                      channel === value && "bg-background",
-                    )}
-                  >
-                    <RadioGroupItem
-                      ref={value === "call" ? firstChannel : undefined}
-                      value={value}
-                    />
-                    <Icon name={value === "call" ? "call" : "whatsapp"} size="small" />
-                    {value === "call" ? "Call" : "WhatsApp"}
-                  </label>
-                ))}
-              </RadioGroup>
-            )}
-            {mode === "close" && (
-              <TabsList aria-label="Close outcome">
-                <TabsTrigger value="won">Won</TabsTrigger>
-                <TabsTrigger value="lost">Lost</TabsTrigger>
-                <TabsTrigger value="dead">Dead</TabsTrigger>
-              </TabsList>
-            )}
-          </div>
-          <TabsContent
-            value={tab}
-            role={mode === "close" ? "tabpanel" : "region"}
-            aria-labelledby={undefined}
-            aria-label="Lead work"
-            className="space-y-3"
-          >
-            {mode === "attempt" && (
-              <>
-                {lead.phone && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button asChild variant="outline" busy={busy}>
-                      <a
-                        href={
-                          channel === "call"
-                            ? `tel:${lead.phone.replace(/[^+\d]/g, "")}`
-                            : `https://wa.me/${lead.phone.replace(/\D/g, "")}`
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 ref={heading} tabIndex={-1} className="text-panel font-bold">
+            {title}
+          </h3>
+          {mode === "attempt" && (
+            <ToggleGroup
+              type="single"
+              aria-label="Attempt channel"
+              value={channel}
+              className="flex rounded-md bg-muted p-1"
+              onValueChange={(value) => {
+                if (value === "call" || value === "whatsApp") setChannel(value);
+              }}
+            >
+              {(["call", "whatsApp"] as const).map((value) => (
+                <ToggleGroupItem
+                  key={value}
+                  ref={value === "call" ? firstChannel : undefined}
+                  value={value}
+                  className={cn(
+                    "flex min-h-11 items-center gap-2 rounded px-2 @lg/detail:min-h-7",
+                    channel === value && "bg-background",
+                  )}
+                >
+                  <Icon name={value === "call" ? "call" : "whatsapp"} size="small" />
+                  {value === "call" ? "Call" : "WhatsApp"}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
+          {mode === "close" && (
+            <ToggleGroup
+              type="single"
+              aria-label="Close outcome"
+              value={closing}
+              className="rounded-md bg-muted p-1"
+              onValueChange={(value) => {
+                if (value === "won" || value === "lost" || value === "dead") setClosing(value);
+              }}
+            >
+              <ToggleGroupItem value="won">Won</ToggleGroupItem>
+              <ToggleGroupItem value="lost">Lost</ToggleGroupItem>
+              <ToggleGroupItem value="dead">Dead</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+        </div>
+        <div className="space-y-3">
+          {mode === "attempt" && (
+            <>
+              {lead.phone && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button asChild variant="outline" busy={busy}>
+                    <a
+                      href={
+                        channel === "call"
+                          ? `tel:${lead.phone.replace(/[^+\d]/g, "")}`
+                          : `https://wa.me/${lead.phone.replace(/\D/g, "")}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(event) => {
+                        if (busy) {
+                          event.preventDefault();
+                          return;
                         }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(event) => {
-                          if (busy) {
-                            event.preventDefault();
-                            return;
-                          }
-                          if (!navigator.onLine) event.preventDefault();
-                          onLaunch(channel);
-                        }}
-                      >
-                        <Icon name={channel === "call" ? "call" : "whatsapp"} />
-                        {channel === "call" ? "Open dialler" : "Open WhatsApp"}
-                      </a>
-                    </Button>
-                    <p className="text-xs text-muted-foreground">
-                      Opening the link logs an attempt, not a conversation.
-                    </p>
-                  </div>
-                )}
-                <fieldset className="space-y-2">
-                  <legend className="text-caption font-semibold">What happened?</legend>
-                  <RadioGroup
-                    aria-label="What happened?"
-                    value={outcome}
-                    className="grid gap-2 @lg/detail:grid-cols-2"
-                    onValueChange={(value) => {
-                      if (value === "noAnswer" || value === "spokeToThem") setOutcome(value);
-                    }}
-                  >
-                    {(["noAnswer", "spokeToThem"] as const).map((value) => (
-                      <label
-                        key={value}
-                        className={cn(
-                          "flex items-center gap-2 rounded-md border p-3",
-                          outcome === value && "border-primary bg-accent",
-                        )}
-                      >
-                        <RadioGroupItem
-                          value={value}
-                          aria-label={value === "noAnswer" ? "No answer" : "Spoke to them"}
-                        />
-                        <span>
-                          <span className="font-semibold">
-                            {value === "noAnswer" ? "No answer" : "Spoke to them"}
-                          </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {value === "noAnswer"
-                              ? `Counts as no answer number ${String(lead.noAnswerCount + 1)}`
-                              : "Marks the lead as contacted"}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
-                  </RadioGroup>
-                </fieldset>
-              </>
-            )}
-            {(mode === "callback" || mode === "attempt") && (
-              <div
-                className={cn(
-                  "grid items-start gap-3",
-                  mode === "attempt" && "@lg/detail:grid-cols-label-value",
-                )}
-              >
-                {mode === "attempt" && (
-                  <label className="flex min-h-9 items-center gap-2 font-semibold">
-                    <Checkbox
-                      checked={callback}
-                      onCheckedChange={(value) => {
-                        setCallback(value === true);
+                        if (!navigator.onLine) event.preventDefault();
+                        onLaunch(channel);
                       }}
-                    />
-                    Call back
-                  </label>
-                )}
-                {(mode === "callback" || callback) && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field
-                      label="Day"
-                      hint={selectedDay ? dayLabel(selectedDay, zone) : "Choose a day"}
                     >
-                      {(control) => (
-                        <Input
-                          {...control}
-                          type="date"
-                          required
-                          value={day}
-                          onChange={(event) => {
-                            setDay(event.target.value);
-                          }}
-                        />
+                      <Icon name={channel === "call" ? "call" : "whatsapp"} />
+                      {channel === "call" ? "Open dialler" : "Open WhatsApp"}
+                    </a>
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Opening the link logs an attempt, not a conversation.
+                  </p>
+                </div>
+              )}
+              <fieldset className="space-y-2">
+                <legend className="text-caption font-semibold">What happened?</legend>
+                <RadioGroup
+                  aria-label="What happened?"
+                  value={outcome}
+                  className="grid gap-2 @lg/detail:grid-cols-2"
+                  onValueChange={(value) => {
+                    if (value === "noAnswer" || value === "spokeToThem") setOutcome(value);
+                  }}
+                >
+                  {(["noAnswer", "spokeToThem"] as const).map((value) => (
+                    <label
+                      key={value}
+                      className={cn(
+                        "flex items-center gap-2 rounded-md border p-3",
+                        outcome === value && "border-primary bg-accent",
                       )}
-                    </Field>
-                    <Field label="Time" hint={zone}>
-                      {(control) => (
-                        <Input
-                          {...control}
-                          type="time"
-                          required
-                          value={time}
-                          onChange={(event) => {
-                            setTime(event.target.value);
-                          }}
-                        />
-                      )}
-                    </Field>
-                  </div>
-                )}
-              </div>
-            )}
-            {(mode === "attempt" ||
-              mode === "note" ||
-              (mode === "close" && closing === "lost")) && (
-              <Field
-                label={mode === "close" ? "Why was it lost?" : "Note"}
-                hint={
-                  mode === "close"
-                    ? "Required, in your own words. There are no categories to pick. The reason is saved on the timeline with your name."
-                    : undefined
-                }
-              >
-                {(control) => (
-                  <Textarea
-                    {...control}
-                    required
-                    value={note}
-                    onChange={(event) => {
-                      setNote(event.target.value);
+                    >
+                      <RadioGroupItem
+                        value={value}
+                        aria-label={value === "noAnswer" ? "No answer" : "Spoke to them"}
+                      />
+                      <span>
+                        <span className="font-semibold">
+                          {value === "noAnswer" ? "No answer" : "Spoke to them"}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {value === "noAnswer"
+                            ? `Counts as no answer number ${String(lead.noAnswerCount + 1)}`
+                            : "Marks the lead as contacted"}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </fieldset>
+            </>
+          )}
+          {(mode === "callback" || mode === "attempt") && (
+            <div
+              className={cn(
+                "grid items-start gap-3",
+                mode === "attempt" && "@lg/detail:grid-cols-label-value",
+              )}
+            >
+              {mode === "attempt" && (
+                <label className="flex min-h-9 items-center gap-2 font-semibold">
+                  <Checkbox
+                    checked={callback}
+                    onCheckedChange={(value) => {
+                      setCallback(value === true);
                     }}
-                    rows={1}
-                    className="min-h-10"
                   />
-                )}
-              </Field>
-            )}
-            {mode === "close" && closing === "dead" && (
-              <Field
-                label="Why is this lead dead?"
-                hint="Wrong number needs an attempt in this assignment first."
-              >
-                {(control) => (
-                  <NativeSelect
-                    {...control}
-                    value={deadReason}
-                    onChange={(event) => {
-                      const reason = DEAD_REASONS.find((value) => value === event.target.value);
-                      if (reason) setDeadReason(reason);
-                    }}
+                  Call back
+                </label>
+              )}
+              {(mode === "callback" || callback) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field
+                    label="Day"
+                    hint={selectedDay ? dayLabel(selectedDay, zone) : "Choose a day"}
                   >
-                    <option value="duplicate">Duplicate</option>
-                    <option value="wrongNumber">Wrong number</option>
-                    <option value="doNotContact">Do not contact</option>
-                  </NativeSelect>
-                )}
-              </Field>
-            )}
-            {mode === "close" && (
-              <dl className="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-caption @lg/detail:grid-cols-label-value">
-                <dt className="font-semibold">Won</dt>
-                <dd>Creates an account and keeps this history. Final.</dd>
-                <dt className="font-semibold">Lost</dt>
-                <dd>Needs a written reason. Reopens only if they enquire again.</dd>
-                <dt className="font-semibold">Dead</dt>
-                <dd>For a duplicate, wrong number or do-not-contact request. Final.</dd>
-              </dl>
-            )}
-            <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
-              {mode === "attempt"
-                ? summary
-                : mode === "close"
-                  ? "Closing is saved to the timeline and cannot be undone here."
-                  : "Saved entries cannot be edited or deleted."}
-            </p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="ghost" busy={busy} onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button type="submit" busy={busy}>
-                {busy ? "Saving…" : mode === "close" ? `Close as ${closing}` : `Save ${mode}`}
-              </Button>
+                    {(control) => (
+                      <Input
+                        {...control}
+                        type="date"
+                        required
+                        value={day}
+                        onChange={(event) => {
+                          setDay(event.target.value);
+                        }}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Time" hint={zone}>
+                    {(control) => (
+                      <Input
+                        {...control}
+                        type="time"
+                        required
+                        value={time}
+                        onChange={(event) => {
+                          setTime(event.target.value);
+                        }}
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
             </div>
-            {mode === "callback" && callbackAt && (
-              <Button
-                type="button"
-                variant="destructive"
-                busy={busy}
-                onClick={() => {
-                  const change = { kind: "clear" as const };
-                  onSubmit({
-                    kind: "callback",
-                    input: { id: lead.id, key: keyFor(change), change },
-                  });
-                }}
-              >
-                Clear callback
-              </Button>
-            )}
-          </TabsContent>
-        </form>
-      </Tabs>
+          )}
+          {(mode === "attempt" || mode === "note" || (mode === "close" && closing === "lost")) && (
+            <Field
+              label={mode === "close" ? "Why was it lost?" : "Note"}
+              hint={
+                mode === "close"
+                  ? "Required, in your own words. There are no categories to pick. The reason is saved on the timeline with your name."
+                  : undefined
+              }
+            >
+              {(control) => (
+                <Textarea
+                  {...control}
+                  required
+                  value={note}
+                  onChange={(event) => {
+                    setNote(event.target.value);
+                  }}
+                  rows={1}
+                  className="min-h-10"
+                />
+              )}
+            </Field>
+          )}
+          {mode === "close" && closing === "dead" && (
+            <Field
+              label="Why is this lead dead?"
+              hint="Wrong number needs an attempt in this assignment first."
+            >
+              {(control) => (
+                <NativeSelect
+                  {...control}
+                  value={deadReason}
+                  onChange={(event) => {
+                    const reason = DEAD_REASONS.find((value) => value === event.target.value);
+                    if (reason) setDeadReason(reason);
+                  }}
+                >
+                  <option value="duplicate">Duplicate</option>
+                  <option value="wrongNumber">Wrong number</option>
+                  <option value="doNotContact">Do not contact</option>
+                </NativeSelect>
+              )}
+            </Field>
+          )}
+          {mode === "close" && (
+            <dl className="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-caption @lg/detail:grid-cols-label-value">
+              <dt className="font-semibold">Won</dt>
+              <dd>Creates an account and keeps this history. Final.</dd>
+              <dt className="font-semibold">Lost</dt>
+              <dd>Needs a written reason. Reopens only if they enquire again.</dd>
+              <dt className="font-semibold">Dead</dt>
+              <dd>For a duplicate, wrong number or do-not-contact request. Final.</dd>
+            </dl>
+          )}
+          <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
+            {mode === "attempt"
+              ? summary
+              : mode === "close"
+                ? "Closing is saved to the timeline and cannot be undone here."
+                : "Saved entries cannot be edited or deleted."}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="ghost" busy={busy} onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" busy={busy}>
+              {busy ? "Saving…" : mode === "close" ? `Close as ${closing}` : `Save ${mode}`}
+            </Button>
+          </div>
+          {mode === "callback" && callbackAt && (
+            <Button
+              type="button"
+              variant="destructive"
+              busy={busy}
+              onClick={() => {
+                const change = { kind: "clear" as const };
+                onSubmit({
+                  kind: "callback",
+                  input: { id: lead.id, key: keyFor(change), change },
+                });
+              }}
+            >
+              Clear callback
+            </Button>
+          )}
+        </div>
+      </form>
     </Card>
   );
 }

@@ -68,7 +68,7 @@ test.describe.serial("lead work journeys", () => {
     await expect(page.getByRole("status").filter({ hasText: "Note added" })).toBeVisible();
     await saveAttempt(page, "Spoke to them", "Confirmed the Tuesday course and price.");
     await page.getByRole("button", { name: "Close lead", exact: true }).click();
-    await page.getByRole("tab", { name: "Won", exact: true }).click();
+    await page.getByRole("radio", { name: "Won", exact: true }).click();
     await accessibility(page, "close-won");
     await page.getByRole("button", { name: "Close as won", exact: true }).click();
     await expect(

@@ -57,7 +57,7 @@ test("WhatsApp attempts, lost reasons and wrong-number refusals use the real com
   await page.getByRole("link", { name: `Open Dead Journey`, exact: true }).click();
   await expect(page.getByRole("heading", { name: "Dead Journey", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close lead", exact: true }).click();
-  await page.getByRole("tab", { name: "Dead", exact: true }).click();
+  await page.getByRole("radio", { name: "Dead", exact: true }).click();
   await page.getByRole("combobox", { name: /Why is this lead dead/ }).selectOption("wrongNumber");
   await page.getByRole("button", { name: "Close as dead", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText(
@@ -74,7 +74,7 @@ test("WhatsApp attempts, lost reasons and wrong-number refusals use the real com
     page.getByRole("status").filter({ hasText: "No-answer attempt saved" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Close lead", exact: true }).click();
-  await page.getByRole("tab", { name: "Dead", exact: true }).click();
+  await page.getByRole("radio", { name: "Dead", exact: true }).click();
   await page.getByRole("combobox", { name: /Why is this lead dead/ }).selectOption("wrongNumber");
   await accessibility(page, "close-dead");
   await page.getByRole("button", { name: "Close as dead", exact: true }).click();
