@@ -34,14 +34,15 @@ of the next day in `RELAY_TIME_ZONE` and repeats. The app serves through `relay_
 the seed marker to be ready. The app and scheduler never receive the owner's credentials.
 The scheduler calls reconciliation and the outbox each minute.
 `pnpm demo:check <evidence-directory> --cold` starts the command above, checks the production HTTP
-journeys, prints `QUICKSTART.wallMs`, and removes only this Compose project's containers and volumes.
+journeys, prints `QUICKSTART.wallMs`, and removes its containers and volumes. With `--cold`, it also removes the project images it created.
+Choose a fresh `COMPOSE_PROJECT_NAME` for a cold check. It refuses to delete a pre-existing image.
 Its timer includes the application build, migrations, seed, readiness, role sign-ins and API reads.
 Base images and the build cache may already be present. The check also proves scheduled recovery of
 a dropped webhook, inbox delivery, and reset through HTTP.
 
-Stop and remove the local demo with `docker compose -p relay-crm-demo down --volumes`.
+Stop and remove the local demo with `docker compose down --volumes`.
 To restore it while it runs, use
-`docker compose -p relay-crm-demo exec -T resetter node --import tsx apps/web/scripts/demo-reset.ts --container`.
+`docker compose exec -T resetter node --import tsx apps/web/scripts/demo-reset.ts --container`.
 For a separately configured local database, `pnpm db:seed` requires the owner and app URLs and an SMTP
 sink. Repeating it on a seeded database reports that nothing changed. `pnpm demo:reset` also requires
 `RELAY_DEMO=1` and the seed's owner-only marker. It ends every session and rebuilds the invented

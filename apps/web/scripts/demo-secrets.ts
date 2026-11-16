@@ -3,6 +3,9 @@ import { mkdir, readFile, writeFile, chmod, chown } from "node:fs/promises";
 
 const directory = "/run/relay-secrets";
 const timeZone = process.argv[2] ?? "UTC";
+const port = Number(process.argv[3] ?? "3107");
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid demo HTTP port.");
+const origin = `http://127.0.0.1:${String(port)}`;
 new Intl.DateTimeFormat("en", { timeZone }).format();
 for (const [name, uid] of [
   ["db", 999],
@@ -63,14 +66,14 @@ await config("jobs", { origin: "http://app:3107", reconcile, outbox });
 await config("app", {
   ...common,
   AUTH_SECRET: key("AUTH_SECRET"),
-  AUTH_URL: "http://127.0.0.1:3107",
+  AUTH_URL: origin,
   NODE_ENV: "production",
   HOST: "0.0.0.0",
   PORT: "3107",
   RELAY_TRUSTED_PROXY_COUNT: "0",
   RELAY_SANDBOX: "1",
   RELAY_PUBLIC_FORM: "1",
-  RELAY_SANDBOX_URL: "http://127.0.0.1:3107",
+  RELAY_SANDBOX_URL: origin,
   RELAY_PAYMENT_WEBHOOK_SECRET: key("RELAY_PAYMENT_WEBHOOK_SECRET"),
   RELAY_RECONCILE_SECRET: reconcile,
   RELAY_OUTBOX_SECRET: outbox,

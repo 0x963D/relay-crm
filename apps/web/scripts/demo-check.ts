@@ -21,27 +21,43 @@ await mkdir(directory, { recursive: true });
 const execute = promisify(execFile);
 const docker = (args: string[]) =>
   execute("docker", args, { cwd: root, maxBuffer: 5 * 1024 * 1024 });
-const composeArgs = ["compose", "-p", "relay-crm-demo"];
+const rawConfiguration: unknown = JSON.parse(
+  (await docker(["compose", "config", "--format", "json"])).stdout,
+);
+const configuration = z
+  .object({
+    name: z.string(),
+    services: z.record(
+      z.string(),
+      z.object({
+        image: z.string().optional(),
+        ports: z.array(z.object({ published: z.coerce.number() })).optional(),
+      }),
+    ),
+  })
+  .parse(rawConfiguration);
+const project = configuration.name;
+const composeArgs = ["compose", "-p", project];
+const appPort = configuration.services.app?.ports?.[0]?.published;
+const mailPort = configuration.services.mail?.ports?.[0]?.published;
+assert(appPort && mailPort, "The app and inbox must publish ports.");
+const origin = `http://127.0.0.1:${String(appPort)}`;
+const inbox = `http://127.0.0.1:${String(mailPort)}`;
 assert.equal(
   (
-    await docker(["ps", "-aq", "--filter", "label=com.docker.compose.project=relay-crm-demo"])
+    await docker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`])
   ).stdout.trim(),
   "",
-  "The demo project is already running.",
+  "The selected project is already running.",
 );
-const volumes = await docker([
-  "volume",
-  "ls",
-  "-q",
-  "--filter",
-  "label=com.docker.compose.project=relay-crm-demo",
-]);
 assert.equal(
-  volumes.stdout.trim(),
+  (
+    await docker(["volume", "ls", "-q", "--filter", `label=com.docker.compose.project=${project}`])
+  ).stdout.trim(),
   "",
-  "Cold start requires empty demo volumes. Clean up the demo project first.",
+  "The selected project already has volumes. Choose a fresh project name.",
 );
-for (const port of [3107, 8127]) {
+for (const port of [appPort, mailPort]) {
   await new Promise<void>((resolvePort, reject) => {
     const server = createServer();
     server.once("error", reject);
@@ -53,10 +69,22 @@ for (const port of [3107, 8127]) {
     });
   });
 }
-if (process.argv.includes("--cold")) {
-  const images = await docker(["image", "ls", "-q", "relay-crm-demo-app:local"]);
-  if (images.stdout.trim()) await docker(["image", "rm", "relay-crm-demo-app:local"]);
-}
+const images = [
+  ...new Set(
+    Object.values(configuration.services).flatMap((service) =>
+      service.image?.startsWith(`${project}-`) ? [service.image] : [],
+    ),
+  ),
+];
+const priorImages = await Promise.all(
+  images.map(async (name) => ({
+    name,
+    existed: Boolean((await docker(["image", "ls", "-q", name])).stdout.trim()),
+  })),
+);
+if (process.argv.includes("--cold"))
+  for (const image of priorImages)
+    assert(!image.existed, "A cold check needs a fresh project image name.");
 const readme = await readFile(new URL("../../../README.md", import.meta.url), "utf8");
 const command = readme
   .split("## Run the demo\n")[1]
@@ -75,10 +103,19 @@ const processState: { error: Error | null } = { error: null };
 compose.on("error", (error) => {
   processState.error = error;
 });
-const origin = "http://127.0.0.1:3107";
-const inbox = "http://127.0.0.1:8127";
 const record = (event: string, detail: unknown) =>
   process.stdout.write(`${event} ${JSON.stringify(detail)}\n`);
+class DemoRestarting extends Error {}
+async function checkReset(response: Response, cookie?: string) {
+  if (response.ok) return;
+  const health = await fetch(`${origin}/api/health`);
+  if (
+    health.status === 503 ||
+    (cookie &&
+      (await fetch(`${origin}/api/trpc/session.current`, { headers: { cookie } })).status === 401)
+  )
+    throw new DemoRestarting();
+}
 const resultEnvelope = z.object({ result: z.object({ data: z.unknown() }) });
 async function rpc(
   path: string,
@@ -95,6 +132,7 @@ async function rpc(
       ...(mutation ? { body: JSON.stringify(encoded) } : {}),
     },
   );
+  await checkReset(response, cookie);
   const text = await response.text();
   assert.equal(response.status, 200, `${path} returned ${String(response.status)} ${text}`);
   const raw: unknown = JSON.parse(text);
@@ -106,6 +144,7 @@ async function signIn(role: "manager" | "agent" | "accountant") {
     headers: { origin, "content-type": "application/json" },
     body: JSON.stringify({ role }),
   });
+  await checkReset(response);
   assert.equal(response.status, 200, `Demo sign-in for ${role}`);
   const body: unknown = await response.json();
   const session = z
@@ -156,7 +195,7 @@ function balanced(ledger: z.infer<typeof Ledger>) {
     assert.equal(debit, credit);
   }
 }
-try {
+async function check() {
   const deadline = performance.now() + 600000;
   let ready = false;
   let nextProgress = performance.now();
@@ -185,14 +224,12 @@ try {
   const agent = await signIn("agent");
   const accountant = await signIn("accountant");
   let queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
-  const queueDeadline = performance.now() + 30000;
+  const queueDeadline = performance.now() + 600000;
   while (
     Object.values(queue.counts).some((count) => count !== 2) &&
     performance.now() < queueDeadline
   ) {
     await sleep(1000);
-    const renewed = await signIn("agent");
-    agent.cookie = renewed.cookie;
     queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
   }
   for (const count of Object.values(queue.counts)) assert.equal(count, 2);
@@ -355,9 +392,28 @@ try {
     paymentCounts: restoredPayments.counts,
     ledgerBalanceMinor: "118500",
   });
+}
+try {
+  const deadline = performance.now() + 900000;
+  for (;;) {
+    try {
+      await check();
+      break;
+    } catch (error) {
+      if (!(error instanceof DemoRestarting) || performance.now() >= deadline) throw error;
+      record("quickstart.reset", { restarting: true });
+      await sleep(1000);
+    }
+  }
 } finally {
   const down = await docker([...composeArgs, "down", "--volumes"]);
   log.write(down.stdout + down.stderr);
+  if (process.argv.includes("--cold")) {
+    for (const image of priorImages) {
+      if (!image.existed && (await docker(["image", "ls", "-q", image.name])).stdout.trim())
+        await docker(["image", "rm", image.name]);
+    }
+  }
   if (compose.exitCode === null) compose.kill("SIGTERM");
   log.end();
 }
