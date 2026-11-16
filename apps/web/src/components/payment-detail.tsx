@@ -608,8 +608,13 @@ function Receipt({
           <ol className="space-y-2">
             {receipt.history.map((attempt) => (
               <li key={attempt.id} className="text-caption">
-                <strong>Attempt {attempt.number}</strong> · {shortDate(attempt.startedAt, zone)} ·{" "}
-                {attempt.state}
+                <strong>
+                  {attempt.number === 0 ? "Not sent" : `Attempt ${String(attempt.number)}`}
+                </strong>{" "}
+                · {shortDate(attempt.startedAt, zone)} · {attempt.state}
+                {attempt.reason && (
+                  <p className="mt-1 text-secondary-foreground">{attempt.reason}</p>
+                )}
               </li>
             ))}
           </ol>
