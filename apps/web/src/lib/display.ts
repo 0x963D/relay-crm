@@ -1,5 +1,9 @@
 import { CURRENCIES, isCurrencyCode } from "@relay/domain";
 
+export function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 export function shortDate(at: Date | null, zone: string): string {
   return at
     ? new Intl.DateTimeFormat("en-GB", {

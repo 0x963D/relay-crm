@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
-import { sourceLabel } from "@/lib/display";
+import { countLabel, sourceLabel } from "@/lib/display";
 import { PageHeader, Empty, Slip } from "./pieces";
 import { Button } from "./ui/button";
 import {
@@ -76,8 +76,8 @@ export function FunnelScreen() {
           </Button>
         }
       >
-        {total.received} leads received · {data.campaignCount} campaigns and {data.otherSourceCount}{" "}
-        other sources
+        {countLabel(total.received, "lead")} received · {countLabel(data.campaignCount, "campaign")}{" "}
+        and {countLabel(data.otherSourceCount, "other source")}
       </PageHeader>
       <div className="overflow-auto">
         <div className="flex flex-wrap items-center gap-4 px-6 py-4 text-caption text-secondary-foreground">

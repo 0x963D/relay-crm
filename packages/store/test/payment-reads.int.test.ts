@@ -8,6 +8,39 @@ import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
 
+test("the accountant gets accounts with postings first across pages without widening agent scope", async ({
+  db,
+}) => {
+  const accountant = await person(db, "accountant");
+  const agent = await person(db, "agent");
+  const stranger = await person(db, "agent");
+  const empty = await account(db, agent);
+  const funded = await account(db, stranger);
+  const created = await db.store.createPayment(
+    stranger,
+    { key: randomUUID(), accountId: funded, money, kind: "first", mode: "normal" },
+    0,
+    randomUUID(),
+  );
+  await db.store.receivePaymentWebhook({
+    eventId: randomUUID(),
+    paymentId: created.id,
+    payloadHash: "fake",
+    observed: { status: "completed", money },
+  });
+  expect(
+    (await db.store.listAccounts(accountant, { limit: 1 })).items.map((item) => item.id),
+  ).toEqual([funded]);
+  expect(
+    (await db.store.listAccounts(accountant, { limit: 1, offset: 1 })).items.map((item) => item.id),
+  ).toEqual([empty]);
+  expect((await db.store.listAccounts(agent, { limit: 10 })).items.map((item) => item.id)).toEqual([
+    empty,
+  ]);
+  await db.ownerRows("UPDATE users SET role='agent' WHERE id=$1", [accountant.userId]);
+  expect((await db.store.listAccounts(accountant, { limit: 10 })).items).toEqual([]);
+});
+
 test("payment events name the actor without exposing a payment outside its scope", async ({
   db,
 }) => {

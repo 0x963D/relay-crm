@@ -32,7 +32,7 @@ test("money routes show their loading state while navigation waits", async ({ pa
     ["payments", "Payments", "Loading payments"],
     ["accounts", "Accounts", "Loading accounts"],
     ["funnel", "Campaign funnel", "Loading funnel"],
-  ]) {
+  ] as const) {
     let release = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;

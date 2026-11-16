@@ -98,15 +98,43 @@ export async function listAccounts(
     const current = await currentActor(tx, actor);
     const where = scopeWhere(recordScope(current, "account", "read"));
     const total = await tx.account.count({ where });
-    const rows = await tx.account.findMany({
-      where,
-      orderBy: [{ lead: { name: "asc" } }, { lead: { email: "asc" } }, { id: "asc" }],
-      take: page.limit,
-      skip: page.offset ?? 0,
-      include: accountInclude,
-    });
+    const order = current.role === "accountant" ? "postingsFirst" : "name";
+    const orderBy: Prisma.AccountOrderByWithRelationInput[] = [
+      { lead: { name: "asc" } },
+      { lead: { email: "asc" } },
+      { id: "asc" },
+    ];
+    const read = (filter: Prisma.AccountWhereInput, skip: number, take: number) =>
+      tx.account.findMany({
+        where: { AND: [where, filter] },
+        orderBy,
+        skip,
+        take,
+        include: accountInclude,
+      });
+    const offset = page.offset ?? 0;
+    let rows;
+    if (order === "postingsFirst") {
+      const ledgerAccounts = await tx.ledgerAccount.findMany({
+        where: { accountId: { not: null } },
+        select: { accountId: true },
+        distinct: ["accountId"],
+      });
+      const ids = ledgerAccounts.flatMap((row) => (row.accountId ? [row.accountId] : []));
+      const posted = { id: { in: ids } };
+      const postedCount = await tx.account.count({ where: { AND: [where, posted] } });
+      rows = offset < postedCount ? await read(posted, offset, page.limit) : [];
+      if (rows.length < page.limit)
+        rows.push(
+          ...(await read(
+            { id: { notIn: ids } },
+            Math.max(0, offset - postedCount),
+            page.limit - rows.length,
+          )),
+        );
+    } else rows = await read({}, offset, page.limit);
     const items = await Promise.all(rows.map((row) => accountView(tx, current, row)));
-    return { items, total };
+    return { items, total, order };
   });
 }
 export async function getAccount(db: Db, actor: Actor, id: AccountId) {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
 import { usePagedQuery } from "@/lib/trpc/use-paged-query";
-import { formatMoney, shortDate } from "@/lib/display";
+import { countLabel, formatMoney, shortDate } from "@/lib/display";
 import { completedBy } from "@/lib/payments";
 import { failureMessage } from "@/lib/failures";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,7 @@ export function AccountsScreen({
   return (
     <>
       <PageHeader title="Accounts" className={selected ? "max-md:hidden" : undefined}>
-        {data.total} accounts · an account opens when a lead is won
+        {countLabel(data.total, "account")} · an account opens when a lead is won
       </PageHeader>
       <div className="flex min-h-0 flex-1">
         <section
@@ -57,7 +57,9 @@ export function AccountsScreen({
           )}
         >
           <div className="flex justify-between px-6 py-3 text-xs text-muted-foreground">
-            <span>Account, A to Z</span>
+            <span>
+              {data.order === "postingsFirst" ? "Accounts with postings first" : "Account, A to Z"}
+            </span>
             {data.items.some((account) => account.balances !== null) && <span>Balance</span>}
           </div>
           {!data.total && (
@@ -91,7 +93,8 @@ export function AccountsScreen({
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-secondary-foreground">
                     <span className="truncate">
-                      {account.campaign ?? "No campaign"} · {account.paymentCount ?? 0} payments
+                      {account.campaign ?? "No campaign"} ·{" "}
+                      {countLabel(account.paymentCount ?? 0, "payment")}
                     </span>
                     {account.paymentInProgress && (
                       <Slip kind="waiting" icon="wait">
@@ -152,7 +155,7 @@ export function AccountDetail({
   return (
     <article className="space-y-5 p-4 md:p-6">
       <h1 className="sr-only md:hidden">Account detail</h1>
-      <Link href="/accounts" className="text-primary underline">
+      <Link href="/accounts" className="text-primary underline xl:hidden">
         Back to accounts
       </Link>
       <header className="space-y-2 border-b pb-4">
@@ -165,7 +168,13 @@ export function AccountDetail({
         {account.balances !== null && (
           <div>
             <p className="text-xs text-muted-foreground">Balance</p>
-            <p className="text-3xl font-bold">
+            <p
+              className={
+                account.balances.length
+                  ? "text-3xl font-bold"
+                  : "text-caption text-muted-foreground"
+              }
+            >
               {account.balances.length
                 ? account.balances
                     .map((balance) =>
