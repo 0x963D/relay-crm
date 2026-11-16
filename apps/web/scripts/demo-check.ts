@@ -228,7 +228,7 @@ try {
   const health = await fetch(`${origin}/api/health`);
   assert.equal(health.status, 200);
   const unauthorized = await fetch(`${origin}/api/demo/reset`, { method: "POST" });
-  assert.equal(unauthorized.status, 401);
+  assert.equal(unauthorized.status, 404);
   const checkout = z.object({ paymentId: z.string(), checkout: z.object({ url: z.url() }) }).parse(
     await rpc(
       "payments.createCheckout",
@@ -302,14 +302,14 @@ try {
     ...composeArgs,
     "exec",
     "-T",
-    "app",
+    "resetter",
     "node",
     "--import",
     "tsx",
-    "apps/web/scripts/demo-scheduler.ts",
-    "--reset",
+    "apps/web/scripts/demo-reset.ts",
+    "--container",
   ]);
-  assert(reset.stdout.includes('"status":204'), reset.stdout + reset.stderr);
+  assert(reset.stdout.includes("All sessions ended."), reset.stdout + reset.stderr);
   const ended = await fetch(`${origin}/api/trpc/session.current`, {
     headers: { cookie: agent.cookie },
   });

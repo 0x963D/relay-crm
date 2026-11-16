@@ -1,23 +1,23 @@
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { seedDemo } from "@relay/store/demo";
-import { demoOptions, demoOwnerUrl } from "../src/server/demo.ts";
-import { commandEnvironment, loadDemoConfiguration } from "../src/server/env.ts";
+import { openStore } from "@relay/store";
+import { loadDemoConfiguration } from "../src/server/env.ts";
 
-const env = await loadDemoConfiguration("/run/relay-secrets/app.json");
-const ownerUrl = await demoOwnerUrl("/run/relay-secrets/owner.json");
-const migration = await promisify(execFile)("pnpm", ["db:migrate"], {
-  cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-  env: commandEnvironment({ MIGRATION_DATABASE_URL: ownerUrl }),
-});
-process.stdout.write(migration.stdout);
-const seeded = await seedDemo(demoOptions(env, ownerUrl));
-process.stdout.write(
-  seeded.changed
-    ? "Seeded Tidewell Language School.\n"
-    : "Demo data already exists. Nothing changed.\n",
-);
+const env = await loadDemoConfiguration("/run/relay-secrets/app/config.json");
+const store = openStore({ connectionString: env.databaseUrl });
+try {
+  for (;;) {
+    try {
+      if ((await store.databaseReady()) && (await store.demoReady())) break;
+    } catch {
+      process.stdout.write("Waiting for demo setup.\n");
+    }
+    await sleep(1000);
+  }
+} finally {
+  await store.close();
+}
 const server = spawn(process.execPath, ["scripts/serve.ts"], {
   cwd: fileURLToPath(new URL("..", import.meta.url)),
   stdio: "inherit",

@@ -2,7 +2,7 @@ import { expect, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 600_000 });
 import { AccountId, UserId, PaymentId, parseExternalId } from "@relay/domain";
-import { seedDemo, resetDemo } from "../src/demo.ts";
+import { seedDemo, resetDemo, demoSchedule } from "../src/demo.ts";
 import { DEMO_PEOPLE } from "../src/demo-state.ts";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 
@@ -339,3 +339,23 @@ test("demo keeps an exhausted receipt failed and schedules a separate retry late
     { count: 2 },
   ]);
 });
+
+test.for([
+  ["Asia/Tokyo", "2031-07-14T15:01Z", "2031-07-14T15:00Z", "2031-07-15T15:00Z"],
+  ["America/Los_Angeles", "2031-07-15T07:01Z", "2031-07-15T07:00Z", "2031-07-16T07:00Z"],
+  ["America/New_York", "2026-03-08T05:01Z", "2026-03-08T05:00Z", "2026-03-09T04:00Z"],
+  ["America/New_York", "2026-11-01T04:01Z", "2026-11-01T04:00Z", "2026-11-02T05:00Z"],
+])(
+  "reset scheduling uses the next local midnight in %s",
+  async ([zone, at, start, next], { db }) => {
+    if (!zone || !at || !start || !next) throw new Error("Missing schedule fixture");
+    await db.ownerRows(
+      "INSERT INTO demo_seed(key,company,state,seeded_at) VALUES ('tidewell-language-school/v1','Tidewell Language School','ready',$1)",
+      [today],
+    );
+    expect(await demoSchedule(db.ownerConnectionString, zone, new Date(at))).toMatchObject({
+      start: new Date(start),
+      next: new Date(next),
+    });
+  },
+);

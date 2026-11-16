@@ -28,10 +28,11 @@ The demo sends mail only to its own inbox, and a hosted demo must point SMTP at 
 The public form stores any submitted email as a lead and can reopen a lost lead.
 A visitor can leave data changed until the next reset.
 
-Compose generates secrets in its own volume on first start. The app applies migrations through
-`relay_owner`, seeds the empty database, and then serves through `relay_app`. The owner URL is passed
-only to the migration child process. A demo-only owner file also permits the protected reset.
-The scheduler calls reconciliation and the outbox each minute and resets at midnight UTC.
+Compose generates private configuration files in separate volumes on first start. The resetter
+applies migrations and restores the invented state through `relay_owner`. It waits until the start
+of the next day in `RELAY_TIME_ZONE` and repeats. The app serves through `relay_app` and waits for
+the seed marker to be ready. The app and scheduler never receive the owner's credentials.
+The scheduler calls reconciliation and the outbox each minute.
 `pnpm demo:check <evidence-directory> --cold` starts the command above, checks the production HTTP
 journeys, prints `QUICKSTART.wallMs`, and removes only this Compose project's containers and volumes.
 Its timer includes the application build, migrations, seed, readiness, role sign-ins and API reads.
@@ -40,25 +41,23 @@ a dropped webhook, inbox delivery, and reset through HTTP.
 
 Stop and remove the local demo with `docker compose -p relay-crm-demo down --volumes`.
 To restore it while it runs, use
-`docker compose -p relay-crm-demo exec -T app node --import tsx apps/web/scripts/demo-scheduler.ts --reset`.
+`docker compose -p relay-crm-demo exec -T resetter node --import tsx apps/web/scripts/demo-reset.ts --container`.
 For a separately configured local database, `pnpm db:seed` requires the owner and app URLs and an SMTP
 sink. Repeating it on a seeded database reports that nothing changed. `pnpm demo:reset` also requires
 `RELAY_DEMO=1` and the seed's owner-only marker. It ends every session and rebuilds the invented
 history through ordinary store operations. A failed seed can be recovered with that reset.
 
 The seed uses the board's people, courses and amounts. It combines alternate payment stories into
-one history, so list counts need not match a single board frame. Callback dates are relative to the
-supplied seed time in UTC. Receipt failures and unknown delivery are invented delivery outcomes;
+one history, so list counts need not match a single board frame. Callback dates use the supplied seed time in the configured time zone. Receipt failures and unknown delivery are invented delivery outcomes;
 successful seed receipts go to the configured SMTP sink. Leila's receipt uses an explicit demo
 email suppression because intake requires an email address.
 
 For a hosted demo, set `RELAY_DEMO=1`, `RELAY_SANDBOX=1`, `AUTH_URL`, `RELAY_SANDBOX_URL`, `DATABASE_URL`,
 `SMTP_URL`, `SMTP_FROM`, `RELAY_TIME_ZONE`, and the exact `RELAY_TRUSTED_PROXY_COUNT` for its proxy.
 Generate distinct `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`, `RELAY_RECONCILE_SECRET`,
-`RELAY_OUTBOX_SECRET`, and `RELAY_DEMO_RESET_SECRET`. Set the reconciliation delays for its scheduler.
-Supply an owner-only JSON file with `ownerUrl` through `RELAY_DEMO_OWNER_FILE` only on a disposable
-demo deployment. Apply migrations with `MIGRATION_DATABASE_URL` outside the serving environment.
-Schedule the reconcile, outbox and reset routes. Disable public intake with `RELAY_PUBLIC_FORM=0`
+`RELAY_OUTBOX_SECRET`. Set the reconciliation delays for its scheduler.
+Keep `MIGRATION_DATABASE_URL` in a separate maintenance process. Run migrations and `pnpm demo:reset`
+there. Schedule the reconcile and outbox routes. Disable public intake with `RELAY_PUBLIC_FORM=0`
 if visitors must not submit addresses. `pnpm test -- apps/web/test/env.test.ts` checks the settings
 and secret rules. `pnpm test:prod` proves the demo route is disabled without the demo flag in a
 production build. Nothing in this repository deploys or publishes the demo.
@@ -465,7 +464,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 ```
 
 `pnpm test -- apps/web/test/env.test.ts` verifies that `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`,
-`RELAY_RECONCILE_SECRET`, `RELAY_OUTBOX_SECRET`, and `RELAY_DEMO_RESET_SECRET` each need at least
+`RELAY_RECONCILE_SECRET` and `RELAY_OUTBOX_SECRET` each need at least
 32 characters and 12 distinct characters, and refuses the exact placeholder in `.env.example`.
 Configured secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather
 than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a

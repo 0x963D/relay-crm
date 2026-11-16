@@ -666,3 +666,17 @@ export function resetDemo(options: DemoOptions & { readonly demo: boolean }) {
     });
   });
 }
+
+export async function demoSchedule(ownerUrl: string, timeZone: string, at = new Date()) {
+  const owner = connect(ownerUrl);
+  try {
+    const rows = await owner.$queryRaw<{ seededAt: Date; start: Date; next: Date }[]>`
+      SELECT seeded_at AS "seededAt",
+        date_trunc('day', ${at}::timestamptz AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone} AS start,
+        (date_trunc('day', ${at}::timestamptz AT TIME ZONE ${timeZone}) + interval '1 day') AT TIME ZONE ${timeZone} AS next
+      FROM demo_seed WHERE key=${DEMO_KEY}`;
+    return required(rows[0]);
+  } finally {
+    await owner.$disconnect();
+  }
+}

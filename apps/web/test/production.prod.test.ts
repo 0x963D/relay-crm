@@ -38,8 +38,6 @@ databaseTest(
           AUTH_SECRET: "fake-demo-production-auth-secret-0123456789",
           SMTP_URL: inbox.url,
           SMTP_FROM: "relay@sender.example",
-          RELAY_DEMO_RESET_SECRET: "fake-reset-production-secret-abcdefghijklmnopqrstuvwxyz",
-          RELAY_DEMO_OWNER_FILE: "unused-owner-file.json",
           ...(demo ? { RELAY_DEMO: "1" } : {}),
         }),
         db.connectionString,
@@ -58,7 +56,7 @@ databaseTest(
           expect((await post("/api/demo/reset", {})).status).toBe(404);
           continue;
         }
-        expect((await post("/api/demo/reset", {})).status).toBe(401);
+        expect((await post("/api/demo/reset", {})).status).toBe(404);
         expect((await fetch(server.url("/api/auth/demo"))).status).toBe(404);
         expect((await post("/api/auth/demo", { role: "owner" })).status).toBe(400);
         expect(

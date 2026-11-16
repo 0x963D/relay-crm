@@ -18,8 +18,6 @@ const Secret = z
 
 const Variables = z.object({
   RELAY_PUBLIC_FORM: z.enum(["0", "1"]).default("1"),
-  RELAY_DEMO_RESET_SECRET: Secret.optional(),
-  RELAY_DEMO_OWNER_FILE: z.string().optional(),
   RELAY_RECEIPT_LIFETIME_ATTEMPTS: z.coerce
     .number()
     .int()
@@ -105,8 +103,6 @@ export interface PaymentEnv {
 }
 
 export interface Env {
-  readonly demoResetSecret: string | null;
-  readonly demoOwnerFile: string | null;
   readonly publicForm: boolean;
   readonly smtp: Extract<AuthEnv["delivery"], { kind: "smtp" }> | null;
   readonly timeZone: string;
@@ -212,11 +208,10 @@ export function parseEnv(
     parsed.data.RELAY_PAYMENT_WEBHOOK_SECRET,
     parsed.data.RELAY_RECONCILE_SECRET,
     parsed.data.RELAY_OUTBOX_SECRET,
-    parsed.data.RELAY_DEMO_RESET_SECRET,
   ].filter((value) => value !== undefined);
   if (new Set(secrets).size !== secrets.length)
     throw new EnvError(
-      "AUTH_SECRET, RELAY_PAYMENT_WEBHOOK_SECRET, RELAY_RECONCILE_SECRET, RELAY_OUTBOX_SECRET and RELAY_DEMO_RESET_SECRET must be distinct.",
+      "AUTH_SECRET, RELAY_PAYMENT_WEBHOOK_SECRET, RELAY_RECONCILE_SECRET, RELAY_OUTBOX_SECRET must be distinct.",
     );
   if (parsed.data.RELAY_SANDBOX && !developmentBuild && parsed.data.RELAY_DEMO !== "1")
     throw new EnvError("Sandbox payments in a production build require RELAY_DEMO=1.");
@@ -227,9 +222,6 @@ export function parseEnv(
   const smtp = smtpEnv(parsed.data);
   return {
     smtp,
-    demoResetSecret: parsed.data.RELAY_DEMO_RESET_SECRET ?? null,
-    demoOwnerFile:
-      parsed.data.RELAY_DEMO === "1" ? (parsed.data.RELAY_DEMO_OWNER_FILE ?? null) : null,
     publicForm: parsed.data.RELAY_PUBLIC_FORM === "1",
     timeZone: parsed.data.RELAY_TIME_ZONE,
     demo: parsed.data.RELAY_DEMO === "1",

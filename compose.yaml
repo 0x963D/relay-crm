@@ -3,9 +3,12 @@ name: relay-crm-demo
 services:
   secrets:
     image: node:24.14.0-bookworm-slim
-    command: ["node", "/seed-secrets.ts"]
+    command: ["node", "/seed-secrets.ts", "${RELAY_TIME_ZONE:-UTC}"]
     volumes:
-      - secrets:/run/relay-secrets
+      - db-config:/run/relay-secrets/db
+      - app-config:/run/relay-secrets/app
+      - reset-config:/run/relay-secrets/reset
+      - jobs-config:/run/relay-secrets/jobs
       - ./apps/web/scripts/demo-secrets.ts:/seed-secrets.ts:ro
 
   db:
@@ -13,13 +16,13 @@ services:
     environment:
       POSTGRES_USER: relay
       POSTGRES_DB: relay
-      POSTGRES_PASSWORD_FILE: /run/relay-secrets/postgres-password
+      POSTGRES_PASSWORD_FILE: /run/relay-secrets/db/postgres-password
     depends_on:
       secrets:
         condition: service_completed_successfully
     volumes:
       - database:/var/lib/postgresql/data
-      - secrets:/run/relay-secrets:ro
+      - db-config:/run/relay-secrets/db:ro
       - ./infra/demo/init-roles.sh:/docker-entrypoint-initdb.d/10-relay-roles.sh:ro
       - ./packages/store/scripts/setup-roles.sql:/opt/relay/setup-roles.sql:ro
     healthcheck:
@@ -53,7 +56,7 @@ services:
       mail:
         condition: service_healthy
     volumes:
-      - secrets:/run/relay-secrets:ro
+      - app-config:/run/relay-secrets/app:ro
     ports:
       - "127.0.0.1:3107:3107"
     healthcheck:
@@ -69,6 +72,19 @@ services:
       start_period: 30s
       retries: 30
 
+  resetter:
+    image: relay-crm-demo-app:local
+    pull_policy: never
+    init: true
+    command: ["node", "--import", "tsx", "apps/web/scripts/demo-resetter.ts"]
+    depends_on:
+      db:
+        condition: service_healthy
+      mail:
+        condition: service_healthy
+    volumes:
+      - reset-config:/run/relay-secrets/reset:ro
+
   scheduler:
     image: relay-crm-demo-app:local
     pull_policy: never
@@ -78,9 +94,12 @@ services:
       app:
         condition: service_healthy
     volumes:
-      - secrets:/run/relay-secrets:ro
+      - jobs-config:/run/relay-secrets/jobs:ro
 
 volumes:
-  secrets:
+  db-config:
+  app-config:
+  reset-config:
+  jobs-config:
   database:
   mail:
