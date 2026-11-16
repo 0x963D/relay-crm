@@ -32,6 +32,7 @@ test("the receiver rejects forged and stale signatures, replays event IDs, and r
       mode: "normal",
     },
     0,
+    "00000000-0000-4000-8000-000000000001",
   );
   const receiver = paymentWebhook(db.store, secret);
   const timestamp = Math.floor(Date.now() / 1000).toString();
@@ -102,6 +103,7 @@ test("two reconcilers scanning the same candidates read each provider payment on
         mode: "drop",
       },
       0,
+      "00000000-0000-4000-8000-000000000001",
     );
     await adapter.createCheckout(await db.store.checkoutTerms(actor, id));
     await db.store.paySandboxCheckout(id);
@@ -207,6 +209,7 @@ test("a failed inbox write rolls settlement back and the signed retry succeeds",
       mode: "normal",
     },
     0,
+    "00000000-0000-4000-8000-000000000001",
   );
   const receiver = paymentWebhook(db.store, secret);
   const body = new TextEncoder().encode(

@@ -111,6 +111,7 @@ export async function createPayment(
   actor: Actor,
   input: CreatePayment,
   firstCheckMs: number,
+  requestId: string,
 ) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
@@ -129,7 +130,7 @@ export async function createPayment(
         },
       },
       receipt,
-      async (requestId) => {
+      async (idempotencyId) => {
         const account = await tx.account.findFirst({
           where: { id: input.accountId, ...scopeWhere(recordScope(current, "payment", "edit")) },
         });
@@ -155,6 +156,7 @@ export async function createPayment(
             at,
             detail: {
               recordedById: current.userId,
+              requestId,
               amount: row.amount.toString(),
               currency: row.currency,
             },
@@ -165,7 +167,7 @@ export async function createPayment(
           subject: { type: "payment", id: required(PaymentId.parse(row.id)) },
           before: {},
           after: snapshot(row),
-          cause: { kind: "idempotency", id: requestId },
+          cause: { kind: "idempotency", id: idempotencyId, requestId },
           at,
         });
         return { id: row.id };
@@ -405,7 +407,13 @@ async function scopedPayment(tx: Tx, actor: Actor, id: PaymentId) {
   if (!account) throw new AccessError("accessDenied");
   return row;
 }
-export async function closePaymentReview(db: Db, actor: Actor, id: PaymentId, reason: string) {
+export async function closePaymentReview(
+  db: Db,
+  actor: Actor,
+  id: PaymentId,
+  reason: string,
+  requestId: string,
+) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     if (recordScope(current, "payment", "closeReview").kind !== "all")
@@ -426,7 +434,7 @@ export async function closePaymentReview(db: Db, actor: Actor, id: PaymentId, re
       subject: { type: "payment", id },
       before: snapshot(row),
       after: snapshot(updated),
-      cause: { kind: "request", id: randomUUID() },
+      cause: { kind: "request", id: requestId },
       at,
     });
     await tx.paymentEvent.create({
@@ -436,6 +444,7 @@ export async function closePaymentReview(db: Db, actor: Actor, id: PaymentId, re
         at,
         detail: {
           reason: reason.trim(),
+          requestId,
           actorId: current.userId,
           reportedAmount: row.reportedAmount?.toString(),
           reportedCurrency: row.reportedCurrency,

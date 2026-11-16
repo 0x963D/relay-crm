@@ -41,7 +41,7 @@ export async function writeAudit(
       subjectId: event.subject.id,
       before: snapshot(event.before),
       after: snapshot(event.after),
-      requestId: event.cause.id,
+      requestId: event.cause.kind === "idempotency" ? event.cause.requestId : event.cause.id,
       idempotencyId: event.cause.kind === "idempotency" ? event.cause.id : null,
       at: event.at,
     },

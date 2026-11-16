@@ -16,4 +16,4 @@ export type AuditSubject =
   | { readonly type: "ledger"; readonly id: LedgerTransactionId };
 export type AuditCause =
   | { readonly kind: "request"; readonly id: string }
-  | { readonly kind: "idempotency"; readonly id: string };
+  | { readonly kind: "idempotency"; readonly id: string; readonly requestId: string };

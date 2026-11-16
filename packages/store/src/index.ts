@@ -52,8 +52,8 @@ export type Store = ReturnType<typeof openStore>;
 export function openStore(config: { readonly connectionString: string }) {
   const db = connect(config.connectionString);
   return {
-    createPayment: (actor: Actor, input: CreatePayment, firstCheckMs: number) =>
-      createPayment(db, actor, input, firstCheckMs),
+    createPayment: (actor: Actor, input: CreatePayment, firstCheckMs: number, requestId: string) =>
+      createPayment(db, actor, input, firstCheckMs, requestId),
     checkoutTerms: (actor: Actor, id: PaymentId) => checkoutTerms(db, actor, id),
     receivePaymentWebhook: (event: ProviderEvent) => receivePaymentWebhook(db, event),
     duePayments: (at: Date, limit: number) => duePayments(db, at, limit),
@@ -61,8 +61,8 @@ export function openStore(config: { readonly connectionString: string }) {
       claimPaymentCheck(db, id, at, intervalMs),
     finishPaymentCheck: (id: string, token: string, observed: ProviderPayment | null) =>
       finishPaymentCheck(db, id, token, observed),
-    closePaymentReview: (actor: Actor, id: PaymentId, reason: string) =>
-      closePaymentReview(db, actor, id, reason),
+    closePaymentReview: (actor: Actor, id: PaymentId, reason: string, requestId: string) =>
+      closePaymentReview(db, actor, id, reason, requestId),
     getPayment: (actor: Actor, id: PaymentId) => getPayment(db, actor, id),
     listPayments: (actor: Actor, limit: number) => listPayments(db, actor, limit),
     accountLedger: (actor: Actor, id: AccountId) => accountLedger(db, actor, id),
@@ -90,16 +90,17 @@ export function openStore(config: { readonly connectionString: string }) {
     ) => editLead(db, actor, id, fields),
     listAccounts: (actor: Actor, page: { readonly limit: number }) => listAccounts(db, actor, page),
     getAccount: (actor: Actor, id: AccountId) => getAccount(db, actor, id),
-    assignPool: (actor: Actor, leadIds: readonly LeadId[], to: Assignment) =>
-      assignPool(db, actor, leadIds, to),
-    reassignLead: (actor: Actor, leadId: LeadId, to: Assignment) =>
-      reassignLead(db, actor, leadId, to),
+    assignPool: (actor: Actor, leadIds: readonly LeadId[], to: Assignment, requestId: string) =>
+      assignPool(db, actor, leadIds, to, requestId),
+    reassignLead: (actor: Actor, leadId: LeadId, to: Assignment, requestId: string) =>
+      reassignLead(db, actor, leadId, to, requestId),
     previewDistribution: (actor: Actor, request: DistributionRequest) =>
       previewDistribution(db, actor, request),
     submitDistribution: (
       actor: Actor,
       input: { readonly previewId: string; readonly fingerprint: string; readonly key: string },
-    ) => submitDistribution(db, actor, input),
+      requestId: string,
+    ) => submitDistribution(db, actor, input, requestId),
     close: () => db.$disconnect(),
   };
 }

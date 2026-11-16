@@ -82,8 +82,8 @@ describe("assignment under contention", () => {
     const second: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
     await db.gate.close();
     const pending = Promise.allSettled([
-      db.store.assignPool(w.actor, [w.pool], w.agent),
-      db.store.assignPool(second, [w.pool], w.other),
+      db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001"),
+      db.store.assignPool(second, [w.pool], w.other, "00000000-0000-4000-8000-000000000001"),
     ]);
     try {
       await db.gate.waitForWaiters(2);
@@ -121,13 +121,17 @@ describe("assignment under contention", () => {
       agents: [w.agent],
       excludePreviousOwner: false,
     });
-    await db.store.assignPool(w.actor, [w.pool], w.agent);
+    await db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001");
     const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "stale" };
-    await expect(db.store.submitDistribution(w.actor, input)).rejects.toMatchObject({
+    await expect(
+      db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
       code: "stalePreview",
     });
     await db.rows("UPDATE leads SET status='new',owner_id=NULL,team_id=NULL WHERE id=$1", [w.pool]);
-    await expect(db.store.submitDistribution(w.actor, input)).rejects.toMatchObject({
+    await expect(
+      db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
       code: "stalePreview",
     });
     expect(await auditCount(db)).toEqual([{ activities: 1, audit: 1, distributions: 0 }]);
@@ -142,11 +146,15 @@ describe("assignment under contention", () => {
     });
     await db.rows("UPDATE leads SET status='dead',dead_reason='duplicate' WHERE id=$1", [w.pool]);
     await expect(
-      db.store.submitDistribution(w.actor, {
-        previewId: preview.id,
-        fingerprint: preview.fingerprint,
-        key: "status",
-      }),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: preview.id,
+          fingerprint: preview.fingerprint,
+          key: "status",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "stalePreview" });
     expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
   });
@@ -163,8 +171,8 @@ describe("assignment under contention", () => {
     const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "same-request" };
     await db.gate.close();
     const pending = Promise.all([
-      db.store.submitDistribution(w.actor, input),
-      db.store.submitDistribution(w.actor, input),
+      db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+      db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
     ]);
     try {
       await db.gate.waitForWaiters(2);
@@ -173,13 +181,19 @@ describe("assignment under contention", () => {
     }
     const [first, second] = await pending;
     expect(first).toEqual(second);
-    expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+    expect(
+      await db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+    ).toEqual(first);
     await expect(
-      db.store.submitDistribution(w.actor, {
-        ...input,
-        previewId: crypto.randomUUID(),
-        fingerprint: "changed",
-      }),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          ...input,
+          previewId: crypto.randomUUID(),
+          fingerprint: "changed",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({
       code: "idempotencyConflict",
       message: "The key was already used for a different request.",
@@ -204,11 +218,15 @@ describe("assignment under contention", () => {
       agents: [w.agent, w.other],
       excludePreviousOwner: false,
     });
-    const result = await db.store.submitDistribution(w.actor, {
-      previewId: preview.id,
-      fingerprint: preview.fingerprint,
-      key: "round-robin",
-    });
+    const result = await db.store.submitDistribution(
+      w.actor,
+      {
+        previewId: preview.id,
+        fingerprint: preview.fingerprint,
+        key: "round-robin",
+      },
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(result.items.filter((item) => item.to.ownerId === w.agent.ownerId)).toHaveLength(2);
     expect(result.items.filter((item) => item.to.ownerId === w.other.ownerId)).toHaveLength(2);
     const excluded = await db.seedLead({
@@ -242,7 +260,12 @@ describe("assignment under contention", () => {
       "UPDATE leads SET status='working',stage='noAnswer',no_answer_count=2 WHERE id=$1",
       [w.teammate],
     );
-    await db.store.reassignLead(w.actor, w.teammate, w.other);
+    await db.store.reassignLead(
+      w.actor,
+      w.teammate,
+      w.other,
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.state).toEqual({
       status: "working",
       assignee: w.other,
@@ -262,7 +285,9 @@ describe("assignment under contention", () => {
     await db.rows(
       "CREATE FUNCTION fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$; CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION fail_audit()",
     );
-    await expect(db.store.assignPool(w.actor, [w.pool], w.agent)).rejects.toThrow();
+    await expect(
+      db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toThrow();
     expect((await db.store.getLead(w.actor, w.pool)).lifecycle.state.status).toBe("new");
     expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
   });
@@ -315,28 +340,51 @@ describe("record scoping", () => {
         const preview = await db.store.previewDistribution(w.actor, previewInput);
         expect(
           (
-            await db.store.submitDistribution(w.actor, {
-              previewId: preview.id,
-              fingerprint: preview.fingerprint,
-              key: "allowed",
-            })
+            await db.store.submitDistribution(
+              w.actor,
+              {
+                previewId: preview.id,
+                fingerprint: preview.fingerprint,
+                key: "allowed",
+              },
+              "00000000-0000-4000-8000-000000000001",
+            )
           ).items,
         ).toHaveLength(1);
-        await db.store.reassignLead(w.actor, w.teammate, w.agent);
+        await db.store.reassignLead(
+          w.actor,
+          w.teammate,
+          w.agent,
+          "00000000-0000-4000-8000-000000000001",
+        );
         const another = await db.seedLead({
           email: "manual@example.com",
           lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
         });
-        await db.store.assignPool(w.actor, [another], w.agent);
+        await db.store.assignPool(
+          w.actor,
+          [another],
+          w.agent,
+          "00000000-0000-4000-8000-000000000001",
+        );
         if (role === "teamLead") {
-          await expect(db.store.reassignLead(w.actor, w.outside, w.agent)).rejects.toMatchObject({
+          await expect(
+            db.store.reassignLead(
+              w.actor,
+              w.outside,
+              w.agent,
+              "00000000-0000-4000-8000-000000000001",
+            ),
+          ).rejects.toMatchObject({
             code: "accessDenied",
           });
           const fresh = await db.seedLead({
             email: "foreign-agent@example.com",
             lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
           });
-          await expect(db.store.assignPool(w.actor, [fresh], w.other)).rejects.toMatchObject({
+          await expect(
+            db.store.assignPool(w.actor, [fresh], w.other, "00000000-0000-4000-8000-000000000001"),
+          ).rejects.toMatchObject({
             code: "accessDenied",
           });
         }
@@ -345,19 +393,34 @@ describe("record scoping", () => {
           code: "accessDenied",
         });
         await expect(
-          db.store.submitDistribution(w.actor, {
-            previewId: crypto.randomUUID(),
-            fingerprint: "fake",
-            key: "denied",
-          }),
+          db.store.submitDistribution(
+            w.actor,
+            {
+              previewId: crypto.randomUUID(),
+              fingerprint: "fake",
+              key: "denied",
+            },
+            "00000000-0000-4000-8000-000000000001",
+          ),
         ).rejects.toMatchObject({ code: "accessDenied" });
-        await expect(db.store.assignPool(w.actor, [w.pool], w.agent)).rejects.toMatchObject({
+        await expect(
+          db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001"),
+        ).rejects.toMatchObject({
           code: "accessDenied",
         });
-        await expect(db.store.assignPool(w.actor, [w.outside], w.agent)).rejects.toMatchObject({
+        await expect(
+          db.store.assignPool(
+            w.actor,
+            [w.outside],
+            w.agent,
+            "00000000-0000-4000-8000-000000000001",
+          ),
+        ).rejects.toMatchObject({
           code: "accessDenied",
         });
-        await expect(db.store.reassignLead(w.actor, w.own, w.agent)).rejects.toMatchObject({
+        await expect(
+          db.store.reassignLead(w.actor, w.own, w.agent, "00000000-0000-4000-8000-000000000001"),
+        ).rejects.toMatchObject({
           code: "accessDenied",
         });
       }
@@ -375,18 +438,26 @@ describe("record scoping", () => {
     });
     await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
     await expect(
-      db.store.submitDistribution(w.actor, {
-        previewId: preview.id,
-        fingerprint: preview.fingerprint,
-        key: "revoked",
-      }),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: preview.id,
+          fingerprint: preview.fingerprint,
+          key: "revoked",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "accessDenied" });
-    await expect(db.store.assignPool(w.actor, [w.pool], w.agent)).rejects.toMatchObject({
+    await expect(
+      db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
       code: "accessDenied",
     });
     await db.rows("UPDATE users SET role='teamLead' WHERE id=$1", [w.actor.userId]);
     await db.rows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
-    await expect(db.store.assignPool(w.actor, [w.pool], w.agent)).rejects.toMatchObject({
+    await expect(
+      db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
       code: "accessDenied",
     });
   });
@@ -401,22 +472,34 @@ test("a replay returns only the first result after scope and role change", async
     excludePreviousOwner: false,
   });
   const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "moved" };
-  const first = await db.store.submitDistribution(w.actor, input);
-  await db.store.reassignLead(manager, w.pool, w.other);
+  const first = await db.store.submitDistribution(
+    w.actor,
+    input,
+    "00000000-0000-4000-8000-000000000001",
+  );
+  await db.store.reassignLead(manager, w.pool, w.other, "00000000-0000-4000-8000-000000000001");
   await db.rows("UPDATE users SET role='accountant' WHERE id=$1", [w.actor.userId]);
-  expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+  expect(
+    await db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+  ).toEqual(first);
   expect(await auditCount(db)).toEqual([{ activities: 2, audit: 2, distributions: 1 }]);
-  await expect(db.store.submitDistribution(manager, input)).rejects.toMatchObject({
+  await expect(
+    db.store.submitDistribution(manager, input, "00000000-0000-4000-8000-000000000001"),
+  ).rejects.toMatchObject({
     code: "stalePreview",
   });
   await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
-  expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+  expect(
+    await db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+  ).toEqual(first);
 });
 
 test("foreign target membership and non-membership have the same refusal", async ({ db }) => {
   const w = await world(db, "teamLead");
   for (const to of [w.other, { ownerId: w.agent.ownerId, teamId: w.other.teamId }]) {
-    await expect(db.store.assignPool(w.actor, [w.pool], to)).rejects.toMatchObject({
+    await expect(
+      db.store.assignPool(w.actor, [w.pool], to, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
       code: "accessDenied",
     });
   }
@@ -434,7 +517,14 @@ test("lead lists reload the current role and membership", async ({ db }) => {
 test("reassigning the current owner reports no change and writes no history", async ({ db }) => {
   const w = await world(db);
   const before = await db.rows("SELECT version FROM leads WHERE id=$1", [w.teammate]);
-  expect(await db.store.reassignLead(w.actor, w.teammate, w.agent)).toEqual({
+  expect(
+    await db.store.reassignLead(
+      w.actor,
+      w.teammate,
+      w.agent,
+      "00000000-0000-4000-8000-000000000001",
+    ),
+  ).toEqual({
     items: [],
     changed: false,
   });
@@ -481,11 +571,15 @@ test("another manager cannot submit someone else's preview", async ({ db }) => {
     excludePreviousOwner: false,
   });
   await expect(
-    db.store.submitDistribution(other, {
-      previewId: preview.id,
-      fingerprint: preview.fingerprint,
-      key: "stolen",
-    }),
+    db.store.submitDistribution(
+      other,
+      {
+        previewId: preview.id,
+        fingerprint: preview.fingerprint,
+        key: "stolen",
+      },
+      "00000000-0000-4000-8000-000000000001",
+    ),
   ).rejects.toMatchObject({ code: "stalePreview" });
   expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
 });
@@ -493,7 +587,12 @@ test("another manager cannot submit someone else's preview", async ({ db }) => {
 test("assignment refuses a sales member whose current role is not agent", async ({ db }) => {
   const w = await world(db);
   await expect(
-    db.store.assignPool(w.actor, [w.pool], { ownerId: w.actor.userId, teamId: w.agent.teamId }),
+    db.store.assignPool(
+      w.actor,
+      [w.pool],
+      { ownerId: w.actor.userId, teamId: w.agent.teamId },
+      "00000000-0000-4000-8000-000000000001",
+    ),
   ).rejects.toMatchObject({ code: "invalidAgent" });
 });
 
@@ -505,7 +604,12 @@ test("assignment refuses an agent in an accounts team", async ({ db }) => {
     teamId,
   ]);
   await expect(
-    db.store.assignPool(w.actor, [w.pool], { ownerId: w.agent.ownerId, teamId }),
+    db.store.assignPool(
+      w.actor,
+      [w.pool],
+      { ownerId: w.agent.ownerId, teamId },
+      "00000000-0000-4000-8000-000000000001",
+    ),
   ).rejects.toMatchObject({ code: "invalidAgent" });
 });
 

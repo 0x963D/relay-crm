@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   PaymentId,
   SANDBOX_MODES,
@@ -20,6 +21,7 @@ import { boundedRequest } from "./http.ts";
 import { reportFailure } from "./errors.ts";
 
 export interface RpcContext {
+  readonly requestId?: string;
   readonly store: Store;
   readonly payments?: { readonly provider: PaymentProvider; readonly firstCheckMs: number } | null;
   readonly principal: SessionPrincipal | null;
@@ -45,7 +47,12 @@ const authenticated = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.principal) throw new TRPCError({ code: "UNAUTHORIZED" });
   try {
     const result = await next({
-      ctx: { ...ctx, principal: ctx.principal, actor: ctx.principal.actor },
+      ctx: {
+        ...ctx,
+        principal: ctx.principal,
+        actor: ctx.principal.actor,
+        requestId: ctx.requestId ?? randomUUID(),
+      },
     });
     if (!result.ok && isAccessError(result.error.cause)) throw result.error.cause;
     return result;
@@ -98,7 +105,7 @@ export const appRouter = t.router({
           .strict(),
       )
       .mutation(({ ctx, input }) =>
-        ctx.store.closePaymentReview(ctx.actor, input.id, input.reason),
+        ctx.store.closePaymentReview(ctx.actor, input.id, input.reason, ctx.requestId),
       ),
     createCheckout: authenticated
       .input(
@@ -130,6 +137,7 @@ export const appRouter = t.router({
             mode: input.mode,
           },
           ctx.payments.firstCheckMs,
+          ctx.requestId,
         );
         const terms = await ctx.store.checkoutTerms(ctx.actor, created.id);
         return {
@@ -163,10 +171,14 @@ export const appRouter = t.router({
       ),
     assign: authenticated
       .input(z.object({ leadIds: LeadIds, to: Agent }).strict())
-      .mutation(({ ctx, input }) => ctx.store.assignPool(ctx.actor, input.leadIds, input.to)),
+      .mutation(({ ctx, input }) =>
+        ctx.store.assignPool(ctx.actor, input.leadIds, input.to, ctx.requestId),
+      ),
     reassign: authenticated
       .input(z.object({ leadId: LeadIdentifier, to: Agent }).strict())
-      .mutation(({ ctx, input }) => ctx.store.reassignLead(ctx.actor, input.leadId, input.to)),
+      .mutation(({ ctx, input }) =>
+        ctx.store.reassignLead(ctx.actor, input.leadId, input.to, ctx.requestId),
+      ),
   }),
   accounts: t.router({
     ledger: authenticated
@@ -201,7 +213,7 @@ export const appRouter = t.router({
           })
           .strict(),
       )
-      .mutation(({ ctx, input }) => ctx.store.submitDistribution(ctx.actor, input)),
+      .mutation(({ ctx, input }) => ctx.store.submitDistribution(ctx.actor, input, ctx.requestId)),
   }),
   session: t.router({
     current: authenticated.query(({ ctx }) => ctx.principal),
@@ -225,10 +237,13 @@ export async function handleRpc(
   if (request === null) return new Response(null, { status: 413 });
   if (request.method === "POST" && request.headers.get("origin") !== origin)
     return new Response(null, { status: 403 });
-  return fetchRequestHandler({
+  const requestId = randomUUID();
+  const response = await fetchRequestHandler({
     endpoint: "/api/trpc",
     req: request,
     router: appRouter,
-    createContext: context,
+    createContext: async () => ({ ...(await context()), requestId }),
   });
+  response.headers.set("x-request-id", requestId);
+  return response;
 }

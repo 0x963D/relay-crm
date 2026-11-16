@@ -112,6 +112,16 @@ describe("typed RPC", () => {
       "POST",
     );
     expect(assigned.status).toBe(200);
+    const requestId = assigned.headers.get("x-request-id");
+    expect(requestId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id])).toEqual([
+      { request_id: requestId },
+    ]);
+    expect(
+      await db.rows("SELECT detail->>'requestId' AS request_id FROM activities WHERE lead_id=$1", [
+        id,
+      ]),
+    ).toEqual([{ request_id: requestId }]);
     const stale = await rpc(
       context,
       "distribution.submit",

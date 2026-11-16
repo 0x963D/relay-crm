@@ -16,6 +16,7 @@ async function setup(db: TestDatabase) {
     actor,
     { key: randomUUID(), accountId, money, kind: "repeat", mode: "drop" },
     0,
+    "00000000-0000-4000-8000-000000000001",
   );
   const event = {
     eventId: randomUUID(),
@@ -96,13 +97,27 @@ test.for([
   });
   await db.store.receivePaymentWebhook({ ...event, eventId: randomUUID() });
   expect((await db.store.getPayment(manager, id)).state.status).toBe("needsReview");
-  await expect(db.store.closePaymentReview(actor, id, "Amount differed")).rejects.toMatchObject({
+  await expect(
+    db.store.closePaymentReview(
+      actor,
+      id,
+      "Amount differed",
+      "00000000-0000-4000-8000-000000000001",
+    ),
+  ).rejects.toMatchObject({
     code: "accessDenied",
   });
-  await expect(db.store.closePaymentReview(manager, id, " ")).rejects.toMatchObject({
+  await expect(
+    db.store.closePaymentReview(manager, id, " ", "00000000-0000-4000-8000-000000000001"),
+  ).rejects.toMatchObject({
     code: "conflict",
   });
-  await db.store.closePaymentReview(manager, id, "Provider disagreed with the checkout.");
+  await db.store.closePaymentReview(
+    manager,
+    id,
+    "Provider disagreed with the checkout.",
+    "00000000-0000-4000-8000-000000000001",
+  );
   await db.store.receivePaymentWebhook({ ...event, eventId: randomUUID() });
   expect((await db.store.getPayment(manager, id)).state.status).toBe("failed");
   expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
@@ -132,6 +147,7 @@ test("scope hides other accounts and all ledger lines from agents", async ({ db 
       other,
       { key: "foreign", accountId, money, kind: "first", mode: "normal" },
       0,
+      "00000000-0000-4000-8000-000000000001",
     ),
   ).rejects.toMatchObject({ code: "accessDenied" });
 });
@@ -139,10 +155,22 @@ test("scope hides other accounts and all ledger lines from agents", async ({ db 
 test("checkout request receipts replay and refuse changed input", async ({ db }) => {
   const { actor, accountId } = await setup(db);
   const input = { key: "checkout", accountId, money, kind: "first", mode: "normal" } as const;
-  const first = await db.store.createPayment(actor, input, 0);
-  expect(await db.store.createPayment(actor, input, 0)).toEqual(first);
+  const first = await db.store.createPayment(
+    actor,
+    input,
+    0,
+    "00000000-0000-4000-8000-000000000001",
+  );
+  expect(
+    await db.store.createPayment(actor, input, 0, "00000000-0000-4000-8000-000000000001"),
+  ).toEqual(first);
   await expect(
-    db.store.createPayment(actor, { ...input, money: { ...money, minor: 1n } }, 0),
+    db.store.createPayment(
+      actor,
+      { ...input, money: { ...money, minor: 1n } },
+      0,
+      "00000000-0000-4000-8000-000000000001",
+    ),
   ).rejects.toMatchObject({ code: "idempotencyConflict" });
 });
 
@@ -170,6 +198,7 @@ test("the database refuses second postings, unbalanced postings and ledger mutat
     actor,
     { key: "second", accountId, money, kind: "repeat", mode: "drop" },
     0,
+    "00000000-0000-4000-8000-000000000001",
   );
   const transaction = randomUUID();
   await db.rows("BEGIN");

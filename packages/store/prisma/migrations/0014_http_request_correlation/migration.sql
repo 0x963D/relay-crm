@@ -1,0 +1,1 @@
+ALTER TABLE audit_log DROP CONSTRAINT audit_request_matches_receipt;

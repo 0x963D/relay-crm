@@ -66,17 +66,25 @@ describe("distribution idempotency", () => {
       agents: [w.agent2],
       excludePreviousOwner: false,
     });
-    const first = await db.store.submitDistribution(w.actor, {
-      previewId: p1.id,
-      fingerprint: p1.fingerprint,
-      key: "k",
-    });
-    await expect(
-      db.store.submitDistribution(w.actor, {
-        previewId: p2.id,
-        fingerprint: p2.fingerprint,
+    const first = await db.store.submitDistribution(
+      w.actor,
+      {
+        previewId: p1.id,
+        fingerprint: p1.fingerprint,
         key: "k",
-      }),
+      },
+      "00000000-0000-4000-8000-000000000001",
+    );
+    await expect(
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p2.id,
+          fingerprint: p2.fingerprint,
+          key: "k",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "idempotencyConflict" });
     expect(first.items).toHaveLength(1);
     expect(await db.rows("SELECT status FROM leads WHERE id=$1", [b])).toEqual([{ status: "new" }]);
@@ -94,9 +102,17 @@ describe("distribution idempotency", () => {
       excludePreviousOwner: false,
     });
     const input = { previewId: p.id, fingerprint: p.fingerprint, key: "k" };
-    const first = await db.store.submitDistribution(w.actor, input);
-    await db.store.reassignLead(manager, a, w.other);
-    const replay = db.store.submitDistribution(w.actor, input);
+    const first = await db.store.submitDistribution(
+      w.actor,
+      input,
+      "00000000-0000-4000-8000-000000000001",
+    );
+    await db.store.reassignLead(manager, a, w.other, "00000000-0000-4000-8000-000000000001");
+    const replay = db.store.submitDistribution(
+      w.actor,
+      input,
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(await replay).toEqual(first);
     expect(first.items).toHaveLength(1);
   });
@@ -110,9 +126,15 @@ describe("distribution idempotency", () => {
       excludePreviousOwner: false,
     });
     const input = { previewId: p.id, fingerprint: p.fingerprint, key: "k" };
-    const first = await db.store.submitDistribution(w.actor, input);
-    await db.store.reassignLead(w.actor, a, w.agent2);
-    expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+    const first = await db.store.submitDistribution(
+      w.actor,
+      input,
+      "00000000-0000-4000-8000-000000000001",
+    );
+    await db.store.reassignLead(w.actor, a, w.agent2, "00000000-0000-4000-8000-000000000001");
+    expect(
+      await db.store.submitDistribution(w.actor, input, "00000000-0000-4000-8000-000000000001"),
+    ).toEqual(first);
     expect(await counts(db)).toEqual([{ activities: 2, audit: 2, distributions: 1 }]);
   });
 });
@@ -136,16 +158,24 @@ describe("distribution races", () => {
       excludePreviousOwner: false,
     });
     const results = await race(db, 2, () => [
-      db.store.submitDistribution(w.actor, {
-        previewId: p1.id,
-        fingerprint: p1.fingerprint,
-        key: "1",
-      }),
-      db.store.submitDistribution(w.actor, {
-        previewId: p2.id,
-        fingerprint: p2.fingerprint,
-        key: "2",
-      }),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p1.id,
+          fingerprint: p1.fingerprint,
+          key: "1",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p2.id,
+          fingerprint: p2.fingerprint,
+          key: "2",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     const rejected = results.find((r) => r.status === "rejected");
@@ -166,16 +196,24 @@ describe("distribution races", () => {
       excludePreviousOwner: false,
     });
     const results = await race(db, 2, () => [
-      db.store.submitDistribution(w.actor, {
-        previewId: p.id,
-        fingerprint: p.fingerprint,
-        key: "x",
-      }),
-      db.store.submitDistribution(w.actor, {
-        previewId: p.id,
-        fingerprint: p.fingerprint,
-        key: "y",
-      }),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p.id,
+          fingerprint: p.fingerprint,
+          key: "x",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p.id,
+          fingerprint: p.fingerprint,
+          key: "y",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect(await counts(db)).toEqual([{ activities: 1, audit: 1, distributions: 1 }]);
@@ -190,12 +228,16 @@ describe("distribution races", () => {
       excludePreviousOwner: false,
     });
     const results = await race(db, 2, () => [
-      db.store.submitDistribution(w.actor, {
-        previewId: p.id,
-        fingerprint: p.fingerprint,
-        key: "x",
-      }),
-      db.store.assignPool(w.actor, [a], w.agent2),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p.id,
+          fingerprint: p.fingerprint,
+          key: "x",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
+      db.store.assignPool(w.actor, [a], w.agent2, "00000000-0000-4000-8000-000000000001"),
     ]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     const rows = await counts(db);
@@ -213,11 +255,15 @@ describe("distribution races", () => {
       excludePreviousOwner: false,
     });
     const results = await race(db, 2, () => [
-      db.store.submitDistribution(w.actor, {
-        previewId: p.id,
-        fingerprint: p.fingerprint,
-        key: "x",
-      }),
+      db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p.id,
+          fingerprint: p.fingerprint,
+          key: "x",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
       db.store.intake(submissionExample({ email: "a@example.com", externalId: "race-1" })),
     ]);
     expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
@@ -238,11 +284,15 @@ describe("distribution races", () => {
     await client.connect();
     try {
       await db.gate.close();
-      const submit = db.store.submitDistribution(w.actor, {
-        previewId: p.id,
-        fingerprint: p.fingerprint,
-        key: "x",
-      });
+      const submit = db.store.submitDistribution(
+        w.actor,
+        {
+          previewId: p.id,
+          fingerprint: p.fingerprint,
+          key: "x",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      );
       await db.gate.waitForWaiters(1);
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await client.query("UPDATE users SET role='manager' WHERE id=$1", [w.agent.ownerId]);
@@ -284,11 +334,18 @@ describe("scoped records", () => {
   test("foreign team membership and non-membership return the same refusal", async ({ db }) => {
     const w = await world(db, "teamLead");
     const a = await w.pool("a@example.com");
-    await expect(db.store.assignPool(w.actor, [a], w.other)).rejects.toMatchObject({
+    await expect(
+      db.store.assignPool(w.actor, [a], w.other, "00000000-0000-4000-8000-000000000001"),
+    ).rejects.toMatchObject({
       code: "accessDenied",
     });
     await expect(
-      db.store.assignPool(w.actor, [a], { ownerId: w.agent.ownerId, teamId: w.otherTeamId }),
+      db.store.assignPool(
+        w.actor,
+        [a],
+        { ownerId: w.agent.ownerId, teamId: w.otherTeamId },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "accessDenied" });
   });
 
@@ -297,9 +354,10 @@ describe("scoped records", () => {
     const a = await w.pool("a@example.com");
     const noTeam: Actor = { ...w.actor, team: null };
     expect((await db.store.listLeads(noTeam, { limit: 100 })).map((lead) => lead.id)).toEqual([a]);
-    expect((await db.store.assignPool(noTeam, [a], w.agent)).items).toEqual([
-      { leadId: a, to: w.agent },
-    ]);
+    expect(
+      (await db.store.assignPool(noTeam, [a], w.agent, "00000000-0000-4000-8000-000000000001"))
+        .items,
+    ).toEqual([{ leadId: a, to: w.agent }]);
   });
 
   test("listLeads reloads the current role", async ({ db }) => {
@@ -327,11 +385,15 @@ describe("scoped records", () => {
       team: { id: w.otherTeamId, kind: "sales", isLead: true },
     };
     await expect(
-      db.store.submitDistribution(switched, {
-        previewId: p.id,
-        fingerprint: p.fingerprint,
-        key: "k",
-      }),
+      db.store.submitDistribution(
+        switched,
+        {
+          previewId: p.id,
+          fingerprint: p.fingerprint,
+          key: "k",
+        },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "accessDenied" });
   });
 
@@ -339,10 +401,20 @@ describe("scoped records", () => {
     const w = await world(db, "teamLead");
     const a = await w.pool("a@example.com");
     await expect(
-      db.store.assignPool(w.actor, [a], { ownerId: w.actor.userId, teamId: w.teamId }),
+      db.store.assignPool(
+        w.actor,
+        [a],
+        { ownerId: w.actor.userId, teamId: w.teamId },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "invalidAgent" });
     await expect(
-      db.store.assignPool(w.actor, [a], { ownerId: await db.seedUser("agent"), teamId: w.teamId }),
+      db.store.assignPool(
+        w.actor,
+        [a],
+        { ownerId: await db.seedUser("agent"), teamId: w.teamId },
+        "00000000-0000-4000-8000-000000000001",
+      ),
     ).rejects.toMatchObject({ code: "invalidAgent" });
   });
 });

@@ -18,11 +18,15 @@ test("distribution stores its receipt in the shared user key scope", async ({ db
     agents: [{ ownerId, teamId }],
     excludePreviousOwner: false,
   });
-  const result = await db.store.submitDistribution(actor, {
-    previewId: preview.id,
-    fingerprint: preview.fingerprint,
-    key: "one",
-  });
+  const result = await db.store.submitDistribution(
+    actor,
+    {
+      previewId: preview.id,
+      fingerprint: preview.fingerprint,
+      key: "one",
+    },
+    "00000000-0000-4000-8000-000000000001",
+  );
   expect(await db.rows("SELECT scope,key,operation,result FROM idempotency_records")).toEqual([
     { scope: `user:${actor.userId}`, key: "one", operation: "distribution.submit", result },
   ]);
@@ -137,19 +141,19 @@ test("assignment audit stores JSON snapshots, a typed subject and its idempotenc
     excludePreviousOwner: false,
   });
   const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "audit" };
-  await db.store.submitDistribution(actor, input);
+  await db.store.submitDistribution(actor, input, "00000000-0000-4000-8000-000000000001");
   const [audit] = await db.rows("SELECT before,after FROM audit_log");
   expect(audit?.before).toEqual({
     lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
   });
   expect(
     await db.rows(
-      "SELECT a.subject_type,a.subject_id,a.request_id=i.id AS request_matches,a.idempotency_id=i.id AS receipt_matches FROM audit_log a JOIN idempotency_records i ON a.idempotency_id=i.id",
+      "SELECT a.subject_type,a.subject_id,a.request_id='00000000-0000-4000-8000-000000000001'::uuid AS request_matches,a.idempotency_id=i.id AS receipt_matches FROM audit_log a JOIN idempotency_records i ON a.idempotency_id=i.id",
     ),
   ).toEqual([
     { subject_type: "lead", subject_id: leadId, request_matches: true, receipt_matches: true },
   ]);
-  await db.store.submitDistribution(actor, input);
+  await db.store.submitDistribution(actor, input, "00000000-0000-4000-8000-000000000001");
   expect(await db.rows("SELECT count(*)::int AS count FROM audit_log")).toEqual([{ count: 1 }]);
 });
 
