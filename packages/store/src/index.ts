@@ -16,7 +16,7 @@ import type {
   DistributionRequest,
 } from "@relay/domain";
 import { intakeWith } from "./intake.ts";
-import { listLeads, type LeadListItem } from "./leads.ts";
+import { listLeads, leadPool, queueAgents, type LeadListItem } from "./leads.ts";
 import { listAccounts, getAccount } from "./accounts.ts";
 import {
   authenticationDatabase,
@@ -24,6 +24,7 @@ import {
   initialSessionTeam,
   selectTeam,
   ensureDevelopmentActor,
+  sessionProfile,
 } from "./auth.ts";
 import {
   editLead,
@@ -83,6 +84,9 @@ export function openStore(config: {
 }) {
   const db = connect(config.connectionString, config.clock, config.connection);
   return {
+    sessionProfile: (actor: Actor) => sessionProfile(db, actor),
+    leadPool: (actor: Actor, page: { limit: number; offset: number }) => leadPool(db, actor, page),
+    queueAgents: (actor: Actor, offset: number) => queueAgents(db, actor, offset),
     demoPerson: (role: DemoRole) => demoPerson(db, role),
     demoReady: () => demoReady(db),
     databaseReady: () => databaseReady(db),
@@ -165,6 +169,7 @@ export function openStore(config: {
         readonly at: Date;
         readonly timeZone: string;
         readonly limit: number;
+        readonly offset?: number;
       },
     ) => workQueue(db, actor, input),
     campaignFunnel: (actor: Actor) => campaignFunnel(db, actor),

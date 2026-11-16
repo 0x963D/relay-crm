@@ -319,6 +319,7 @@ export async function workQueue(
     readonly at: Date;
     readonly timeZone: string;
     readonly limit: number;
+    readonly offset?: number;
   },
 ) {
   return transact(db, async (tx) => {
@@ -364,11 +365,17 @@ export async function workQueue(
         b.id.localeCompare(a.id),
     );
     return {
-      noCallbackSet: groups.noCallbackSet.slice(0, input.limit),
-      later: groups.later.slice(0, input.limit),
-      overdueCallbacks: groups.overdueCallbacks.slice(0, input.limit),
-      dueToday: groups.dueToday.slice(0, input.limit),
-      notYetCalled: groups.notYetCalled.slice(0, input.limit),
+      noCallbackSet: groups.noCallbackSet.slice(
+        input.offset ?? 0,
+        (input.offset ?? 0) + input.limit,
+      ),
+      later: groups.later.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit),
+      overdueCallbacks: groups.overdueCallbacks.slice(
+        input.offset ?? 0,
+        (input.offset ?? 0) + input.limit,
+      ),
+      dueToday: groups.dueToday.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit),
+      notYetCalled: groups.notYetCalled.slice(input.offset ?? 0, (input.offset ?? 0) + input.limit),
       counts: {
         overdueCallbacks: groups.overdueCallbacks.length,
         noCallbackSet: groups.noCallbackSet.length,

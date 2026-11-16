@@ -3,13 +3,14 @@ import {
   scopeAdmits,
   recordScope,
   type Actor,
-  type UserId,
+  UserId,
   type EmailAddress,
   type IntakeSource,
   type Lead,
   type LeadLifecycle,
   type SystemPrincipal,
   type RecordAccess,
+  TeamId,
 } from "@relay/domain";
 import { currentActor } from "./auth.ts";
 import { scopeWhere } from "./scope.ts";
@@ -20,6 +21,82 @@ import { AccessError } from "./errors.ts";
 export interface LeadListItem extends Lead {
   /** From the ledger row that created the lead. null for a lead no intake created. */
   readonly origin: { readonly source: IntakeSource; readonly campaign: string | null } | null;
+}
+
+export async function leadPool(db: Db, actor: Actor, page: { limit: number; offset: number }) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const scope = recordScope(current, "lead", "assign");
+    if (scope.kind === "none") throw new AccessError("accessDenied");
+    const where = { status: "new" as const, AND: scopeWhere(scope) };
+    const rows = await tx.lead.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: page.limit,
+      skip: page.offset,
+      include: {
+        previousOwner: { select: { id: true, name: true } },
+        intakeEvents: {
+          where: { outcome: "leadCreated" },
+          select: { source: true, campaign: true },
+          take: 1,
+        },
+      },
+    });
+    return {
+      total: await tx.lead.count({ where }),
+      rows: rows.map((row) => ({
+        ...leadFromRow(row, row.intakeEvents[0]?.source),
+        origin: row.intakeEvents[0] ?? null,
+        previousOwner: row.previousOwner,
+      })),
+    };
+  });
+}
+
+export async function queueAgents(db: Db, actor: Actor, offset: number) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const scope = recordScope(current, "lead", "read");
+    if (scope.kind === "none") throw new AccessError("accessDenied");
+    const members = await tx.membership.findMany({
+      where: {
+        user: { role: "agent" },
+        team: { kind: "sales" },
+        ...(scope.kind === "own" ? { userId: scope.userId } : {}),
+        ...(scope.kind === "team" || scope.kind === "teamAndPool" ? { teamId: scope.teamId } : {}),
+      },
+      orderBy: [{ user: { name: "asc" } }, { userId: "asc" }, { teamId: "asc" }],
+      take: 100,
+      skip: offset,
+      include: { user: { select: { name: true } }, team: { select: { name: true } } },
+    });
+    const admitted = members.filter((member) => {
+      const ownerId = UserId.parse(member.userId);
+      const teamId = TeamId.parse(member.teamId);
+      return ownerId !== null && teamId !== null && scopeAdmits(scope, { ownerId, teamId });
+    });
+    return Promise.all(
+      admitted.map(async (member) => {
+        const ownerId = UserId.parse(member.userId);
+        const teamId = TeamId.parse(member.teamId);
+        if (!ownerId || !teamId) throw new InvariantError("Invalid agent membership");
+        return {
+          ownerId,
+          teamId,
+          name: member.user.name,
+          team: member.team.name,
+          openCount: await tx.lead.count({
+            where: {
+              ownerId,
+              status: { in: ["assigned", "working"] },
+              AND: scopeWhere(scope),
+            },
+          }),
+        };
+      }),
+    );
+  });
 }
 
 export async function listLeads(

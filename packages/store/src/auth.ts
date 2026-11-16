@@ -34,6 +34,17 @@ export async function currentActor(
   };
 }
 
+export async function sessionProfile(db: Db, actor: Actor) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const user = await tx.user.findUniqueOrThrow({
+      where: { id: current.userId },
+      select: { name: true },
+    });
+    return { ...current, name: user.name };
+  });
+}
+
 export async function initialSessionTeam(db: Db, value: string): Promise<TeamId | null> {
   const userId = UserId.parse(value);
   if (!userId) throw new AccessError("accessDenied");

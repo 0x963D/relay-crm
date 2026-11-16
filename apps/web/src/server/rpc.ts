@@ -307,12 +307,23 @@ export const appRouter = t.router({
     funnel: authenticated.query(({ ctx }) => ctx.store.campaignFunnel(ctx.actor)),
   }),
   leads: t.router({
+    pool: authenticated
+      .input(
+        z
+          .object({ limit: z.int().min(1).max(100).default(14), offset: z.int().min(0).default(0) })
+          .strict(),
+      )
+      .query(({ ctx, input }) => ctx.store.leadPool(ctx.actor, input)),
+    agents: authenticated
+      .input(z.object({ offset: z.int().min(0).default(0) }).strict())
+      .query(({ ctx, input }) => ctx.store.queueAgents(ctx.actor, input.offset)),
     queue: authenticated
       .input(
         z
           .object({
             agentId: identifier(UserId).optional(),
             limit: z.int().min(1).max(100).default(100),
+            offset: z.int().min(0).default(0),
           })
           .strict(),
       )
@@ -320,6 +331,7 @@ export const appRouter = t.router({
         ctx.store.workQueue(ctx.actor, {
           agentId: input.agentId ?? ctx.actor.userId,
           limit: input.limit,
+          offset: input.offset,
           at: new Date(),
           timeZone: ctx.timeZone ?? "UTC",
         }),
@@ -433,6 +445,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ctx.store.submitDistribution(ctx.actor, input, ctx.requestId)),
   }),
   session: t.router({
+    profile: authenticated.query(({ ctx }) => ctx.store.sessionProfile(ctx.actor)),
     current: authenticated.query(({ ctx }) => ctx.principal),
     selectTeam: authenticated
       .input(z.object({ teamId: identifier(TeamId).nullable() }).strict())
