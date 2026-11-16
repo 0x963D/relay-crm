@@ -5,65 +5,140 @@ It is a local build. Nothing has been published. The name is a working title.
 
 ## Run the demo
 
-With Docker and Docker Compose installed, run this command in the repository.
+Install Docker and Docker Compose, then run this command in the repository.
 
 ```sh
 docker compose up
 ```
 
-Open the app at <http://127.0.0.1:3107> and the mail inbox at <http://127.0.0.1:8127>.
-Run `docker compose config` to inspect those ports and the services. Both published ports bind to loopback.
-The database has no published port.
+Wait until `docker compose ps` shows `app` as healthy. `GET /api/health` returns an empty 200
+response when migrations and the seed are ready. During setup or a reset it returns 503.
+Open the app at <http://127.0.0.1:3107> and the inbox at <http://127.0.0.1:8127>.
+These are the only published ports. Both bind to loopback, and the database has no published port.
+`docker compose config` prints the effective ports and service configuration.
 
-The invented company is Tidewell Language School. The shared logins are Priya Raman, manager,
-Dele Akinwale, agent, and Esther Okafor, accountant. The journey screens and role-switching buttons
-are separate work. The current app has a lead-list scaffold and the backend APIs.
-Start a demo session with `POST /api/auth/demo` and a JSON body such as `{"role":"agent"}`.
-Send the app's origin in the `Origin` header and keep the returned session cookie.
-The response includes the available roles. Emailed-code sign-in works alongside demo sign-in.
+To run another copy, choose a different project name and free ports. In a POSIX shell, for example,
+run `COMPOSE_PROJECT_NAME=relay-second RELAY_HTTP_PORT=3117 RELAY_INBOX_PORT=8137 docker compose up`.
+Use the same variables with later Compose commands. `RELAY_TIME_ZONE` selects the local day for
+callbacks and reset, and defaults to UTC.
 
-The data is invented and is reset every night.
+The invented company is Tidewell Language School. The first page offers plain sign-in buttons for
+Priya Raman, manager, Dele Akinwale, agent, and Esther Okafor, accountant. Each starts a session and
+opens the lead list. The current interface is an unstyled scaffold. Journey screens are separate work.
+Emailed-code sign-in works alongside demo sign-in. Outside demo mode, the first page offers the
+emailed-code forms.
+
+The data is invented and resets at the start of the next local day.
 The demo's logins are shared, so one visitor can give a manual payment both approvals.
 The demo's inbox keeps every message, and anyone who can open it can sign in by emailed code as any of the invented staff.
 The demo checks card payments more often than a production setup would, and payment API reads return its configured first-check delay and interval.
-The demo sends mail only to its own inbox, and a hosted demo must point SMTP at a sink it controls.
-The public form stores any submitted email as a lead and can reopen a lost lead.
+The public form stores a submitted email as a lead and can reopen a lost lead.
 A visitor can leave data changed until the next reset.
 
-Compose generates private configuration files in separate volumes on first start. The resetter
-applies migrations and restores the invented state through `relay_owner`. It waits until the start
-of the next day in `RELAY_TIME_ZONE` and repeats. The app serves through `relay_app` and waits for
-the seed marker to be ready. The app and scheduler never receive the owner's credentials.
-The scheduler calls reconciliation and the outbox each minute.
-`pnpm demo:check <evidence-directory> --cold` starts the command above, checks the production HTTP
-journeys, prints `QUICKSTART.wallMs`, and removes its containers and volumes. With `--cold`, it also removes the project images it created.
-Choose a fresh `COMPOSE_PROJECT_NAME` for a cold check. It refuses to delete a pre-existing image.
-Its timer includes the application build, migrations, seed, readiness, role sign-ins and API reads.
-Base images and the build cache may already be present. The check also proves scheduled recovery of
-a dropped webhook, inbox delivery, and reset through HTTP.
+Compose creates private configuration files in separate volumes. The resetter holds the owner
+connection, applies migrations, recovers an interrupted seed and restores the demo each local day.
+The app connects as `relay_app`; the app and scheduler never receive the owner's credentials.
+The scheduler calls reconciliation and the outbox through their authenticated HTTP routes.
+The inbox retains mail across database resets. `docker compose down --volumes` removes the
+project's containers and volumes, including that inbox.
 
-Stop and remove the local demo with `docker compose down --volumes`.
-To restore it while it runs, use
+To restore a running demo, run
 `docker compose exec -T resetter node --import tsx apps/web/scripts/demo-reset.ts --container`.
-For a separately configured local database, `pnpm db:seed` requires the owner and app URLs and an SMTP
-sink. Repeating it on a seeded database reports that nothing changed. `pnpm demo:reset` also requires
-`RELAY_DEMO=1` and the seed's owner-only marker. It ends every session and rebuilds the invented
-history through ordinary store operations. A failed seed can be recovered with that reset.
+It ends every session. For a separately configured local database, `pnpm db:seed` requires the
+owner and app URLs and an SMTP sink. Repeating it on a ready seed changes nothing.
+`pnpm demo:reset` uses the owner connection and requires `RELAY_DEMO=1` and the owner-only marker.
+A marker left at `building` makes startup restore the seed before serving requests.
 
-The seed uses the board's people, courses and amounts. It combines alternate payment stories into
-one history, so list counts need not match a single board frame. Callback dates use the supplied seed time in the configured time zone. Receipt failures and unknown delivery are invented delivery outcomes;
-successful seed receipts go to the configured SMTP sink. Leila's receipt uses an explicit demo
-email suppression because intake requires an email address.
+### First-run measurements
 
-For a hosted demo, set `RELAY_DEMO=1`, `RELAY_SANDBOX=1`, `AUTH_URL`, `RELAY_SANDBOX_URL`, `DATABASE_URL`,
-`SMTP_URL`, `SMTP_FROM`, `RELAY_TIME_ZONE`, and the exact `RELAY_TRUSTED_PROXY_COUNT` for its proxy.
-Generate distinct `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`, `RELAY_RECONCILE_SECRET`,
-`RELAY_OUTBOX_SECRET`. Set the reconciliation delays for its scheduler.
-Keep `MIGRATION_DATABASE_URL` in a separate maintenance process. Run migrations and `pnpm demo:reset`
-there. Schedule the reconcile and outbox routes. Disable public intake with `RELAY_PUBLIC_FORM=0`
-if visitors must not submit addresses. `pnpm test -- apps/web/test/env.test.ts` checks the settings
-and secret rules. `pnpm test:prod` proves the demo route is disabled without the demo flag in a
-production build. Nothing in this repository deploys or publishes the demo.
+One fresh-clone run took **130395 ms**, measured by `pnpm demo:check ../relay-demo-evidence --cold`.
+Its timer starts at `docker compose up` and ends after readiness, role sign-ins and the initial
+queue, payment and ledger reads. Service base images were already present. The application build
+cache was empty in a dedicated builder. The same check then proved scheduled webhook recovery,
+SMTP receipt delivery and an owner-side reset. This is one run on one machine, not a timing guarantee.
+The check requires the development dependencies from `pnpm install --frozen-lockfile`.
+
+That run reported these uncompressed image sizes.
+
+| Image                            |      Bytes |
+| -------------------------------- | ---------: |
+| App                              |  404629766 |
+| Maintenance                      | 2286066981 |
+| All five required images, summed | 3704790198 |
+
+The maintenance image retains the migration and seed tools. The app contains standalone output
+and runs as `node`. The sum counts shared image layers more than once. The dedicated build cache
+reported another **2.358 GB**; database and inbox volumes are additional. These figures describe
+Docker's reported image and cache sizes, rather than an exact increase in host disk use.
+
+To repeat the timing with an empty application build cache, choose fresh builder and project names.
+
+```sh
+docker buildx create --name relay-measure-builder --driver docker-container
+BUILDX_BUILDER=relay-measure-builder COMPOSE_PROJECT_NAME=relay-measure pnpm demo:check ../relay-demo-evidence --cold
+```
+
+In another terminal, while that check's project is up, these commands report the app and maintenance
+sizes, the sum of all distinct project images, and the dedicated cache size.
+
+```sh
+export COMPOSE_PROJECT_NAME=relay-measure
+docker image inspect "${COMPOSE_PROJECT_NAME}-app:local" "${COMPOSE_PROJECT_NAME}-maintenance:local" --format '{{index .RepoTags 0}} {{.Size}}'
+docker image inspect $(docker compose images -q | sort -u) --format '{{.Size}}' | node -e 'let text=""; process.stdin.on("data", chunk => text += chunk).on("end", () => console.log(text.trim().split(/\s+/).reduce((sum, size) => sum + Number(size), 0)))'
+docker buildx du --builder relay-measure-builder
+```
+
+`--cold` requires absent project images. It refuses to remove a pre-existing image. The check
+removes its containers and volumes, and with `--cold` removes only the project images it created.
+It does not clear Docker's shared build cache. Remove a dedicated measurement builder with
+`docker buildx rm relay-measure-builder` when finished.
+
+### Read the API
+
+These three POSIX-shell commands use curl and Node.js. The first signs in as a manager and saves a
+local cookie file. The second reads Dele's queue. The third finds Jonas's account and reads its
+ledger, so it does not rely on an account ID that changes after reset. If you changed the app port,
+set `RELAY_ORIGIN` to that app URL before running them.
+
+```sh
+(umask 077; curl -fsS -c relay-demo.cookies \
+  -H "Origin: ${RELAY_ORIGIN:-http://127.0.0.1:3107}" \
+  -H 'Content-Type: application/json' \
+  --data '{"role":"manager"}' \
+  "${RELAY_ORIGIN:-http://127.0.0.1:3107}/api/auth/demo")
+```
+
+```sh
+curl -fsS -b relay-demo.cookies --get \
+  --data-urlencode 'input={"json":{"agentId":"00000000-0000-7000-8000-000000000102"}}' \
+  "${RELAY_ORIGIN:-http://127.0.0.1:3107}/api/trpc/leads.queue"
+```
+
+```sh
+curl -fsS -b relay-demo.cookies --get \
+  --data-urlencode "input={\"json\":{\"id\":\"$(curl -fsS -b relay-demo.cookies --get \
+    --data-urlencode 'input={"json":{}}' \
+    "${RELAY_ORIGIN:-http://127.0.0.1:3107}/api/trpc/accounts.list" | \
+    node -pe 'JSON.parse(require("node:fs").readFileSync(0,"utf8")).result.data.json.items.find(a => a.person?.name === "Jonas Weber").id')\"}}" \
+  "${RELAY_ORIGIN:-http://127.0.0.1:3107}/api/trpc/accounts.ledger"
+```
+
+A tRPC read needs a URL-encoded `input` parameter containing the SuperJSON envelope `{"json":...}`.
+`--get --data-urlencode` performs that encoding, including braces and quotes. Sending the inner
+object alone is not equivalent. Responses also use SuperJSON, including metadata for dates and
+minor-unit bigint values. The manager session may read the queue and ledger; an agent session may
+read only its allowed queue and payments and has no ledger access.
+
+The seed follows the funnel's received, pool, contacted and won totals and keeps the board's named
+payment stories. Where frames disagree it combines stories, so payment and account lists can have
+more rows than one frame. History uses local working hours across the preceding fortnight.
+Receipt failures and unknown delivery are invented outcomes; successful receipts go to the SMTP
+sink. Leila's receipt uses explicit demo suppression because intake requires an email address.
+
+For a hosted demo, configure `RELAY_DEMO`, `RELAY_SANDBOX`, `AUTH_URL`, `RELAY_SANDBOX_URL`,
+`DATABASE_URL`, `SMTP_URL`, `SMTP_FROM`, `RELAY_TIME_ZONE` and the proxy count. Use distinct auth,
+webhook, reconcile and outbox secrets. Keep the owner connection in a separate maintenance process.
+Point SMTP at a controlled sink. Nothing in this repository publishes or deploys the demo.
 
 ## The money invariant
 
