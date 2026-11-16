@@ -132,6 +132,7 @@ export default defineConfig(
       "apps/web/src/server/env.ts",
       "apps/web/src/server/env-file.ts",
       "apps/web/test/production.prod.test.ts",
+      "apps/web/test/browser/paths.ts",
     ],
     rules: { "no-restricted-syntax": "off" },
   },
