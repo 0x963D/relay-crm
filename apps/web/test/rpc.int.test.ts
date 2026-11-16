@@ -117,9 +117,9 @@ describe("typed RPC", () => {
     expect(assigned.status).toBe(200);
     const requestId = assigned.headers.get("x-request-id");
     expect(requestId).toMatch(/^[a-f0-9-]{36}$/);
-    expect(await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id])).toEqual([
-      { request_id: requestId },
-    ]);
+    expect(
+      await db.ownerRows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id]),
+    ).toEqual([{ request_id: requestId }]);
     expect(
       await db.rows("SELECT detail->>'requestId' AS request_id FROM activities WHERE lead_id=$1", [
         id,
@@ -227,7 +227,7 @@ test("work endpoints parse commands, preserve callback dates and carry the HTTP 
   );
   expect(attempt.status).toBe(200);
   const requestId = attempt.headers.get("x-request-id");
-  expect(await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id])).toEqual([
+  expect(await db.ownerRows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id])).toEqual([
     { request_id: requestId },
   ]);
   expect(

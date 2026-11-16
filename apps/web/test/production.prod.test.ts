@@ -224,10 +224,12 @@ databaseTest(
         },
       ]);
       expect(
-        await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1 ORDER BY at,id", [id]),
+        await db.ownerRows("SELECT request_id FROM audit_log WHERE subject_id=$1 ORDER BY at,id", [
+          id,
+        ]),
       ).toHaveLength(requestIds.length);
       expect(
-        (await db.rows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id]))
+        (await db.ownerRows("SELECT request_id FROM audit_log WHERE subject_id=$1", [id]))
           .map((row) => row.request_id)
           .sort(),
       ).toEqual(requestIds.sort());

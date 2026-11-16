@@ -56,7 +56,7 @@ test("two different approvals collide and credit exactly once", async ({ db }) =
   expect(detail.approvals).toHaveLength(2);
   expect(detail.posting?.lines.map((l) => l.account.name)).toContain("Bank transfers and cash");
   expect((await db.store.accountLedger(w.a, w.accountId)).balances[0]?.balance).toBe(48000n);
-  expect(await db.rows("SELECT DISTINCT request_id FROM audit_log")).toEqual([
+  expect(await db.ownerRows("SELECT DISTINCT request_id FROM audit_log")).toEqual([
     { request_id: requestId },
   ]);
   expect(db.transactions.some((t) => t.attempts > 1)).toBe(true);

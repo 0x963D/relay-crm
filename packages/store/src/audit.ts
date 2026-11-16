@@ -33,7 +33,7 @@ export async function writeAudit(
     readonly at: Date;
   },
 ): Promise<void> {
-  await tx.auditLog.create({
+  await tx.auditLog.createMany({
     data: {
       ...auditActor(principal),
       action: event.action,

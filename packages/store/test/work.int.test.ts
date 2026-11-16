@@ -252,7 +252,7 @@ test("a work replay has one activity and audit with the acting user and request 
     ),
   ).toEqual([{ actor: w.agent.userId, request: requestId }]);
   expect(
-    await db.rows(
+    await db.ownerRows(
       "SELECT actor_id, request_id FROM audit_log WHERE subject_id=$1 AND action='leadWorked'",
       [id],
     ),

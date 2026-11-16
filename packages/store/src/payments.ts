@@ -802,15 +802,27 @@ export async function readAccountLedger(tx: Tx, accountId: AccountId) {
   const payments = await tx.payment.findMany({
     where: { id: { in: transactions.map((transaction) => transaction.paymentId) } },
   });
-  const audits = await tx.auditLog.findMany({
+  const approvals = await tx.paymentEvent.findMany({
     where: {
-      action: "ledgerPosted",
-      subjectType: "ledger",
-      subjectId: { in: transactions.map((transaction) => transaction.id) },
+      kind: "approved",
+      paymentId: { in: payments.map((payment) => payment.id) },
     },
+    orderBy: { sequence: "desc" },
   });
+  const finalApprovers = new Map<string, string>();
+  for (const event of approvals) {
+    const detail = event.detail;
+    if (
+      !finalApprovers.has(event.paymentId) &&
+      detail &&
+      typeof detail === "object" &&
+      !Array.isArray(detail) &&
+      typeof detail.actorId === "string"
+    )
+      finalApprovers.set(event.paymentId, detail.actorId);
+  }
   const approvers = await tx.user.findMany({
-    where: { id: { in: audits.flatMap((audit) => (audit.actorId ? [audit.actorId] : [])) } },
+    where: { id: { in: [...finalApprovers.values()] } },
     select: { id: true, name: true },
   });
   const ledgerPostings = await postings(
@@ -837,7 +849,7 @@ export async function readAccountLedger(tx: Tx, accountId: AccountId) {
       const state = stateOf(payment);
       if (state.status !== "completed")
         throw new InvariantError("A posting has no completed payment");
-      const actorId = audits.find((audit) => audit.subjectId === transaction.id)?.actorId;
+      const actorId = finalApprovers.get(payment.id);
       const completion =
         state.by === "manualApproval"
           ? {

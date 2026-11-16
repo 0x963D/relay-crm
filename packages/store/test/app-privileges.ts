@@ -1,7 +1,7 @@
 export const APP_TABLE_PRIVILEGES: Readonly<Record<string, readonly string[]>> = {
   accounts: ["INSERT", "SELECT"],
   activities: ["INSERT", "SELECT"],
-  audit_log: ["INSERT", "SELECT"],
+  audit_log: ["INSERT"],
   auth_accounts: ["DELETE", "INSERT", "SELECT", "UPDATE"],
   auth_request_limits: ["DELETE", "INSERT", "SELECT", "UPDATE"],
   auth_sessions: ["DELETE", "INSERT", "SELECT", "UPDATE"],

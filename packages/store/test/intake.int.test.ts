@@ -285,7 +285,7 @@ for (const reason of ["duplicate", "wrongNumber", "doNotContact"] as const) {
       expect(
         await db.rows("SELECT status,owner_id,dead_reason FROM leads WHERE id=$1", [leadId]),
       ).toEqual([{ status: "dead", owner_id: assignee.ownerId, dead_reason: reason }]);
-      expect(await db.rows("SELECT id FROM audit_log")).toEqual([]);
+      expect(await db.ownerRows("SELECT id FROM audit_log")).toEqual([]);
     });
   }
 }

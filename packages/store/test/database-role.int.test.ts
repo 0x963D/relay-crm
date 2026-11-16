@@ -24,6 +24,7 @@ test("the app connection has no ownership or privileged role attributes", async 
 });
 
 test.for([
+  "SELECT * FROM audit_log",
   "TRUNCATE ledger_lines",
   "TRUNCATE ledger_transactions CASCADE",
   "TRUNCATE ledger_accounts CASCADE",

@@ -6,11 +6,19 @@ test("audit rows name one human or one closed system actor", async ({ db }) => {
   const subject = crypto.randomUUID();
   const insert = (actor: string | null, system: string | null) =>
     db.rows(
-      "INSERT INTO audit_log(subject_type,request_id,id,actor_id,system_actor,action,subject_id,before,after,at) VALUES ('lead',gen_random_uuid(),gen_random_uuid(),$1,$2,'leadAssigned',$3,'{}','{}',now()) RETURNING actor_id,system_actor",
+      "INSERT INTO audit_log(subject_type,request_id,id,actor_id,system_actor,action,subject_id,before,after,at) VALUES ('lead',gen_random_uuid(),gen_random_uuid(),$1,$2,'leadAssigned',$3,'{}','{}',now())",
       [actor, system, subject],
     );
-  expect(await insert(null, "intake")).toEqual([{ actor_id: null, system_actor: "intake" }]);
-  expect(await insert(user, null)).toEqual([{ actor_id: user, system_actor: null }]);
+  await insert(null, "intake");
+  await insert(user, null);
+  expect(
+    await db.ownerRows(
+      "SELECT actor_id,system_actor FROM audit_log ORDER BY system_actor NULLS LAST",
+    ),
+  ).toEqual([
+    { actor_id: null, system_actor: "intake" },
+    { actor_id: user, system_actor: null },
+  ]);
   await expect(insert(null, null)).rejects.toMatchObject({ code: "23514" });
   await expect(insert(user, "intake")).rejects.toMatchObject({ code: "23514" });
   await expect(insert(null, "unknown")).rejects.toThrow();

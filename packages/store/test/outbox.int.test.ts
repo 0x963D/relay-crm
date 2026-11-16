@@ -232,9 +232,9 @@ test("unknown delivery never retries automatically and authorized requeue is aud
   const view = await db.store.getPayment(w.actor, w.id);
   expect(view.receipt).toMatchObject({ state: "sent", attempts: 2 });
   expect(view.receipt?.history.map((h) => h.state)).toEqual(["unknown", "sent"]);
-  expect(await db.rows("SELECT request_id FROM audit_log WHERE action='receiptRequeued'")).toEqual([
-    { request_id: requestId },
-  ]);
+  expect(
+    await db.ownerRows("SELECT request_id FROM audit_log WHERE action='receiptRequeued'"),
+  ).toEqual([{ request_id: requestId }]);
 });
 test("suppressed addresses send nothing and keep the completed payment", async ({ db }) => {
   const w = await receipt(db);
@@ -407,7 +407,9 @@ test("the configured lifetime cap survives audited requeues", async ({ db }) => 
       nextAttemptAt: null,
     });
     expect(
-      await db.rows("SELECT count(*)::int AS count FROM audit_log WHERE action='receiptRequeued'"),
+      await db.ownerRows(
+        "SELECT count(*)::int AS count FROM audit_log WHERE action='receiptRequeued'",
+      ),
     ).toEqual([{ count: 1 }]);
   } finally {
     await store.close();

@@ -36,7 +36,7 @@ async function world(db: TestDatabase, role: Role = "manager") {
 }
 
 const counts = (db: TestDatabase) =>
-  db.rows(
+  db.ownerRows(
     "SELECT (SELECT count(*)::int FROM activities WHERE kind='assignment') AS activities, (SELECT count(*)::int FROM audit_log) AS audit, (SELECT count(*)::int FROM idempotency_records WHERE operation='distribution.submit') AS distributions",
   );
 

@@ -69,7 +69,7 @@ async function world(db: TestDatabase, role: Role = "manager") {
 }
 
 async function auditCount(db: TestDatabase) {
-  return db.rows(
+  return db.ownerRows(
     "SELECT (SELECT count(*)::int FROM activities WHERE kind='assignment') AS activities, (SELECT count(*)::int FROM audit_log) AS audit, (SELECT count(*)::int FROM idempotency_records WHERE operation='distribution.submit') AS distributions",
   );
 }
@@ -537,12 +537,14 @@ test("intake reopening records the removed owner under its system actor", async 
   await db.rows("UPDATE leads SET status='lost',lost_note='badTiming' WHERE id=$1", [w.teammate]);
   const result = await db.store.intake(submissionExample({ email: "teammate@example.com" }));
   expect(result.outcome.kind).toBe("leadReopened");
-  expect(await db.rows("SELECT actor_id,system_actor,action,subject_id FROM audit_log")).toEqual([
+  expect(
+    await db.ownerRows("SELECT actor_id,system_actor,action,subject_id FROM audit_log"),
+  ).toEqual([
     { actor_id: null, system_actor: "intake", action: "leadReopened", subject_id: w.teammate },
   ]);
   expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.state.status).toBe("new");
   expect(
-    await db.rows(
+    await db.ownerRows(
       "SELECT request_id, before->'lifecycle'->'state'->'assignee'->>'ownerId' AS old_owner, after->'lifecycle'->'state'->>'status' AS status FROM audit_log",
     ),
   ).toEqual([{ request_id: result.eventId, old_owner: w.agent.ownerId, status: "new" }]);

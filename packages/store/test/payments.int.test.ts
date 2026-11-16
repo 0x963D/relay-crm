@@ -71,13 +71,13 @@ test("a lost webhook is reconciled and a late webhook changes no money or audit"
   const token = await db.store.claimPaymentCheck(id, new Date(), 300000);
   if (!token) throw new Error("No claim");
   await db.store.finishPaymentCheck(id, token, observed);
-  const audit = await db.rows("SELECT * FROM audit_log ORDER BY id");
+  const audit = await db.ownerRows("SELECT * FROM audit_log ORDER BY id");
   expect(await db.store.receivePaymentWebhook(event)).toEqual({
     status: "completed",
     changed: false,
     duplicate: false,
   });
-  expect(await db.rows("SELECT * FROM audit_log ORDER BY id")).toEqual(audit);
+  expect(await db.ownerRows("SELECT * FROM audit_log ORDER BY id")).toEqual(audit);
   expect(await counts(db)).toEqual([{ postings: 1, lines: 2, total: "0", outbox: 1 }]);
   expect(
     await db.rows(
@@ -125,7 +125,9 @@ test.for([
   await db.store.receivePaymentWebhook({ ...event, eventId: randomUUID() });
   expect((await db.store.getPayment(manager, id)).state.status).toBe("needsReview");
   expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
-  const audits = await db.rows("SELECT before FROM audit_log WHERE action='paymentReviewClosed'");
+  const audits = await db.ownerRows(
+    "SELECT before FROM audit_log WHERE action='paymentReviewClosed'",
+  );
   expect(audits[0]?.before).toMatchObject({
     reportedAmount: reported.minor.toString(),
     reportedCurrency: reported.currency,

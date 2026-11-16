@@ -761,7 +761,7 @@ A provider report of pending, failed or expired with a different amount also ent
 Someone holding the app's database credentials can add makers or attribute a SQL edit to another person, but cannot remove existing makers.
 
 `accounts.ledger` returns each entry's `completion` with `by` and `at`. A manual completion also
-includes the second approver's name in `approver`, read from the ledger audit's actor. System
+includes the second approver's name in `approver`, read from the final ordered approval event. System
 completions identify `reconciler` or `providerWebhook`. The reader batches payments, audits,
 people and postings without a query per payment. Agents still receive no ledger or balance.
 Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payment-reads.int.test.ts`
@@ -773,7 +773,7 @@ for detail fields, scoped group totals, completion provenance and query counts w
 | ----------------------- | -------------------------------------- |
 | `accounts`              | `INSERT`, `SELECT`                     |
 | `activities`            | `INSERT`, `SELECT`                     |
-| `audit_log`             | `INSERT`, `SELECT`                     |
+| `audit_log`             | `INSERT`                               |
 | `auth_accounts`         | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
 | `auth_request_limits`   | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
 | `auth_sessions`         | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
