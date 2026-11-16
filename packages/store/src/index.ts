@@ -43,6 +43,8 @@ import {
   type ManualTerms,
   createPayment,
   checkoutTerms,
+  finishCheckoutCreation,
+  recordCheckoutCancellation,
   receivePaymentWebhook,
   duePayments,
   claimPaymentCheck,
@@ -98,6 +100,9 @@ export function openStore(config: {
       editManualPayment(db, actor, input, requestId),
     createPayment: (actor: Actor, input: CreatePayment, firstCheckMs: number, requestId: string) =>
       createPayment(db, actor, input, firstCheckMs, requestId),
+    finishCheckoutCreation: (id: string) => finishCheckoutCreation(db, id),
+    recordCheckoutCancellation: (id: string, observed: ProviderPayment | null, requestId: string) =>
+      recordCheckoutCancellation(db, id, observed, requestId),
     checkoutTerms: (actor: Actor, id: PaymentId) => checkoutTerms(db, actor, id),
     receivePaymentWebhook: (event: ProviderEvent) => receivePaymentWebhook(db, event),
     duePayments: (at: Date, limit: number) => duePayments(db, at, limit),

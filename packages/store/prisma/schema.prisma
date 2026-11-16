@@ -381,6 +381,8 @@ model AuditLog {
 
 
 model Payment {
+  providerFinal Boolean @default(false) @map("provider_final")
+  creationPendingUntil DateTime? @map("creation_pending_until") @db.Timestamptz(3)
   version Int @default(0)
   receiptHash String? @map("receipt_hash")
   reference String?

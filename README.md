@@ -549,8 +549,9 @@ A paid report after `expired` or `failed` moves the payment to `needsReview` wit
 That is the only exit from either closed state. `completed` has no exit.
 
 `payments.closeCheckout` lets an account editor close a waiting checkout as `failed` with a written
-reason. It then cancels the provider checkout. If payment won that race, a later paid report enters
-review. Unknown provider checkouts fail with `the checkout was never created at the provider`.
+reason. It then cancels the provider checkout. If the provider reports that it was already paid, the same request moves it to review.
+A paid report from either a late webhook or the reconciler also moves a closed payment to review.
+The reconciler watches closed card payments until the provider reports a final state. Unknown provider checkouts fail with `the checkout was never created at the provider`.
 Checkouts expire after `RELAY_CHECKOUT_TTL_MS`, default 86400000 milliseconds.
 Run `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
 for expiry, missing checkouts and staff closure.

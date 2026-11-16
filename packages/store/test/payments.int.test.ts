@@ -8,7 +8,7 @@ import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
 const observed: ProviderPayment = { status: "completed", money };
-async function setup(db: TestDatabase) {
+async function setup(db: TestDatabase, creationInFlight = false) {
   const userId = await db.seedUser("agent");
   const managerId = await db.seedUser("manager");
   const accountId = await db.seedAccount();
@@ -21,6 +21,7 @@ async function setup(db: TestDatabase) {
     0,
     "00000000-0000-4000-8000-000000000001",
   );
+  if (!creationInFlight) await db.store.finishCheckoutCreation(created.id);
   const event = {
     eventId: randomUUID(),
     paymentId: created.id,
@@ -419,3 +420,75 @@ test("two settlements collide at the posting unique index and retry from a fresh
     retries.unsubscribe(record);
   }
 });
+
+test("a dropped paid report after staff close is reconciled into review without credit", async ({
+  db,
+}) => {
+  const { id, actor, manager } = await setup(db);
+  const checkout = await db.store.createSandboxCheckout({ paymentId: id, money, mode: "drop" });
+  if (!checkout.token) throw new Error("No checkout token");
+  await db.store.paySandboxCheckout(checkout.token);
+  await db.store.closePaymentCheckout(actor, id, "Customer says unpaid", randomUUID());
+  await db.store.cancelSandboxCheckout(id);
+  expect(await db.store.duePayments(new Date(), 100)).toEqual([{ id }]);
+  const token = await db.store.claimPaymentCheck(id, new Date(), 300000);
+  if (!token) throw new Error("Closed payment was not claimed");
+  await db.store.finishPaymentCheck(id, token, observed);
+  expect((await db.store.getPayment(manager, id)).state).toMatchObject({
+    status: "needsReview",
+    reason: "paid after close",
+  });
+  expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+  await db.store.closePaymentReview(manager, id, "Handled outside", randomUUID());
+  expect(await db.store.duePayments(new Date(Date.now() + 86400000), 100)).toEqual([]);
+});
+
+test("zero-delay reconciliation waits for checkout creation and refuses creation after close", async ({
+  db,
+}) => {
+  const { id, actor } = await setup(db, true);
+  expect(await db.store.duePayments(new Date(), 100)).toEqual([]);
+  expect(await db.store.claimPaymentCheck(id, new Date(), 1000)).toBeNull();
+  await db.store.closePaymentCheckout(actor, id, "Closed before creation", randomUUID());
+  await expect(db.store.checkoutTerms(actor, id)).rejects.toMatchObject({ code: "conflict" });
+  await expect(
+    db.store.createSandboxCheckout({ paymentId: id, money, mode: "drop" }),
+  ).rejects.toMatchObject({ code: "conflict" });
+  expect(await db.rows("SELECT * FROM sandbox_checkouts")).toHaveLength(0);
+});
+
+test("a creation deadline permits missing reconciliation and forbids a late provider create", async ({
+  db,
+}) => {
+  const { id, manager } = await setup(db, true);
+  await db.rows(
+    "UPDATE payments SET creation_pending_until=now()-interval '1 second' WHERE id=$1",
+    [id],
+  );
+  const token = await db.store.claimPaymentCheck(id, new Date(), 1000);
+  if (!token) throw new Error("No claim after deadline");
+  await db.store.finishPaymentCheck(id, token, { status: "missing" });
+  expect((await db.store.getPayment(manager, id)).state.status).toBe("failed");
+  await expect(
+    db.store.createSandboxCheckout({ paymentId: id, money, mode: "drop" }),
+  ).rejects.toMatchObject({ code: "conflict" });
+});
+
+test.for(["failed", "expired"] as const)(
+  "closed %s remains checkable until the provider is final",
+  async (status, { db }) => {
+    const { id } = await setup(db);
+    await db.rows(
+      "UPDATE payments SET status=$2,decided_at=now(),reason=CASE WHEN $2='failed' THEN 'Staff closed' ELSE NULL END WHERE id=$1",
+      [id, status],
+    );
+    const first = await db.store.claimPaymentCheck(id, new Date(), 0);
+    if (!first) throw new Error("No closed claim");
+    await db.store.finishPaymentCheck(id, first, { status: "pending", money });
+    expect(await db.store.duePayments(new Date(), 100)).toEqual([{ id }]);
+    const second = await db.store.claimPaymentCheck(id, new Date(), 0);
+    if (!second) throw new Error("No second claim");
+    await db.store.finishPaymentCheck(id, second, { status: "expired", money });
+    expect(await db.store.duePayments(new Date(), 100)).toEqual([]);
+  },
+);

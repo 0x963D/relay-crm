@@ -284,6 +284,7 @@ test("an expired checkout cannot be paid and an unknown checkout fails reconcili
   expect(await db.store.paySandboxCheckout(token)).toBeNull();
   expect(await adapter.readPayment(expired.id)).toMatchObject({ status: "expired" });
   const missing = await create("missing");
+  await db.store.finishCheckoutCreation(missing.id);
   await reconcilePayments(db.store, adapter, env.intervalMs);
   expect((await db.store.getPayment(actor, expired.id)).state.status).toBe("expired");
   expect((await db.store.getPayment(actor, missing.id)).state).toMatchObject({
@@ -337,6 +338,7 @@ test("a scan timestamp does not become the deadline origin for later claims", as
     0,
     randomUUID(),
   );
+  await db.store.finishCheckoutCreation(id);
   const scan = new Date();
   await new Promise((resolve) => setTimeout(resolve, 20));
   const before = Date.now();
@@ -506,7 +508,7 @@ test("worker HTTP responses contain counts without record identifiers", async ({
     payloadHash: "ab".repeat(32),
     observed: { status: "completed", money: { minor: 100n, currency: "GBP" } },
   });
-  await create("missing");
+  await db.store.finishCheckoutCreation((await create("missing")).id);
   try {
     const { POST: reconcile } = await import("../src/app/api/payments/reconcile/route.ts");
     const { POST: outbox } = await import("../src/app/api/payments/outbox/route.ts");
@@ -563,4 +565,35 @@ test("a worker deadline before the SMTP greeting records a retryable failure", a
   } finally {
     await inbox.close();
   }
+});
+
+test("closing an already paid checkout returns review and an explanation in the same request", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor },
+    payments: { provider: sandboxProvider(db.store, env), firstCheckMs: 0 },
+  });
+  const created = await caller.payments.createCheckout({
+    key: "paid-close",
+    accountId: await db.seedAccount(),
+    amount: "100",
+    currency: "GBP",
+    kind: "first",
+    mode: "drop",
+  });
+  const token = created.checkout.url?.split("/").at(-1);
+  if (!token) throw new Error("No token");
+  await db.store.paySandboxCheckout(token);
+  const closed = await caller.payments.closeCheckout({
+    id: created.paymentId,
+    reason: "Customer says unpaid",
+  });
+  expect(closed.state).toMatchObject({ status: "needsReview", reason: "paid after close" });
+  expect(closed).toMatchObject({
+    message: "The checkout was already paid. The payment needs review; nothing was credited.",
+  });
+  expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
 });

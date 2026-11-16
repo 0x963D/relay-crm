@@ -109,6 +109,7 @@ function payment(row: Payment) {
     soldById: row.soldById,
     createdAt: row.createdAt,
     nextCheckAt: row.nextCheckAt,
+    providerFinal: row.providerFinal,
   };
 }
 export interface CreatePayment {
@@ -169,6 +170,7 @@ export async function createPayment(
             soldById: account.ownerId,
             createdAt: at,
             nextCheckAt: new Date(at.getTime() + firstCheckMs),
+            creationPendingUntil: new Date(at.getTime() + 30_000),
             sandboxMode: input.mode,
           },
         });
@@ -209,6 +211,11 @@ export async function checkoutTerms(db: Db, actor: Actor, id: PaymentId) {
       }))
     )
       throw new AccessError("accessDenied");
+    if (row.status !== "checkoutCreated") throw new AccessError("conflict");
+    await tx.payment.update({
+      where: { id },
+      data: { creationPendingUntil: new Date(Date.now() + 30_000), checkToken: null },
+    });
     const mode = row.sandboxMode;
     if (
       mode !== "normal" &&
@@ -219,6 +226,43 @@ export async function checkoutTerms(db: Db, actor: Actor, id: PaymentId) {
     )
       throw new InvariantError("Invalid sandbox mode");
     return { paymentId: row.id, money: money(row.amount, row.currency), mode } as const;
+  });
+}
+
+export async function finishCheckoutCreation(db: Db, id: string) {
+  await transact(db, (tx) =>
+    tx.payment.update({ where: { id }, data: { creationPendingUntil: null } }),
+  );
+}
+export async function recordCheckoutCancellation(
+  db: Db,
+  id: string,
+  observed: ProviderPayment | null,
+  requestId: string,
+) {
+  return transact(db, async (tx) => {
+    const at = new Date();
+    if (observed)
+      await settlePayment(
+        tx,
+        RECONCILER,
+        id,
+        { type: "provider", by: "reconciler", result: observed },
+        requestId,
+        at,
+      );
+    await tx.paymentEvent.create({
+      data: {
+        paymentId: id,
+        kind: "checkoutCancellation",
+        at,
+        detail: {
+          requestId,
+          providerAsked: true,
+          providerStatus: observed?.status ?? "unavailable",
+        },
+      },
+    });
   });
 }
 
@@ -249,12 +293,22 @@ export async function settlePayment(
   const next = transitionPayment(before, event, money(row.amount, row.currency), at);
   const outcome = { status: next.status, changed: next !== before };
   await recordObservation?.(outcome);
-  if (next === before) return outcome;
+  const providerFinal =
+    row.providerFinal ||
+    (event.type === "provider" && ["completed", "failed", "expired"].includes(event.result.status));
+  if (next === before) {
+    if (providerFinal !== row.providerFinal)
+      await tx.payment.update({ where: { id: row.id }, data: { providerFinal } });
+    return outcome;
+  }
   const posting =
     next.status === "completed"
       ? await tx.ledgerTransaction.create({ data: { paymentId: row.id, at } })
       : null;
-  const updated = await tx.payment.update({ where: { id: row.id }, data: columns(next) });
+  const updated = await tx.payment.update({
+    where: { id: row.id },
+    data: { ...columns(next), providerFinal },
+  });
   const cause = { kind: "request", id: requestId } as const;
   await writeAudit(tx, principal, {
     action: "paymentStateChanged",
@@ -410,11 +464,20 @@ export async function receivePaymentWebhook(db: Db, event: ProviderEvent) {
 }
 
 const RECONCILER = { kind: "system", name: "reconciler" } as const;
+function checkable(at: Date): Prisma.PaymentWhereInput {
+  return {
+    method: "card",
+    status: { in: ["checkoutCreated", "failed", "expired"] },
+    providerFinal: false,
+    nextCheckAt: { lte: at },
+    OR: [{ creationPendingUntil: null }, { creationPendingUntil: { lte: at } }],
+  };
+}
 export async function duePayments(db: Db, at: Date, limit: number) {
   if (recordScope(RECONCILER, "payment", "reconcile").kind !== "all")
     throw new AccessError("accessDenied");
   return db.payment.findMany({
-    where: { status: "checkoutCreated", nextCheckAt: { lte: at } },
+    where: checkable(at),
     orderBy: [{ nextCheckAt: "asc" }, { id: "asc" }],
     take: limit,
     select: { id: true },
@@ -424,7 +487,7 @@ export async function claimPaymentCheck(db: Db, id: string, at: Date, intervalMs
   const token = randomUUID();
   return transact(db, async (tx) => {
     const claimed = await tx.payment.updateMany({
-      where: { id, status: "checkoutCreated", nextCheckAt: { lte: at } },
+      where: { id, ...checkable(at) },
       data: { checkToken: token, nextCheckAt: new Date(at.getTime() + intervalMs) },
     });
     return claimed.count === 1 ? token : null;

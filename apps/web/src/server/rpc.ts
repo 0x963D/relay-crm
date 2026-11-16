@@ -215,14 +215,24 @@ export const appRouter = t.router({
       )
       .mutation(async ({ ctx, input }) => {
         if (!ctx.payments) throw new TRPCError({ code: "NOT_FOUND" });
-        const result = await ctx.store.closePaymentCheckout(
-          ctx.actor,
-          input.id,
-          input.reason,
-          ctx.requestId,
-        );
-        await ctx.payments.provider.cancelCheckout(input.id);
-        return { ...result, demo: ctx.demo ?? false };
+        await ctx.store.closePaymentCheckout(ctx.actor, input.id, input.reason, ctx.requestId);
+        let observed = null;
+        try {
+          await ctx.payments.provider.cancelCheckout(input.id);
+          observed = await ctx.payments.provider.readPayment(input.id);
+        } catch {
+          /* Reconciliation retries an unavailable provider. */
+        }
+        await ctx.store.recordCheckoutCancellation(input.id, observed, ctx.requestId);
+        const result = await ctx.store.getPayment(ctx.actor, input.id);
+        return {
+          ...result,
+          demo: ctx.demo ?? false,
+          message:
+            result.state.status === "needsReview"
+              ? "The checkout was already paid. The payment needs review; nothing was credited."
+              : "The checkout is closed.",
+        };
       }),
     closeReview: authenticated
       .input(
@@ -265,11 +275,15 @@ export const appRouter = t.router({
           ctx.requestId,
         );
         const terms = await ctx.store.checkoutTerms(ctx.actor, created.id);
-        return {
-          demo: ctx.demo ?? false,
-          paymentId: created.id,
-          checkout: await ctx.payments.provider.createCheckout(terms),
-        };
+        try {
+          return {
+            demo: ctx.demo ?? false,
+            paymentId: created.id,
+            checkout: await ctx.payments.provider.createCheckout(terms),
+          };
+        } finally {
+          await ctx.store.finishCheckoutCreation(created.id);
+        }
       }),
   }),
   reports: t.router({

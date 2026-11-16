@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Money, SandboxMode } from "@relay/domain";
 import type { SandboxCheckout } from "./generated/client.ts";
+import { AccessError } from "./errors.ts";
 import { transact, type Db } from "./tx.ts";
 
 function tokenHash(token: string): string {
@@ -21,6 +22,16 @@ export function createSandboxCheckout(
   },
 ) {
   return transact(db, async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { id: input.paymentId } });
+    if (
+      payment?.status !== "checkoutCreated" ||
+      (payment.creationPendingUntil !== null && payment.creationPendingUntil <= new Date())
+    )
+      throw new AccessError("conflict");
+    await tx.payment.update({
+      where: { id: input.paymentId },
+      data: { creationPendingUntil: null, checkToken: null },
+    });
     const prior = await tx.sandboxCheckout.findUnique({ where: { paymentId: input.paymentId } });
     if (prior) return { id: prior.id, token: null };
     const token = randomBytes(32).toString("base64url");
