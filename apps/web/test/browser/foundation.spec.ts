@@ -174,7 +174,9 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   });
   await page.getByRole("button", { name: "Assign 1 lead", exact: true }).click();
   await announcement(page, "alert", "Nothing was assigned", "stale");
-  await expect(page.getByRole("alert")).toContainText("No selected leads remain in the pool");
+  await expect(page.getByRole("alert").filter({ hasText: "Nothing was assigned" })).toContainText(
+    "No selected leads remain in the pool",
+  );
   await expect(page.getByRole("button", { name: /Preview the remaining 0/ })).toHaveCount(0);
   await expect(page.getByRole("alert").filter({ hasText: "Nothing was assigned" })).toBeFocused();
   await expect(page.locator("[data-stale=true]")).toHaveCSS("opacity", "0.85");
