@@ -237,9 +237,9 @@ export function LeadDetail({
               ? "Note added to the timeline."
               : "Callback saved.",
         );
-      closeComposer();
       setNote("");
       await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
+      closeComposer();
       onSaved();
       if (mode === "close") await client.invalidateQueries({ queryKey: ["agents"] });
     } catch (error) {
@@ -258,8 +258,8 @@ export function LeadDetail({
         change: { kind: "clear" },
       });
       setSuccess("Callback cleared. The lead stays in the queue.");
-      closeComposer();
       await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
+      closeComposer();
       onSaved();
     } catch (error) {
       setError(failureMessage(error));

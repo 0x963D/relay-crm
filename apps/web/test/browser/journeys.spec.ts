@@ -75,6 +75,9 @@ test.describe.serial("lead work journeys", () => {
     await expect(
       page.getByRole("status").filter({ hasText: "An account was opened" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "An account was opened" }),
+    ).toBeFocused();
     const accounts = await rpc(page).accounts.list.query({ limit: 100 });
     expect(accounts.items.some((a) => a.person?.name === leadName)).toBe(true);
     const queue = await rpc(page).leads.queue.query({});
