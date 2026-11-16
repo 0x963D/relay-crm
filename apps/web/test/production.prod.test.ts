@@ -51,6 +51,16 @@ databaseTest(
             headers: { origin: sentOrigin, "content-type": "application/json" },
             body: JSON.stringify(body),
           });
+        const signedOut = await fetch(server.url("/"));
+        const firstPage = await signedOut.text();
+        expect(signedOut.status).toBe(401);
+        expect(firstPage).not.toContain("RELAY_DEV_ACTOR");
+        if (demo) {
+          for (const person of Object.values(DEMO_PEOPLE)) expect(firstPage).toContain(person.name);
+        } else {
+          expect(firstPage).toContain("/api/auth/email-otp/send-verification-otp");
+          expect(firstPage).toContain("/api/auth/sign-in/email-otp");
+        }
         if (!demo) {
           for (const role of ["manager", "agent", "accountant"])
             expect((await post("/api/auth/demo", { role })).status).toBe(404);
@@ -127,6 +137,9 @@ databaseTest(
 databaseTest(
   "the production work journey signs in, wins a form lead and reads its account and funnel",
   async ({ db }) => {
+    await db.ownerRows(
+      "INSERT INTO demo_seed(key,company,state,seeded_at) VALUES ('tidewell-language-school/v1','Tidewell Language School','ready',now())",
+    );
     const managerId = await db.seedUser("manager");
     const agentId = await db.seedUser("agent");
     const teamId = await db.seedTeam("sales");
@@ -574,7 +587,7 @@ describe("the production server with no session", () => {
     try {
       const response = await fetch(server.url("/"));
       expect(response.status).toBe(401);
-      expect(await response.text()).toContain("You are not signed in");
+      expect(await response.text()).toContain("Sign in to Relay CRM");
       expect(
         (await fetch(server.url("/api/trpc/leads.list?input=%7B%22json%22%3A%7B%7D%7D"))).status,
       ).toBe(401);
@@ -825,6 +838,9 @@ databaseTest(
 databaseTest(
   "live payments reconcile cards, approve manual receipts and deliver through SMTP",
   async ({ db }) => {
+    await db.ownerRows(
+      "INSERT INTO demo_seed(key,company,state,seeded_at) VALUES ('tidewell-language-school/v1','Tidewell Language School','ready',now())",
+    );
     const userId = await db.seedUser("agent");
     await db.seedUser("accountant");
     await db.seedUser("manager");
