@@ -161,6 +161,8 @@ export async function createPayment(
         const at = storeNow(db);
         const row = await tx.payment.create({
           data: {
+            method: "card",
+            status: "checkoutCreated",
             accountId: account.id,
             amount: input.money.minor,
             currency: input.money.currency,

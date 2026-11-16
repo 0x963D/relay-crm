@@ -319,3 +319,30 @@ describe("append-only logs", () => {
     expect(await db.counts()).toEqual({ leads: 1, intakeEvents: 1, activities: 1 });
   });
 });
+
+test("the catalog has no unused history flag or implicit payment terms", async ({ db }) => {
+  expect(
+    await db.ownerRows(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name='work_history_known'",
+    ),
+  ).toEqual([]);
+  expect(
+    await db.ownerRows(
+      "SELECT table_name,column_name,column_default FROM information_schema.columns WHERE table_schema='public' AND ((table_name='payments' AND column_name IN ('method','status')) OR (table_name='payment_approvals' AND column_name='payment_version')) ORDER BY table_name,column_name",
+    ),
+  ).toEqual([
+    { table_name: "payment_approvals", column_name: "payment_version", column_default: null },
+    { table_name: "payments", column_name: "method", column_default: null },
+    { table_name: "payments", column_name: "status", column_default: null },
+  ]);
+  expect(
+    await db.ownerRows(
+      "SELECT is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='sandbox_checkouts' AND column_name='token_hash'",
+    ),
+  ).toEqual([{ is_nullable: "NO" }]);
+  expect(
+    await db.ownerRows(
+      "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname IN ('users_email_key','users_email_lower_key') ORDER BY indexname",
+    ),
+  ).toEqual([{ indexname: "users_email_lower_key" }]);
+});

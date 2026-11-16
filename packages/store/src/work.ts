@@ -305,7 +305,7 @@ function queueItem(
     assignmentSequence: assignment?.sequence ?? 0n,
     campaign: row.intakeEvents[0]?.campaign ?? null,
     callbackAt: row.callBackAt,
-    noAnswerCount: row.workHistoryKnown ? attemptSummary(row.activities).noAnswerCount : null,
+    noAnswerCount: attemptSummary(row.activities).noAnswerCount,
     lastNoteOrOutcome: last ? activitySummary(last) : null,
     hasAttempt: summary.hasAttempt,
   };
@@ -417,15 +417,14 @@ export async function leadDetail(db: Db, actor: Actor, id: LeadId) {
       activities.toReversed().map((activity) => {
         const summary = activitySummary(activity);
         if (summary?.kind === "attempt" && summary.outcome === "noAnswer") count += 1;
-        return [activity.id, activitySummary(activity, row.workHistoryKnown ? count : null)];
+        return [activity.id, activitySummary(activity, count)];
       }),
     );
     return {
       ...leadFromRow(row, origin?.source),
-      contactedAt: row.workHistoryKnown ? row.contactedAt : null,
+      contactedAt: row.contactedAt,
       lostNote: row.lostNote,
-      workHistoryKnown: row.workHistoryKnown,
-      noAnswerCount: row.workHistoryKnown ? attemptSummary(activities).noAnswerCount : null,
+      noAnswerCount: attemptSummary(activities).noAnswerCount,
       custody: {
         receivedFrom: origin ? { source: origin.source, at: origin.receivedAt } : null,
         assignedBy: assignedBy ? { ...assignedBy, at: assignment?.at ?? null } : null,
@@ -455,8 +454,7 @@ export async function campaignFunnel(db: Db, actor: Actor) {
         campaign: string | null;
         received: number;
         unassigned: number;
-        knownContacted: number;
-        contactUnknown: number;
+        contacted: number;
         won: number;
       }
     >();
@@ -469,14 +467,12 @@ export async function campaignFunnel(db: Db, actor: Actor) {
         campaign,
         received: 0,
         unassigned: 0,
-        knownContacted: 0,
-        contactUnknown: 0,
+        contacted: 0,
         won: 0,
       };
       item.received += 1;
       if (lead.status === "new") item.unassigned += 1;
-      if (lead.contactedAt !== null) item.knownContacted += 1;
-      else if (!lead.workHistoryKnown) item.contactUnknown += 1;
+      if (lead.contactedAt !== null) item.contacted += 1;
       if (lead.status === "won") item.won += 1;
       campaigns.set(key, item);
     }
@@ -484,7 +480,6 @@ export async function campaignFunnel(db: Db, actor: Actor) {
       .sort((a, b) => b.received - a.received || (a.campaign ?? "").localeCompare(b.campaign ?? ""))
       .map((item) => ({
         ...item,
-        contacted: item.contactUnknown === 0 ? item.knownContacted : null,
         conversion: item.received === 0 ? null : item.won / item.received,
       }));
     return {

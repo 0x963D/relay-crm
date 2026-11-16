@@ -71,7 +71,7 @@ test("two card checkouts reach the in-progress unique index", async ({ db }) => 
   const { id } = await card(db);
   await expect(
     db.rows(
-      "INSERT INTO payments(id,account_id,amount,currency,kind,status,recorded_by_id,created_at,next_check_at,sandbox_mode) SELECT gen_random_uuid(),account_id,amount,currency,kind,status,recorded_by_id,now(),now(),sandbox_mode FROM payments WHERE id=$1",
+      "INSERT INTO payments(id,account_id,amount,currency,method,kind,status,recorded_by_id,created_at,next_check_at,sandbox_mode) SELECT gen_random_uuid(),account_id,amount,currency,method,kind,status,recorded_by_id,now(),now(),sandbox_mode FROM payments WHERE id=$1",
       [id],
     ),
   ).rejects.toMatchObject({ code: "23505", constraint: "payments_in_progress_account_key" });

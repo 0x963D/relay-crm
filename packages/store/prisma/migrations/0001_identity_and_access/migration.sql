@@ -14,48 +14,48 @@ CREATE TYPE public.team_kind AS ENUM (
 
 CREATE TABLE public.auth_accounts (
     id uuid NOT NULL,
-    account_id text NOT NULL,
-    provider_id text NOT NULL,
     user_id uuid NOT NULL,
+    provider_id text NOT NULL,
+    account_id text NOT NULL,
+    scope text,
     access_token text,
     refresh_token text,
     id_token text,
-    access_token_expires_at timestamp(3) with time zone,
-    refresh_token_expires_at timestamp(3) with time zone,
-    scope text,
     password text,
     created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    access_token_expires_at timestamp(3) with time zone,
+    refresh_token_expires_at timestamp(3) with time zone
 );
 
 CREATE TABLE public.auth_request_limits (
     key text NOT NULL,
+    window_seconds integer DEFAULT 60 NOT NULL,
     count integer NOT NULL,
     started_at timestamp(3) with time zone NOT NULL,
-    window_seconds integer DEFAULT 60 NOT NULL,
     CONSTRAINT auth_request_limits_count_check CHECK ((count > 0)),
     CONSTRAINT auth_request_limits_window_seconds_check CHECK ((window_seconds > 0))
 );
 
 CREATE TABLE public.auth_sessions (
     id uuid NOT NULL,
-    token text NOT NULL,
     user_id uuid NOT NULL,
     current_team_id uuid,
-    expires_at timestamp(3) with time zone NOT NULL,
+    token text NOT NULL,
+    ip_address text,
+    user_agent text,
     created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    ip_address text,
-    user_agent text
+    expires_at timestamp(3) with time zone NOT NULL
 );
 
 CREATE TABLE public.auth_verifications (
     id text NOT NULL,
     identifier text NOT NULL,
     value text NOT NULL,
-    expires_at timestamp(3) with time zone NOT NULL,
     created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    expires_at timestamp(3) with time zone NOT NULL
 );
 
 CREATE TABLE public.memberships (
@@ -75,12 +75,12 @@ CREATE TABLE public.users (
     id uuid NOT NULL,
     email text NOT NULL,
     name text NOT NULL,
-    role public.role NOT NULL,
-    created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    email_verified boolean DEFAULT false NOT NULL,
     image text,
-    updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    role public.role NOT NULL,
     role_version integer DEFAULT 0 NOT NULL,
+    email_verified boolean DEFAULT false NOT NULL,
+    created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT users_role_version_check CHECK ((role_version >= 0))
 );
 
@@ -134,8 +134,6 @@ CREATE INDEX auth_request_limits_started_at_idx ON public.auth_request_limits US
 CREATE INDEX auth_sessions_user_id_idx ON public.auth_sessions USING btree (user_id);
 
 CREATE INDEX memberships_team_id_idx ON public.memberships USING btree (team_id);
-
-CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email);
 
 CREATE UNIQUE INDEX users_email_lower_key ON public.users USING btree (lower(email));
 

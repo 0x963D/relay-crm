@@ -154,11 +154,11 @@ describe("how a stale snapshot surfaces", () => {
         code: "P2002",
         meta: {
           driverAdapterError: {
-            cause: { originalCode: "23505", constraint: { index: "users_email_key" } },
+            cause: { originalCode: "23505", constraint: { index: "users_email_lower_key" } },
           },
         },
       });
-      expect(RACE_CONSTRAINTS.users_email_key).toBe("reject");
+      expect(RACE_CONSTRAINTS.users_email_lower_key).toBe("reject");
       expect(isStaleSnapshot(error)).toBe(false);
     });
   });

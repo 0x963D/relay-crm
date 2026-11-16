@@ -189,7 +189,7 @@ test("SQL cannot bypass approvals or create another posting", async ({ db }) => 
   ).rejects.toMatchObject({ code: "23514", constraint: "manual_approvals_required" });
   await expect(
     db.rows(
-      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,0,now(),$3)",
       [w.id, w.recorder.userId, requestId],
     ),
   ).rejects.toMatchObject({ code: "23514" });

@@ -83,35 +83,35 @@ CREATE SEQUENCE public.activities_sequence_seq
 CREATE TABLE public.accounts (
     id uuid NOT NULL,
     owner_id uuid,
-    created_at timestamp(3) with time zone NOT NULL,
-    team_id uuid
+    team_id uuid,
+    created_at timestamp(3) with time zone NOT NULL
 );
 
 CREATE TABLE public.activities (
     id uuid NOT NULL,
-    kind public.activity_kind NOT NULL,
+    sequence bigint DEFAULT nextval('public.activities_sequence_seq'::regclass) NOT NULL,
     lead_id uuid,
     account_id uuid,
     intake_event_id uuid,
+    kind public.activity_kind NOT NULL,
     detail jsonb,
     at timestamp(3) with time zone NOT NULL,
-    sequence bigint DEFAULT nextval('public.activities_sequence_seq'::regclass) NOT NULL,
     CONSTRAINT activities_intake_ref CHECK (((kind = 'intake'::public.activity_kind) = (intake_event_id IS NOT NULL))),
     CONSTRAINT activities_one_subject CHECK ((num_nonnulls(lead_id, account_id) = 1))
 );
 
 CREATE TABLE public.audit_log (
     id uuid NOT NULL,
-    actor_id uuid,
-    action public.audit_action NOT NULL,
+    subject_type public.audit_subject_type NOT NULL,
     subject_id uuid NOT NULL,
+    actor_id uuid,
+    system_actor public.system_actor,
+    request_id uuid NOT NULL,
+    idempotency_id uuid,
+    action public.audit_action NOT NULL,
     before jsonb NOT NULL,
     after jsonb NOT NULL,
     at timestamp(3) with time zone NOT NULL,
-    system_actor public.system_actor,
-    subject_type public.audit_subject_type NOT NULL,
-    request_id uuid NOT NULL,
-    idempotency_id uuid,
     CONSTRAINT audit_actor_exactly_one CHECK (((((actor_id IS NOT NULL))::integer + ((system_actor IS NOT NULL))::integer) = 1)),
     CONSTRAINT audit_snapshots_objects CHECK (((jsonb_typeof(before) = 'object'::text) AND (jsonb_typeof(after) = 'object'::text) AND ((NOT (before ? 'lifecycle'::text)) OR (jsonb_typeof((before -> 'lifecycle'::text)) = 'object'::text)) AND ((NOT (after ? 'lifecycle'::text)) OR (jsonb_typeof((after -> 'lifecycle'::text)) = 'object'::text))))
 );
@@ -119,9 +119,9 @@ CREATE TABLE public.audit_log (
 CREATE TABLE public.distribution_previews (
     id uuid NOT NULL,
     actor_id uuid NOT NULL,
-    fingerprint text NOT NULL,
     request jsonb NOT NULL,
     snapshot jsonb NOT NULL,
+    fingerprint text NOT NULL,
     created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -129,10 +129,10 @@ CREATE TABLE public.idempotency_records (
     id uuid NOT NULL,
     scope text NOT NULL,
     key text NOT NULL,
+    operation text NOT NULL,
+    request_hash text NOT NULL,
     result jsonb NOT NULL,
     created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    request_hash text NOT NULL,
-    operation text NOT NULL,
     CONSTRAINT idempotency_result_object CHECK ((jsonb_typeof(result) = 'object'::text))
 );
 
@@ -140,6 +140,8 @@ CREATE TABLE public.intake_events (
     id uuid NOT NULL,
     source public.intake_source NOT NULL,
     external_id text NOT NULL,
+    lead_id uuid,
+    account_id uuid,
     email text,
     name text,
     phone text,
@@ -147,12 +149,10 @@ CREATE TABLE public.intake_events (
     ad_set text,
     ad text,
     form text,
-    submitted_at timestamp(3) with time zone,
-    received_at timestamp(3) with time zone NOT NULL,
     raw json NOT NULL,
     outcome public.intake_outcome NOT NULL,
-    lead_id uuid,
-    account_id uuid,
+    submitted_at timestamp(3) with time zone,
+    received_at timestamp(3) with time zone NOT NULL,
     CONSTRAINT intake_events_outcome_subject CHECK (
 CASE
     WHEN (outcome = 'rejectedNoEmail'::public.intake_outcome) THEN ((lead_id IS NULL) AND (account_id IS NULL))
@@ -167,21 +167,20 @@ CREATE TABLE public.leads (
     email text NOT NULL,
     name text,
     phone text,
-    status public.lead_status NOT NULL,
     owner_id uuid,
     team_id uuid,
+    previous_owner_id uuid,
+    account_id uuid,
+    status public.lead_status NOT NULL,
     stage public.work_stage,
-    call_back_at timestamp(3) with time zone,
     no_answer_count integer,
     dead_reason public.dead_reason,
-    account_id uuid,
-    first_assigned_at timestamp(3) with time zone,
-    previous_owner_id uuid,
-    created_at timestamp(3) with time zone NOT NULL,
-    version integer DEFAULT 0 NOT NULL,
-    contacted_at timestamp(3) with time zone,
     lost_note text,
-    work_history_known boolean DEFAULT true NOT NULL,
+    version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(3) with time zone NOT NULL,
+    first_assigned_at timestamp(3) with time zone,
+    contacted_at timestamp(3) with time zone,
+    call_back_at timestamp(3) with time zone,
     CONSTRAINT leads_email_canonical CHECK (((length(email) <= 254) AND (length(split_part(email, '@'::text, 1)) <= 64) AND (length(split_part(email, '@'::text, 2)) <= 253) AND (email ~ ('^[a-z0-9_!#$%&''*+/=?^`{|}~-]+(\.[a-z0-9_!#$%&''*+/=?^`{|}~-]+)*'::text || '@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+(?=[a-z0-9-]*[a-z])[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'::text)))),
     CONSTRAINT leads_owned_was_assigned CHECK (((owner_id IS NULL) OR (first_assigned_at IS NOT NULL))),
     CONSTRAINT leads_stage_shape CHECK (

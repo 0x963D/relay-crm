@@ -528,9 +528,7 @@ test("working reloads a revoked role inside its transaction, including a replay"
   });
 });
 
-test("the funnel excludes repeat enquiries and keeps missing contact history unknown", async ({
-  db,
-}) => {
+test("the funnel excludes repeat enquiries and counts recorded contact history", async ({ db }) => {
   const w = await world(db);
   const id = await w.makeLead(w.agent, "funnel@example.com");
   await w.work(w.agent, id, noAnswer);
@@ -550,23 +548,20 @@ test("the funnel excludes repeat enquiries and keeps missing contact history unk
     }),
   );
   const historical = await w.makeLead();
-  await db.rows("UPDATE leads SET work_history_known=false WHERE id=$1", [historical]);
   expect((await db.store.campaignFunnel(w.manager)).rows).toEqual([
     {
       campaign: "Evening course",
       source: "webForm",
       received: 3,
       unassigned: 1,
-      knownContacted: 0,
-      contactUnknown: 1,
-      contacted: null,
+      contacted: 0,
       won: 1,
       conversion: 1 / 3,
     },
   ]);
   const historicalDetail = await db.store.getLead(w.manager, historical);
   expect(historicalDetail.contactedAt).toBeNull();
-  expect(historicalDetail.noAnswerCount).toBeNull();
+  expect(historicalDetail.noAnswerCount).toBe(0);
   const queue = await db.store.workQueue(w.agent, {
     agentId: w.agent.userId,
     at: AT,

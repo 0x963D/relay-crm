@@ -513,7 +513,7 @@ Only `spokeToThem` records contact. A call or WhatsApp attempt alone does not.
 The transition table decides the working stage. Clearing a callback moves a lead that was waiting
 on it to working in `ready`, without claiming contact. Clearing an unset callback returns
 `callbackNotSet` and writes no history. `noAnswerCount` on the queue and detail counts the recorded
-no-answer attempts across callbacks. It is null when earlier attempt history is unknown. The `noAnswer` stage's `count` is the consecutive count from
+no-answer attempts across callbacks. Every lead in this schema has recorded work history. The `noAnswer` stage's `count` is the consecutive count from
 the transition table. Setting a callback replaces that stage, but preserves the attempt history.
 
 An agent can work their own lead. Anyone else needs its existing edit scope. A team lead's team
@@ -560,9 +560,7 @@ leads. Leads without recorded attribution have null source and campaign. `campai
 named Meta Lead Ads campaign rows. `otherSourceCount` counts distinct remaining sources, including
 unattributed leads as a null source. A Meta Lead Ads row without a campaign is also an other source.
 
-A campaign's `contacted` is null when some contact history is unknown. `knownContacted` and
-`contactUnknown` expose the known count and the number of leads whose contact cannot be decided.
-A win is never used as proof of contact. The report has no performance or export endpoint.
+A campaign's `contacted` counts leads with a recorded conversation. An unanswered attempt does not count.
 
 `accounts.list` returns `items` and the scoped `total` before the limit. It orders by the person's
 name, then email, then account ID. Each item includes the owner, the person's name and email,

@@ -88,15 +88,15 @@ enum ActivityKind {
 }
 
 model User {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  email     String   @unique
-  name      String
-  roleVersion Int @default(0) @map("role_version")
-  role      Role
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id          String  @id @default(uuid(7)) @db.Uuid
+  email       String
+  name        String
+  image       String?
+  role        Role
+  roleVersion Int     @default(0) @map("role_version")
 
   emailVerified Boolean       @default(false) @map("email_verified")
-  image         String?
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime      @default(now()) @map("updated_at") @db.Timestamptz(3)
   sessions      AuthSession[]
   authAccounts  AuthAccount[]
@@ -137,10 +137,10 @@ model Membership {
 }
 
 model Account {
-  teamId    String?  @map("team_id") @db.Uuid
-  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   id        String   @id @default(uuid(7)) @db.Uuid
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   ownerId   String?  @map("owner_id") @db.Uuid
+  teamId    String?  @map("team_id") @db.Uuid
   createdAt DateTime @map("created_at") @db.Timestamptz(3)
 
   owner        User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
@@ -153,25 +153,24 @@ model Account {
 }
 
 model Lead {
-  workHistoryKnown Boolean @default(true) @map("work_history_known")
-  contactedAt DateTime? @map("contacted_at") @db.Timestamptz(3)
-  lostNote String? @map("lost_note")
-  version         Int         @default(0)
   id              String      @id @default(uuid(7)) @db.Uuid
   email           String      @unique
   name            String?
   phone           String?
-  status          LeadStatus
   ownerId         String?     @map("owner_id") @db.Uuid
   teamId          String?     @map("team_id") @db.Uuid
+  previousOwnerId String?     @map("previous_owner_id") @db.Uuid
+  accountId       String?     @unique @map("account_id") @db.Uuid
+  status          LeadStatus
   stage           WorkStage?
-  callBackAt      DateTime?   @map("call_back_at") @db.Timestamptz(3)
   noAnswerCount   Int?        @map("no_answer_count")
   deadReason      DeadReason? @map("dead_reason")
-  accountId       String?     @unique @map("account_id") @db.Uuid
-  firstAssignedAt DateTime?   @map("first_assigned_at") @db.Timestamptz(3)
-  previousOwnerId String?     @map("previous_owner_id") @db.Uuid
+  lostNote        String?     @map("lost_note")
+  version         Int         @default(0)
   createdAt       DateTime    @map("created_at") @db.Timestamptz(3)
+  firstAssignedAt DateTime?   @map("first_assigned_at") @db.Timestamptz(3)
+  contactedAt     DateTime?   @map("contacted_at") @db.Timestamptz(3)
+  callBackAt      DateTime?   @map("call_back_at") @db.Timestamptz(3)
 
   owner         User?         @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   previousOwner User?         @relation("LeadPreviousOwner", fields: [previousOwnerId], references: [id], onDelete: SetNull)
@@ -190,6 +189,8 @@ model IntakeEvent {
   id          String        @id @default(uuid(7)) @db.Uuid
   source      IntakeSource
   externalId  String        @map("external_id")
+  leadId      String?       @map("lead_id") @db.Uuid
+  accountId   String?       @map("account_id") @db.Uuid
   email       String?
   name        String?
   phone       String?
@@ -197,14 +198,12 @@ model IntakeEvent {
   adSet       String?       @map("ad_set")
   ad          String?
   form        String?
-  submittedAt DateTime?     @map("submitted_at") @db.Timestamptz(3)
-  receivedAt  DateTime      @map("received_at") @db.Timestamptz(3)
   // json and not jsonb, because the record is kept as received and never queried, and jsonb
   // refuses a NUL escape.
   raw         Json          @db.Json
   outcome     IntakeOutcome
-  leadId      String?       @map("lead_id") @db.Uuid
-  accountId   String?       @map("account_id") @db.Uuid
+  submittedAt DateTime?     @map("submitted_at") @db.Timestamptz(3)
+  receivedAt  DateTime      @map("received_at") @db.Timestamptz(3)
 
   lead       Lead?      @relation(fields: [leadId], references: [id], onDelete: Restrict)
   account    Account?   @relation(fields: [accountId], references: [id], onDelete: Restrict)
@@ -217,12 +216,12 @@ model IntakeEvent {
 }
 
 model Activity {
-  sequence BigInt @unique @default(autoincrement())
   id            String       @id @default(uuid(7)) @db.Uuid
-  kind          ActivityKind
+  sequence      BigInt       @unique @default(autoincrement())
   leadId        String?      @map("lead_id") @db.Uuid
   accountId     String?      @map("account_id") @db.Uuid
   intakeEventId String?      @map("intake_event_id") @db.Uuid
+  kind          ActivityKind
   detail        Json?
   at            DateTime     @db.Timestamptz(3)
 
@@ -238,16 +237,16 @@ model Activity {
 
 model AuthSession {
   id            String   @id @db.Uuid
-  token         String   @unique
   userId        String   @map("user_id") @db.Uuid
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   currentTeamId String?  @map("current_team_id") @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token         String   @unique
   currentTeam   Team?    @relation(fields: [currentTeamId], references: [id], onDelete: SetNull)
-  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
   ipAddress     String?  @map("ip_address")
   userAgent     String?  @map("user_agent")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
 
   @@index([userId])
   @@map("auth_sessions")
@@ -255,19 +254,19 @@ model AuthSession {
 
 model AuthAccount {
   id                    String    @id @db.Uuid
-  accountId             String    @map("account_id")
-  providerId            String    @map("provider_id")
   userId                String    @map("user_id") @db.Uuid
+  providerId            String    @map("provider_id")
+  accountId             String    @map("account_id")
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope                 String?
   accessToken           String?   @map("access_token")
   refreshToken          String?   @map("refresh_token")
   idToken               String?   @map("id_token")
-  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
-  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
-  scope                 String?
   password              String?
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime  @default(now()) @map("updated_at") @db.Timestamptz(3)
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
 
   @@index([userId])
   @@map("auth_accounts")
@@ -277,18 +276,18 @@ model AuthVerification {
   id         String   @id
   identifier String   @unique
   value      String
-  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
 
   @@map("auth_verifications")
 }
 
 model AuthRequestLimit {
-  windowSeconds Int @default(60) @map("window_seconds")
-  key       String   @id
-  count     Int
-  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+  key           String   @id
+  windowSeconds Int      @default(60) @map("window_seconds")
+  count         Int
+  startedAt     DateTime @map("started_at") @db.Timestamptz(3)
 
   @@index([startedAt])
   @@map("auth_request_limits")
@@ -297,9 +296,9 @@ model AuthRequestLimit {
 model DistributionPreview {
   id          String   @id @default(uuid(7)) @db.Uuid
   actorId     String   @map("actor_id") @db.Uuid
-  fingerprint String
   request     Json
   snapshot    Json
+  fingerprint String
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("distribution_previews")
@@ -352,169 +351,182 @@ enum AuditSubjectType {
 }
 
 model AuditLog {
-  requestId String @map("request_id") @db.Uuid
-  idempotencyId String? @map("idempotency_id") @db.Uuid
-  subjectType AuditSubjectType @map("subject_type")
-  systemActor SystemActor? @map("system_actor")
-  id        String   @id @default(uuid(7)) @db.Uuid
-  actorId   String?   @map("actor_id") @db.Uuid
-  action    AuditAction
-  subjectId String   @map("subject_id") @db.Uuid
-  before    Json
-  after     Json
-  at        DateTime @db.Timestamptz(3)
+  id            String           @id @default(uuid(7)) @db.Uuid
+  subjectType   AuditSubjectType @map("subject_type")
+  subjectId     String           @map("subject_id") @db.Uuid
+  actorId       String?          @map("actor_id") @db.Uuid
+  systemActor   SystemActor?     @map("system_actor")
+  requestId     String           @map("request_id") @db.Uuid
+  idempotencyId String?          @map("idempotency_id") @db.Uuid
+  action        AuditAction
+  before        Json
+  after         Json
+  at            DateTime         @db.Timestamptz(3)
 
   @@index([subjectId, id])
   @@map("audit_log")
 }
 
-
 model Payment {
-  creationToken String? @map("creation_token") @db.Uuid
-  providerFinal Boolean @default(false) @map("provider_final")
+  id                   String    @id @default(uuid(7)) @db.Uuid
+  accountId            String    @map("account_id") @db.Uuid
+  amount               BigInt
+  currency             String
+  method               String
+  kind                 String
+  recordedById         String    @map("recorded_by_id") @db.Uuid
+  soldById             String?   @map("sold_by_id") @db.Uuid
+  receiptHash          String?   @map("receipt_hash")
+  reference            String?
+  sandboxMode          String?   @map("sandbox_mode")
+  status               String
+  version              Int       @default(0)
+  completedBy          String?   @map("completed_by")
+  reason               String?
+  reportedAmount       BigInt?   @map("reported_amount")
+  reportedCurrency     String?   @map("reported_currency")
+  providerFinal        Boolean   @default(false) @map("provider_final")
+  creationToken        String?   @map("creation_token") @db.Uuid
+  checkToken           String?   @map("check_token") @db.Uuid
+  createdAt            DateTime  @map("created_at") @db.Timestamptz(3)
   creationPendingUntil DateTime? @map("creation_pending_until") @db.Timestamptz(3)
-  version Int @default(0)
-  receiptHash String? @map("receipt_hash")
-  reference String?
-  id String @id @default(uuid(7)) @db.Uuid
-  accountId String @map("account_id") @db.Uuid
-  amount BigInt
-  currency String
-  method String @default("card")
-  kind String
-  status String @default("checkoutCreated")
-  recordedById String @map("recorded_by_id") @db.Uuid
-  soldById String? @map("sold_by_id") @db.Uuid
-  createdAt DateTime @map("created_at") @db.Timestamptz(3)
-  decidedAt DateTime? @map("decided_at") @db.Timestamptz(3)
-  completedBy String? @map("completed_by")
-  reportedAmount BigInt? @map("reported_amount")
-  reportedCurrency String? @map("reported_currency")
-  reason String?
-  nextCheckAt DateTime? @map("next_check_at") @db.Timestamptz(3)
-  checkToken String? @map("check_token") @db.Uuid
-  sandboxMode String? @map("sandbox_mode")
+  nextCheckAt          DateTime? @map("next_check_at") @db.Timestamptz(3)
+  decidedAt            DateTime? @map("decided_at") @db.Timestamptz(3)
+
   @@index([status, nextCheckAt])
   @@index([accountId, createdAt])
   @@map("payments")
 }
 
 model LedgerAccount {
-  id String @id @default(uuid(7)) @db.Uuid
+  id        String  @id @default(uuid(7)) @db.Uuid
   accountId String? @map("account_id") @db.Uuid
-  kind String
-  currency String
+  kind      String
+  currency  String
+
   @@unique([accountId, currency])
   @@map("ledger_accounts")
 }
 
 model LedgerTransaction {
-  id String @id @default(uuid(7)) @db.Uuid
-  paymentId String @unique @map("payment_id") @db.Uuid
-  at DateTime @db.Timestamptz(3)
+  id        String   @id @default(uuid(7)) @db.Uuid
+  paymentId String   @unique @map("payment_id") @db.Uuid
+  at        DateTime @db.Timestamptz(3)
+
   @@map("ledger_transactions")
 }
 
 model LedgerLine {
-  side String
-  id String @id @default(uuid(7)) @db.Uuid
-  transactionId String @map("transaction_id") @db.Uuid
+  id              String @id @default(uuid(7)) @db.Uuid
+  transactionId   String @map("transaction_id") @db.Uuid
   ledgerAccountId String @map("ledger_account_id") @db.Uuid
-  amount BigInt
+  side            String
+  amount          BigInt
+
   @@index([transactionId])
   @@index([ledgerAccountId])
   @@map("ledger_lines")
 }
 
 model PaymentEvent {
-  sequence BigInt @id @default(autoincrement())
-  paymentId String @map("payment_id") @db.Uuid
-  kind String
-  at DateTime @db.Timestamptz(3)
-  detail Json
+  sequence  BigInt   @id @default(autoincrement())
+  paymentId String   @map("payment_id") @db.Uuid
+  kind      String
+  detail    Json
+  at        DateTime @db.Timestamptz(3)
+
   @@index([paymentId, sequence])
   @@map("payment_events")
 }
 
 model WebhookInbox {
-  eventId String @id @map("event_id")
-  paymentId String @map("payment_id") @db.Uuid
-  payloadHash String @map("payload_hash")
-  receivedAt DateTime @map("received_at") @db.Timestamptz(3)
+  eventId     String   @id @map("event_id")
+  paymentId   String   @map("payment_id") @db.Uuid
+  payloadHash String   @map("payload_hash")
+  receivedAt  DateTime @map("received_at") @db.Timestamptz(3)
+
   @@map("webhook_inbox")
 }
 
 model Outbox {
-  recipient String?
-  cycleAttempts Int @default(0) @map("cycle_attempts")
-  id String @id @default(uuid(7)) @db.Uuid
-  paymentId String @unique @map("payment_id") @db.Uuid
-  topic String
-  payload Json
-  state String @default("pending")
-  attempts Int @default(0)
-  leaseToken String? @map("lease_token") @db.Uuid
-  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+  id            String    @id @default(uuid(7)) @db.Uuid
+  paymentId     String    @unique @map("payment_id") @db.Uuid
+  topic         String
+  recipient     String?
+  payload       Json
+  state         String    @default("pending")
+  attempts      Int       @default(0)
+  cycleAttempts Int       @default(0) @map("cycle_attempts")
+  leaseToken    String?   @map("lease_token") @db.Uuid
+  createdAt     DateTime  @map("created_at") @db.Timestamptz(3)
   nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(3)
-  createdAt DateTime @map("created_at") @db.Timestamptz(3)
+  leaseUntil    DateTime? @map("lease_until") @db.Timestamptz(3)
+
   @@map("outbox")
 }
 
 model SandboxCheckout {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  paymentId String   @unique @map("payment_id") @db.Uuid
+  eventId   String   @unique @default(uuid(7)) @map("event_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  amount    BigInt
+  currency  String
+  mode      String
+  status    String   @default("pending")
   expiresAt DateTime @default(dbgenerated("(CURRENT_TIMESTAMP + interval '24 hours')")) @map("expires_at") @db.Timestamptz(3)
-  id String @id @default(uuid(7)) @db.Uuid
-  paymentId String @unique @map("payment_id") @db.Uuid
-  tokenHash String? @unique @map("token_hash")
-  amount BigInt
-  currency String
-  mode String
-  status String @default("pending")
-  eventId String @unique @default(uuid(7)) @map("event_id") @db.Uuid
+
   @@map("sandbox_checkouts")
 }
 
-
 model PaymentApproval {
-  paymentVersion Int @default(0) @map("payment_version")
-  id String @id @default(uuid(7)) @db.Uuid
-  paymentId String @map("payment_id") @db.Uuid
-  approverId String @map("approver_id") @db.Uuid
-  roleVersion Int @map("role_version")
-  at DateTime @db.Timestamptz(3)
-  voidedAt DateTime? @map("voided_at") @db.Timestamptz(3)
-  requestId String @map("request_id") @db.Uuid
+  id             String    @id @default(uuid(7)) @db.Uuid
+  paymentId      String    @map("payment_id") @db.Uuid
+  approverId     String    @map("approver_id") @db.Uuid
+  requestId      String    @map("request_id") @db.Uuid
+  roleVersion    Int       @map("role_version")
+  paymentVersion Int       @map("payment_version")
+  at             DateTime  @db.Timestamptz(3)
+  voidedAt       DateTime? @map("voided_at") @db.Timestamptz(3)
+
   @@index([paymentId])
   @@map("payment_approvals")
 }
+
 model ReceiptAttempt {
-  id String @id @default(uuid(7)) @db.Uuid
-  outboxId String @map("outbox_id") @db.Uuid
-  number Int
-  state String
-  reason String?
-  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+  id         String    @id @default(uuid(7)) @db.Uuid
+  outboxId   String    @map("outbox_id") @db.Uuid
+  number     Int
+  state      String
+  reason     String?
+  startedAt  DateTime  @map("started_at") @db.Timestamptz(3)
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+
   @@unique([outboxId, number])
   @@map("receipt_attempts")
 }
+
 model EmailSuppression {
-  email String @id
-  reason String
+  email     String   @id
+  reason    String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
   @@map("email_suppressions")
 }
 
 model PaymentMaker {
-  paymentId String @map("payment_id") @db.Uuid
-  userId String @map("user_id") @db.Uuid
-  at DateTime @db.Timestamptz(3)
+  paymentId String   @map("payment_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  at        DateTime @db.Timestamptz(3)
+
   @@id([paymentId, userId])
   @@map("payment_makers")
 }
 
 model JobLease {
-  route String @id
-  token String @db.Uuid
+  route     String   @id
+  token     String   @db.Uuid
   expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
   @@map("job_leases")
 }

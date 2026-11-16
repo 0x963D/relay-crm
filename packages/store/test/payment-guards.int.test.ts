@@ -106,7 +106,7 @@ test("approval insert independently compares the current role version", async ({
   await db.rows("UPDATE users SET role='manager' WHERE id=$1", [w.a.userId]);
   await expect(
     db.rows(
-      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,0,now(),$3)",
       [w.id, w.a.userId, requestId],
     ),
   ).rejects.toMatchObject({ code: "23514" });
@@ -115,7 +115,7 @@ test("approval insert independently compares the current role version", async ({
 test("completion independently compares both approval role versions", async ({ db }) => {
   const w = await staleApproval(db);
   await db.rows(
-    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,0,now(),$3)",
     [w.id, w.b.userId, requestId],
   );
   await refusesCompletion(db, w.id);
@@ -174,13 +174,13 @@ test("the database refuses duplicate active approvals but permits a fresh approv
   await db.store.approveManualPayment(w.a, w.input, requestId);
   await expect(
     db.rows(
-      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,0,now(),$3)",
       [w.id, w.a.userId, requestId],
     ),
   ).rejects.toMatchObject({ code: "23505", constraint: "payment_approvals_active_key" });
   await db.rows("UPDATE users SET role='manager' WHERE id=$1", [w.a.userId]);
   await db.rows(
-    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,1,now(),$3)",
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,1,0,now(),$3)",
     [w.id, w.a.userId, requestId],
   );
   expect(
