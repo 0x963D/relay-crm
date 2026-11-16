@@ -76,7 +76,7 @@ const definitions: {
   },
   {
     name: "payment-completion-recorder",
-    file: "packages/store/prisma/migrations/0024_payment_makers/migration.sql",
+    file: "packages/store/prisma/migrations/0033_payment_maker_history/migration.sql",
     before: " AND a.approver_id<>NEW.recorded_by_id",
     after: "",
     test: "completion independently excludes the recorder when another person last edited",
@@ -84,7 +84,7 @@ const definitions: {
   },
   {
     name: "payment-role-insert",
-    file: "packages/store/prisma/migrations/0024_payment_makers/migration.sql",
+    file: "packages/store/prisma/migrations/0033_payment_maker_history/migration.sql",
     before: " OR u.role_version<>NEW.role_version",
     after: "",
     test: "approval insert independently compares the current role version",
@@ -92,7 +92,7 @@ const definitions: {
   },
   {
     name: "payment-role-completion",
-    file: "packages/store/prisma/migrations/0024_payment_makers/migration.sql",
+    file: "packages/store/prisma/migrations/0033_payment_maker_history/migration.sql",
     before: "AND a.role_version=u.role_version ",
     after: "",
     test: "completion independently compares both approval role versions",

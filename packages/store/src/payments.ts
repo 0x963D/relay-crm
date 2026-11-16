@@ -105,7 +105,6 @@ function payment(row: Payment) {
     money: money(row.amount, row.currency),
     state: stateOf(row),
     recordedById: row.recordedById,
-    termsSetById: row.termsSetById,
     soldById: row.soldById,
     createdAt: row.createdAt,
     nextCheckAt: row.nextCheckAt,
@@ -859,6 +858,12 @@ export async function recordManualPayment(
     );
   });
 }
+async function isMaker(tx: Tx, paymentId: string, userId: string) {
+  return (
+    (await tx.paymentMaker.findUnique({ where: { paymentId_userId: { paymentId, userId } } })) !==
+    null
+  );
+}
 async function waitingPayment(tx: Tx, actor: Actor, input: ManualDecision) {
   const row = await scopedPayment(tx, actor, input.id);
   if (row.status !== "pendingApproval" || row.version !== input.version)
@@ -882,7 +887,7 @@ export async function approveManualPayment(
       throw new AccessError("accessDenied");
     const visible = await scopedPayment(tx, current, input.id);
     if (visible.recordedById === current.userId) throw new AccessError("paymentRecorder");
-    if (visible.termsSetById === current.userId) throw new AccessError("paymentMaker");
+    if (await isMaker(tx, visible.id, current.userId)) throw new AccessError("paymentMaker");
     if (
       await tx.paymentApproval.findFirst({
         where: { paymentId: input.id, approverId: current.userId, voidedAt: null },
@@ -957,7 +962,7 @@ export async function decideManualPayment(
       input.decision === "cancel"
         ? row.recordedById !== current.userId
         : row.recordedById === current.userId ||
-          row.termsSetById === current.userId ||
+          (await isMaker(tx, row.id, current.userId)) ||
           recordScope(current, "payment", "approve").kind !== "all"
     )
       throw new AccessError("accessDenied");
@@ -1012,7 +1017,6 @@ export async function editManualPayment(
         receiptHash: input.receiptHash,
         reference: input.reference,
         version: { increment: 1 },
-        termsSetById: current.userId,
       },
     });
     const at = new Date();
@@ -1064,10 +1068,11 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
     approver: users.find((u) => u.id === a.approverId),
   }));
   const mayApprove = recordScope(actor, "payment", "approve").kind === "all";
+  const maker = await isMaker(tx, row.id, actor.userId);
   const refusal =
     row.recordedById === actor.userId
       ? "paymentRecorder"
-      : row.termsSetById === actor.userId
+      : maker
         ? "paymentMaker"
         : approvals.some((a) => a.approverId === actor.userId && a.voidedAt === null)
           ? "alreadyApproved"
@@ -1077,7 +1082,6 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemp
               ? "refreshConflict"
               : null;
   const waiting = row.status === "pendingApproval";
-  const maker = row.recordedById === actor.userId || row.termsSetById === actor.userId;
   const receipt = await receiptDetail(tx, row.id);
   const editable =
     row.status === "pendingApproval" &&

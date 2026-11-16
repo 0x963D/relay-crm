@@ -468,3 +468,78 @@ test("user email identity is case insensitive on insert and update", async ({ db
     constraint: "users_email_lower_key",
   });
 });
+
+test.for(["Changed reference", "Transfer reference"])(
+  "every earlier editor remains a maker after later edits: %s",
+  async (reference, { db }) => {
+    const w = await setup(db);
+    await db.store.editManualPayment(
+      w.b,
+      { ...w.terms, id: w.id, version: 0, money: { minor: 990000n, currency: "GBP" } },
+      requestId,
+    );
+    await db.store.editManualPayment(
+      w.c,
+      {
+        ...w.terms,
+        id: w.id,
+        version: 1,
+        money: { minor: 990000n, currency: "GBP" },
+        reference,
+      },
+      requestId,
+    );
+    const input = { ...w.input, version: 2 };
+    await expect(db.store.approveManualPayment(w.b, input, requestId)).rejects.toMatchObject({
+      code: "paymentMaker",
+    });
+    await expect(
+      db.store.decideManualPayment(
+        w.b,
+        { ...input, decision: "reject", reason: "Reject" },
+        requestId,
+      ),
+    ).rejects.toMatchObject({ code: "accessDenied" });
+    expect((await db.store.getPayment(w.b, w.id)).actions).toMatchObject({
+      approve: false,
+      reject: false,
+      approvalRefusal: "paymentMaker",
+    });
+    await expect(
+      db.rows(
+        "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES(gen_random_uuid(),$1,$2,0,2,now(),$3)",
+        [w.id, w.b.userId, requestId],
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+    await db.ownerRows("ALTER TABLE payment_approvals DISABLE TRIGGER payment_approvals_guard");
+    await db.rows(
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES(gen_random_uuid(),$1,$2,0,2,now(),$4),(gen_random_uuid(),$1,$3,0,2,now(),$4)",
+      [w.id, w.b.userId, w.a.userId, requestId],
+    );
+    await db.ownerRows("ALTER TABLE payment_approvals ENABLE TRIGGER payment_approvals_guard");
+    await db.rows("BEGIN; SET CONSTRAINTS manual_approvals_required IMMEDIATE");
+    try {
+      await expect(
+        db.rows(
+          "UPDATE payments SET status='completed',completed_by='manualApproval',decided_at=now() WHERE id=$1",
+          [w.id],
+        ),
+      ).rejects.toMatchObject({ constraint: "manual_approvals_required" });
+    } finally {
+      await db.rows("ROLLBACK");
+    }
+  },
+);
+
+test("maker history cannot be removed and a SQL edit must name its maker", async ({ db }) => {
+  const w = await setup(db);
+  await expect(
+    db.rows("DELETE FROM payment_makers WHERE payment_id=$1", [w.id]),
+  ).rejects.toMatchObject({ code: "42501" });
+  await expect(
+    db.rows("UPDATE payment_makers SET user_id=$2 WHERE payment_id=$1", [w.id, w.a.userId]),
+  ).rejects.toMatchObject({ code: "42501" });
+  await expect(
+    db.rows("UPDATE payments SET amount=990000,version=1 WHERE id=$1", [w.id]),
+  ).rejects.toMatchObject({ code: "23514", message: "Payment edits require their maker event" });
+});
