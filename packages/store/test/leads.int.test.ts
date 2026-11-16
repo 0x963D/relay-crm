@@ -66,10 +66,10 @@ async function ownerOf(db: TestDatabase): Promise<Actor> {
 
 async function persistActor(db: TestDatabase, actor: Actor): Promise<void> {
   await db.rows("UPDATE users SET role=$1 WHERE id=$2", [actor.role, actor.userId]);
-  await db.rows("DELETE FROM memberships WHERE user_id=$1", [actor.userId]);
+  await db.ownerRows("DELETE FROM memberships WHERE user_id=$1", [actor.userId]);
   if (actor.team) {
-    await db.rows("UPDATE teams SET kind=$1 WHERE id=$2", [actor.team.kind, actor.team.id]);
-    await db.rows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,$3)", [
+    await db.ownerRows("UPDATE teams SET kind=$1 WHERE id=$2", [actor.team.kind, actor.team.id]);
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,$3)", [
       actor.userId,
       actor.team.id,
       actor.team.isLead,

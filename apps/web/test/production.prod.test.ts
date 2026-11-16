@@ -23,7 +23,7 @@ databaseTest(
     const managerId = await db.seedUser("manager");
     const agentId = await db.seedUser("agent");
     const teamId = await db.seedTeam("sales");
-    await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$3),($2,$3)", [
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$3),($2,$3)", [
       managerId,
       agentId,
       teamId,
@@ -566,7 +566,7 @@ databaseTest(
     await db.seedUser("owner");
     const teamId = await db.seedTeam("sales");
     const accountId = await db.seedAccount();
-    await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
+    await db.ownerRows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
     await db.seedLead({
       email: "customer@example.com",
       lifecycle: {
@@ -1069,7 +1069,7 @@ databaseTest(
       const suppressedId = await record("manual-suppressed", "c");
       await approve(suppressedId, accountant);
       await approve(suppressedId, manager);
-      await db.rows(
+      await db.ownerRows(
         "INSERT INTO email_suppressions(email,reason) VALUES ('customer@example.com','Local suppression test')",
       );
       const beforeSuppression = inbox.messages.length;
@@ -1079,7 +1079,7 @@ databaseTest(
       expect(suppressed.receipt).toMatchObject({ state: "suppressed", attempts: 0 });
       expect(suppressed.state.status).toBe("completed");
       log("suppressed", suppressed.receipt);
-      await db.rows("DELETE FROM email_suppressions WHERE email='customer@example.com'");
+      await db.ownerRows("DELETE FROM email_suppressions WHERE email='customer@example.com'");
 
       const unknownId = await record("manual-unknown", "d");
       await approve(unknownId, accountant);

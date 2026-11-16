@@ -17,7 +17,7 @@ async function world(db: TestDatabase, role: Role = "manager") {
     [agent2Id, teamId, false],
     [otherId, otherTeamId, false],
   ] as const) {
-    await db.rows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,$3)", [
+    await db.ownerRows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,$3)", [
       user,
       team,
       lead,
@@ -370,7 +370,7 @@ describe("scoped records", () => {
 
   test("a team lead cannot submit a preview targeting a different current team", async ({ db }) => {
     const w = await world(db, "teamLead");
-    await db.rows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,true)", [
+    await db.ownerRows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,true)", [
       w.actor.userId,
       w.otherTeamId,
     ]);

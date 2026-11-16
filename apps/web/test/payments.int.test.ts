@@ -155,7 +155,7 @@ test("the typed payment API enforces scope and retries provider checkout creatio
 }) => {
   const userId = await db.seedUser("agent");
   const accountId = await db.seedAccount();
-  await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
+  await db.ownerRows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
   const actor: Actor = { userId, role: "agent", team: null };
   const adapter = sandboxProvider(db.store, env);
   let firstAttempt = true;
@@ -298,7 +298,7 @@ test("account editors close a waiting checkout with a reason and cancel the prov
 }) => {
   const userId = await db.seedUser("agent");
   const accountId = await db.seedAccount();
-  await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
+  await db.ownerRows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
   const actor: Actor = { userId, role: "agent", team: null };
   const provider = sandboxProvider(db.store, env);
   const caller = appRouter.createCaller({

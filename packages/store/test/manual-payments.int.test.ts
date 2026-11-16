@@ -209,7 +209,7 @@ test("agents cannot approve, read ledger lines or another agent's payment", asyn
     code: "accessDenied",
   });
   await expect(db.store.getPayment(agent, w.id)).rejects.toMatchObject({ code: "accessDenied" });
-  await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [agent.userId, w.accountId]);
+  await db.ownerRows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [agent.userId, w.accountId]);
   expect((await db.store.getPayment(agent, w.id)).posting).toBeNull();
   await expect(db.store.accountLedger(agent, w.accountId)).rejects.toMatchObject({
     code: "accessDenied",

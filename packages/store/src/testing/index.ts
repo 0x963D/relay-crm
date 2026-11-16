@@ -32,6 +32,7 @@ export interface RowCounts {
 
 export interface TestDatabase {
   readonly connectionString: string;
+  readonly ownerConnectionString: string;
   readonly store: Store;
   readonly gate: Gate;
   readonly transactions: readonly TransactionReport[];
@@ -89,6 +90,7 @@ async function createTestDatabase(): Promise<{
   let seededRows = 0;
   const db: TestDatabase = {
     connectionString,
+    ownerConnectionString: server.ownerUrlFor(name),
     store,
     gate: createGate(gateSession, inspector),
     transactions,
@@ -115,11 +117,11 @@ async function createTestDatabase(): Promise<{
       return seeded(UserId.parse(user.id));
     },
     seedTeam: async (kind) => {
-      const team = await prisma.team.create({
-        data: { name: `${kind} team`, kind },
-        select: { id: true },
-      });
-      return seeded(TeamId.parse(team.id));
+      const result = await owner.query<{ id: string }>(
+        "INSERT INTO teams(id,name,kind) VALUES (gen_random_uuid(),$1,$2) RETURNING id",
+        [`${kind} team`, kind],
+      );
+      return seeded(TeamId.parse(seeded(result.rows[0] ?? null).id));
     },
     seedAccount: async () => {
       const account = await prisma.account.create({

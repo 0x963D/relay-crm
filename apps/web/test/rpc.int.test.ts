@@ -92,7 +92,10 @@ describe("typed RPC", () => {
     const userId = await db.seedUser("manager"),
       agentId = await db.seedUser("agent"),
       teamId = await db.seedTeam("sales");
-    await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [agentId, teamId]);
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [
+      agentId,
+      teamId,
+    ]);
     const actor: Actor = { userId, role: "manager", team: null };
     const id = await db.seedLead({
       email: "pool@example.com",
@@ -197,7 +200,7 @@ test("work endpoints parse commands, preserve callback dates and carry the HTTP 
 }) => {
   const userId = await db.seedUser("agent");
   const teamId = await db.seedTeam("sales");
-  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [userId, teamId]);
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [userId, teamId]);
   const actor: Actor = { userId, role: "agent", team: null };
   const id = await db.seedLead({
     email: "work-api@example.com",

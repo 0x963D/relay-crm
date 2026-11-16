@@ -25,7 +25,7 @@ async function world(db: TestDatabase) {
   const otherTeam = await db.seedTeam("sales");
   const makeActor = async (role: Role, teamId = team): Promise<Actor> => {
     const userId = await db.seedUser(role);
-    await db.rows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,$3)", [
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,$3)", [
       userId,
       teamId,
       role === "teamLead",

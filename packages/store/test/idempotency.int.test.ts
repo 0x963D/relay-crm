@@ -8,7 +8,7 @@ test("distribution stores its receipt in the shared user key scope", async ({ db
   const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
   const ownerId = await db.seedUser("agent");
   const teamId = await db.seedTeam("sales");
-  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
   const leadId = await db.seedLead({
     email: "pool@example.com",
     lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
@@ -132,7 +132,7 @@ test("assignment audit stores JSON snapshots, a typed subject and its idempotenc
   const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
   const ownerId = await db.seedUser("agent");
   const teamId = await db.seedTeam("sales");
-  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
   const leadId = await db.seedLead({
     email: "audit@example.com",
     lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },

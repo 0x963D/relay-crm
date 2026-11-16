@@ -95,7 +95,7 @@ describe("email sign-in", () => {
     const userId = await db.seedUser("teamLead");
     const teamId = await db.seedTeam("sales");
     const foreign = await db.seedTeam("sales");
-    await db.rows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
       userId,
       teamId,
     ]);
@@ -136,7 +136,7 @@ describe("email sign-in", () => {
     });
     await db.rows("UPDATE users SET role='agent' WHERE id=$1", [userId]);
     expect((await auth.principal(headers))?.actor.role).toBe("agent");
-    await db.rows("DELETE FROM memberships WHERE user_id=$1", [userId]);
+    await db.ownerRows("DELETE FROM memberships WHERE user_id=$1", [userId]);
     expect((await auth.principal(headers))?.actor.team).toBeNull();
     const replay = await post("/sign-in/email-otp", { email: "user-1@team.example", otp: code });
     expect(replay.response.status).toBe(400);
@@ -228,7 +228,7 @@ test("multiple memberships require a team choice and the session API returns the
   const userId = await db.seedUser("teamLead");
   const teams = [await db.seedTeam("sales"), await db.seedTeam("sales")];
   for (const teamId of teams)
-    await db.rows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
       userId,
       teamId,
     ]);
@@ -261,7 +261,7 @@ test("a completed request replays through a valid session after role revocation 
   const userId = await db.seedUser("manager");
   const ownerId = await db.seedUser("agent");
   const teamId = await db.seedTeam("sales");
-  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
   const leadId = await db.seedLead({
     email: "replay@example.com",
     lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },

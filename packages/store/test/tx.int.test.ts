@@ -6,8 +6,8 @@ const SERIALIZABLE = { isolationLevel: "Serializable", maxWait: 2_000, timeout: 
 
 const latch = (): PromiseWithResolvers<void> => Promise.withResolvers();
 
-async function withClient<T>(db: TestDatabase, run: (prisma: Db) => Promise<T>): Promise<T> {
-  const prisma = connect(db.connectionString);
+async function withOwnerClient<T>(db: TestDatabase, run: (prisma: Db) => Promise<T>): Promise<T> {
+  const prisma = connect(db.ownerConnectionString);
   try {
     return await run(prisma);
   } finally {
@@ -31,7 +31,7 @@ async function failureOf(work: Promise<unknown>): Promise<unknown> {
  */
 describe("how a stale snapshot surfaces", () => {
   test("a concurrent update fails the statement with P2034 and SQLSTATE 40001", async ({ db }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const team = await prisma.team.create({ data: { name: "one", kind: "sales" } });
       const hasRead = latch();
       const mayWrite = latch();
@@ -61,7 +61,7 @@ describe("how a stale snapshot surfaces", () => {
   test("write skew fails the COMMIT with a bare driver error and SQLSTATE 40001", async ({
     db,
   }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const mayWrite = latch();
       const skewed = (reads: "sales" | "accounts", writes: "sales" | "accounts") => {
         const hasRead = latch();
@@ -100,7 +100,7 @@ describe("how a stale snapshot surfaces", () => {
   });
 
   test("a deadlock fails one transaction with P2034 and SQLSTATE 40P01", async ({ db }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const a = await prisma.team.create({ data: { name: "a", kind: "sales" } });
       const b = await prisma.team.create({ data: { name: "b", kind: "sales" } });
       const holdsA = latch();
@@ -140,7 +140,7 @@ describe("how a stale snapshot surfaces", () => {
   test("a unique violation is P2002 and names the index, so only race constraints retry", async ({
     db,
   }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const user = { email: "dup@team.example", name: "dup", role: "agent" } as const;
       await prisma.user.create({ data: user });
       const error = await failureOf(
@@ -164,7 +164,7 @@ describe("how a stale snapshot surfaces", () => {
   });
 
   test("a violation of a race constraint counts as a stale snapshot", async ({ db }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const event = {
         source: "csv",
         externalId: "row-1",
@@ -190,7 +190,7 @@ describe("how a stale snapshot surfaces", () => {
 
 describe("transact", () => {
   test("runs the body again on a fresh snapshot until it commits", async ({ db }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const team = await prisma.team.create({ data: { name: "0", kind: "sales" } });
       let interfered = false;
 
@@ -213,7 +213,7 @@ describe("transact", () => {
   });
 
   test("gives up after ten attempts and throws the original error", async ({ db }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       const team = await prisma.team.create({ data: { name: "0", kind: "sales" } });
       let attempts = 0;
 
@@ -233,7 +233,7 @@ describe("transact", () => {
   });
 
   test("does not retry an error that is not a stale snapshot", async ({ db }) => {
-    await withClient(db, async (prisma) => {
+    await withOwnerClient(db, async (prisma) => {
       let attempts = 0;
       const error = await failureOf(
         transact(prisma, () => {

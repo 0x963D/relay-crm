@@ -14,7 +14,7 @@ async function world(db: TestDatabase, role: Role = "manager") {
     [agentId, teamId, false],
     [otherId, otherTeamId, false],
   ] as const) {
-    await db.rows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,$3)", [
+    await db.ownerRows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,$3)", [
       user,
       team,
       lead,
@@ -39,17 +39,17 @@ async function world(db: TestDatabase, role: Role = "manager") {
   const account = await db.seedAccount();
   const outsideAccount = await db.seedAccount();
   const teammateAccount = await db.seedAccount();
-  await db.rows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
+  await db.ownerRows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
     agentId,
     teamId,
     teammateAccount,
   ]);
-  await db.rows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
+  await db.ownerRows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
     userId,
     teamId,
     account,
   ]);
-  await db.rows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
+  await db.ownerRows("UPDATE accounts SET owner_id=$1, team_id=$2 WHERE id=$3", [
     otherId,
     otherTeamId,
     outsideAccount,
@@ -454,7 +454,7 @@ describe("record scoping", () => {
       code: "accessDenied",
     });
     await db.rows("UPDATE users SET role='teamLead' WHERE id=$1", [w.actor.userId]);
-    await db.rows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
+    await db.ownerRows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
     await expect(
       db.store.assignPool(w.actor, [w.pool], w.agent, "00000000-0000-4000-8000-000000000001"),
     ).rejects.toMatchObject({
@@ -510,7 +510,7 @@ test("lead lists reload the current role and membership", async ({ db }) => {
   await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
   expect((await db.store.listLeads(w.actor, { limit: 100 })).map((l) => l.id)).toEqual([w.own]);
   await db.rows("UPDATE users SET role='teamLead' WHERE id=$1", [w.actor.userId]);
-  await db.rows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
+  await db.ownerRows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
   expect((await db.store.listLeads(w.actor, { limit: 100 })).map((l) => l.id)).toEqual([w.own]);
 });
 
@@ -599,7 +599,7 @@ test("assignment refuses a sales member whose current role is not agent", async 
 test("assignment refuses an agent in an accounts team", async ({ db }) => {
   const w = await world(db);
   const teamId = await db.seedTeam("accounts");
-  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [
     w.agent.ownerId,
     teamId,
   ]);

@@ -12,7 +12,7 @@ async function setup(db: TestDatabase, creationInFlight = false) {
   const userId = await db.seedUser("agent");
   const managerId = await db.seedUser("manager");
   const accountId = await db.seedAccount();
-  await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
+  await db.ownerRows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
   const actor: Actor = { userId, role: "agent", team: null };
   const manager: Actor = { userId: managerId, role: "manager", team: null };
   const created = await db.store.createPayment(

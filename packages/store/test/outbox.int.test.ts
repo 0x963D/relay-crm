@@ -184,7 +184,7 @@ test("unknown delivery never retries automatically and authorized requeue is aud
 });
 test("suppressed addresses send nothing and keep the completed payment", async ({ db }) => {
   const w = await receipt(db);
-  await db.rows(
+  await db.ownerRows(
     "INSERT INTO email_suppressions(email,reason) VALUES ('one@example.com','Earlier bounce')",
   );
   const result = await db.store.runOutbox(() => Promise.reject(new Error("Must not send")), { at });
