@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseEmail } from "@relay/domain";
 import type { Store } from "@relay/store";
-import { DEMO_ROLES } from "@relay/store";
+import { DEMO_ROLES, isAccessError } from "@relay/store";
 import { createAuthEndpoint, APIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { betterAuth } from "better-auth";
@@ -76,7 +76,14 @@ export function createAuthentication(
             },
             async (ctx) => {
               if (!demo) throw new APIError("NOT_FOUND");
-              const user = await store.demoPerson(ctx.body.role);
+              const user = await store.demoPerson(ctx.body.role).catch((error: unknown) => {
+                if (isAccessError(error))
+                  throw new APIError("FORBIDDEN", {
+                    message:
+                      "This demo role is unavailable. Choose another role or try after the reset.",
+                  });
+                throw error;
+              });
               const session = await ctx.context.internalAdapter.createSession(user.id);
               await setSessionCookie(ctx, { session, user });
               return ctx.json({

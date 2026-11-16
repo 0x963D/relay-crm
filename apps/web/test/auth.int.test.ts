@@ -484,6 +484,19 @@ test(
       }),
     );
     expect(refused.status).toBe(403);
+    await db.rows("UPDATE users SET role='manager' WHERE email='dele.akinwale@tidewell.example'");
+    const before = await db.rows("SELECT id FROM auth_sessions ORDER BY id");
+    const unavailable = await handle(
+      new Request(`${origin}/api/auth/demo`, {
+        method: "POST",
+        headers: { origin, "content-type": "application/json" },
+        body: JSON.stringify({ role: "agent" }),
+      }),
+    );
+    expect(unavailable.status).toBe(403);
+    expect(await unavailable.text()).toContain("This demo role is unavailable.");
+    expect(unavailable.headers.getSetCookie()).toEqual([]);
+    expect(await db.rows("SELECT id FROM auth_sessions ORDER BY id")).toEqual(before);
   },
 );
 
