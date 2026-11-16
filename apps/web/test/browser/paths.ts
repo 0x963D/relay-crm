@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 export const evidenceDirectory =
   process.env.RELAY_EVIDENCE_DIR ?? join(process.cwd(), "test-results", "evidence");
+export const legacyStyles = process.env.RELAY_LEGACY_CSS;
 export const browserDirectory = join(evidenceDirectory, "playwright");
 export const captureDirectory = join(evidenceDirectory, "built");
 export const stateFile = join(browserDirectory, "state.json");

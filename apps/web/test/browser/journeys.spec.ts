@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { accessibility, latestCode, rpc, saveAttempt, signIn } from "./support.ts";
+import { accessibility, tabTo, latestCode, rpc, saveAttempt, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 const leadName = "Browser Journey";
 test.describe.serial("lead work journeys", () => {
@@ -39,6 +39,8 @@ test.describe.serial("lead work journeys", () => {
     page,
   }) => {
     await signIn(page, "agent");
+    const beforeQueue = await rpc(page).leads.queue.query({});
+    const beforeTotal = Object.values(beforeQueue.counts).reduce((a, b) => a + b, 0);
     await page
       .getByRole("button")
       .filter({ has: page.getByText(leadName, { exact: true }) })
@@ -76,7 +78,7 @@ test.describe.serial("lead work journeys", () => {
     const accounts = await rpc(page).accounts.list.query({ limit: 100 });
     expect(accounts.items.some((a) => a.person?.name === leadName)).toBe(true);
     const queue = await rpc(page).leads.queue.query({});
-    expect(Object.values(queue.counts).reduce((a, b) => a + b, 0)).toBe(10);
+    expect(Object.values(queue.counts).reduce((a, b) => a + b, 0)).toBe(beforeTotal - 1);
     await accessibility(page, "lead-won");
   });
 });
@@ -123,7 +125,7 @@ test("queue stays usable in dark, phone, keyboard and reduced-motion views", asy
   await expect(page.locator(":focus-visible")).toBeVisible();
   const call = page.getByRole("button", { name: "Call Hye-jin Park", exact: true });
   await call.scrollIntoViewIfNeeded();
-  await call.focus();
+  await tabTo(page, call);
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Log an attempt", exact: true })).toBeVisible();
   await accessibility(page, "attempt-phone");

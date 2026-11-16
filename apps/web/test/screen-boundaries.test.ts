@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { formatMoney, localCallback } from "../src/lib/display.ts";
+import { formatMoney, localCallback, callbackDate, custodyDate } from "../src/lib/display.ts";
 import { ACCESS_FAILURES } from "@relay/domain";
-import { failureMessages, authFailure, authMessages } from "../src/lib/failures.ts";
+import { failureMessages, failureMessage, authFailure, authMessages } from "../src/lib/failures.ts";
 describe("screen boundaries", () => {
   test("money keeps exact minor units beyond Number precision", () => {
     expect(formatMoney({ minor: 9223372036854775806n, currency: "GBP" })).toBe(
@@ -19,6 +19,28 @@ describe("screen boundaries", () => {
   });
   test("every typed refusal has one plain-words message", () => {
     expect(Object.keys(failureMessages).sort()).toEqual([...ACCESS_FAILURES].sort());
+  });
+  test("callback labels use local calendar days across a clock change", () => {
+    const now = new Date("2026-10-24T21:30:00Z");
+    expect(callbackDate(new Date("2026-10-24T22:30:00Z"), "Europe/London", now)).toBe("23:30");
+    expect(callbackDate(new Date("2026-10-25T09:30:00Z"), "Europe/London", now)).toBe("Sun 09:30");
+    expect(callbackDate(new Date("2026-10-30T09:30:00Z"), "Europe/London", now)).toBe("Fri 09:30");
+    expect(callbackDate(new Date("2026-10-31T09:30:00Z"), "Europe/London", now)).toBe(
+      "31 Oct, 09:30",
+    );
+    expect(custodyDate(new Date("2026-10-10T09:30:00Z"), "Europe/London", true, now)).toBe(
+      "since Sat 10 Oct",
+    );
+  });
+  test("read and save errors distinguish a server response from a connection failure", () => {
+    expect(failureMessage({ data: { code: "INTERNAL_SERVER_ERROR" } }, "read")).toContain(
+      "not loaded",
+    );
+    expect(failureMessage({ data: { code: "INTERNAL_SERVER_ERROR" } }, "save")).toContain(
+      "not saved",
+    );
+    expect(failureMessage({ data: { code: "INTERNAL_SERVER_ERROR" } })).not.toContain("connection");
+    expect(failureMessage(new TypeError("Failed to fetch"), "read")).toContain("connection");
   });
 });
 

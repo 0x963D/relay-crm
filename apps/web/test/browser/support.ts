@@ -1,5 +1,5 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Locator } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -83,4 +83,12 @@ export async function saveAttempt(
       hasText: outcome === "No answer" ? "No-answer attempt saved" : "marked as contacted",
     }),
   ).toBeVisible();
+}
+
+export async function tabTo(page: Page, target: Locator) {
+  for (let count = 0; count < 80; count++) {
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
 }
