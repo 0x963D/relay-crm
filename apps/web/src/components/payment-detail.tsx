@@ -146,6 +146,7 @@ export function PaymentDetail({
             </Link>{" "}
             · {payment.campaign ?? "No campaign"} ·{" "}
             {payment.method === "manual" ? "manual" : "card, sandbox provider"}
+            {" · "}Sold by {payment.soldBy?.name ?? "No seller recorded"}
           </p>
         </div>
         <div className="grid gap-4 @lg/payment:grid-cols-3">

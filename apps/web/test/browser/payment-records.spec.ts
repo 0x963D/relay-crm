@@ -105,6 +105,11 @@ test("review compares the fact that differs, including a paid report after expir
   await expect(comparison).toContainText("Paid");
   await expect(comparison).toContainText("The state");
   await expect(comparison).toContainText("The amount and the currency match.");
+  const record = await rpc(page).payments.get.query({ id: late!.id });
+  expect(record.soldBy).not.toBeNull();
+  await expect(
+    page.getByRole("article", { name: "Payment detail" }).getByText(/Sold by/),
+  ).toContainText(record.soldBy!.name);
   const mismatch = payments.needsReview.find(
     (payment) =>
       payment.state.status === "needsReview" && payment.state.reason === "amount mismatch",
