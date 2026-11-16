@@ -614,11 +614,12 @@ export async function closePayment(
     return payment(updated);
   });
 }
-async function posting(tx: Tx, id: string) {
-  const transaction = await tx.ledgerTransaction.findUnique({ where: { paymentId: id } });
-  if (!transaction) return null;
+async function postings(tx: Tx, paymentIds: readonly string[]) {
+  const transactions = await tx.ledgerTransaction.findMany({
+    where: { paymentId: { in: [...paymentIds] } },
+  });
   const lines = await tx.ledgerLine.findMany({
-    where: { transactionId: transaction.id },
+    where: { transactionId: { in: transactions.map((transaction) => transaction.id) } },
     orderBy: { side: "asc" },
   });
   const accounts = await tx.ledgerAccount.findMany({
@@ -628,25 +629,27 @@ async function posting(tx: Tx, id: string) {
     where: { id: { in: accounts.flatMap((a) => (a.accountId ? [a.accountId] : [])) } },
     include: { lead: { select: { name: true, email: true } } },
   });
-  return {
+  return transactions.map((transaction) => ({
     ...transaction,
-    lines: lines.map((line) => {
-      const account = required(accounts.find((a) => a.id === line.ledgerAccountId));
-      const customer = customers.find((c) => c.id === account.accountId);
-      return {
-        ...line,
-        account: {
-          ...account,
-          name:
-            account.kind === "cardProviderSandbox"
-              ? "Card provider, sandbox"
-              : account.kind === "bankTransfersCash"
-                ? "Bank transfers and cash"
-                : (customer?.lead?.name ?? customer?.lead?.email ?? account.accountId),
-        },
-      };
-    }),
-  };
+    lines: lines
+      .filter((line) => line.transactionId === transaction.id)
+      .map((line) => {
+        const account = required(accounts.find((a) => a.id === line.ledgerAccountId));
+        const customer = customers.find((c) => c.id === account.accountId);
+        return {
+          ...line,
+          account: {
+            ...account,
+            name:
+              account.kind === "cardProviderSandbox"
+                ? "Card provider, sandbox"
+                : account.kind === "bankTransfersCash"
+                  ? "Bank transfers and cash"
+                  : (customer?.lead?.name ?? customer?.lead?.email ?? account.accountId),
+          },
+        };
+      }),
+  }));
 }
 export async function getPayment(
   db: Db,
@@ -661,11 +664,31 @@ export async function getPayment(
       where: { paymentId: id },
       orderBy: { sequence: "asc" },
     });
+    const account = await tx.account.findUnique({
+      where: { id: row.accountId },
+      select: { lead: { select: { name: true, email: true } } },
+    });
+    const soldBy = row.soldById
+      ? await tx.user.findUnique({
+          where: { id: row.soldById },
+          select: { id: true, name: true },
+        })
+      : null;
+    const checkout = await tx.sandboxCheckout.findUnique({
+      where: { paymentId: id },
+      select: { id: true },
+    });
     return {
       ...payment(row),
       ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
       events,
-      posting: recordScope(current, "ledger", "read").kind === "all" ? await posting(tx, id) : null,
+      account: account?.lead ?? null,
+      soldBy,
+      providerReference: checkout?.id ?? null,
+      posting:
+        recordScope(current, "ledger", "read").kind === "all"
+          ? ((await postings(tx, [id]))[0] ?? null)
+          : null,
     };
   });
 }
@@ -691,18 +714,32 @@ export async function listPayments(
     week.setUTCHours(0, 0, 0, 0);
     week.setUTCDate(week.getUTCDate() - ((week.getUTCDay() + 6) % 7));
     const rows: Payment[] = [];
-    for (const filter of [
-      { status: "pendingApproval" },
-      { status: "checkoutCreated" },
-      { status: "needsReview" },
-      {
+    const filters = {
+      waitingForApproval: { status: "pendingApproval" },
+      waitingForProvider: { status: "checkoutCreated" },
+      needsReview: { status: "needsReview" },
+      decidedThisWeek: {
         status: { in: ["completed", "failed", "expired", "rejected", "cancelled"] },
         decidedAt: { gte: week },
       },
-    ]) {
+    } satisfies Record<string, Prisma.PaymentWhereInput>;
+    const counts = {
+      waitingForApproval: 0,
+      waitingForProvider: 0,
+      needsReview: 0,
+      decidedThisWeek: 0,
+    };
+    for (const group of [
+      "waitingForApproval",
+      "waitingForProvider",
+      "needsReview",
+      "decidedThisWeek",
+    ] as const) {
+      const where = { accountId, ...filters[group] };
+      counts[group] = await tx.payment.count({ where });
       rows.push(
         ...(await tx.payment.findMany({
-          where: { accountId, ...filter },
+          where,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: limit,
         })),
@@ -726,6 +763,7 @@ export async function listPayments(
       })),
     );
     return {
+      counts,
       waitingForApproval: items.filter((p) => p.state.status === "pendingApproval").slice(0, limit),
       waitingForProvider: items.filter((p) => p.state.status === "checkoutCreated").slice(0, limit),
       needsReview: items.filter((p) => p.state.status === "needsReview").slice(0, limit),
@@ -754,17 +792,60 @@ export async function readAccountLedger(tx: Tx, accountId: AccountId) {
     where: { accountId },
     orderBy: { currency: "asc" },
   });
+  const lines = await tx.ledgerLine.findMany({
+    where: { ledgerAccountId: { in: ledgerAccounts.map((account) => account.id) } },
+  });
+  const transactions = await tx.ledgerTransaction.findMany({
+    where: { id: { in: lines.map((line) => line.transactionId) } },
+    orderBy: [{ at: "asc" }, { id: "asc" }],
+  });
+  const payments = await tx.payment.findMany({
+    where: { id: { in: transactions.map((transaction) => transaction.paymentId) } },
+  });
+  const audits = await tx.auditLog.findMany({
+    where: {
+      action: "ledgerPosted",
+      subjectType: "ledger",
+      subjectId: { in: transactions.map((transaction) => transaction.id) },
+    },
+  });
+  const approvers = await tx.user.findMany({
+    where: { id: { in: audits.flatMap((audit) => (audit.actorId ? [audit.actorId] : [])) } },
+    select: { id: true, name: true },
+  });
+  const ledgerPostings = await postings(
+    tx,
+    payments.map((payment) => payment.id),
+  );
   const balances = [];
   for (const ledgerAccount of ledgerAccounts) {
-    const lines = await tx.ledgerLine.findMany({ where: { ledgerAccountId: ledgerAccount.id } });
-    const transactions = await tx.ledgerTransaction.findMany({
-      where: { id: { in: lines.map((l) => l.transactionId) } },
-      orderBy: [{ at: "asc" }, { id: "asc" }],
-    });
     let balance = 0n;
     const entries = [];
-    for (const transaction of transactions) {
-      const line = required(lines.find((l) => l.transactionId === transaction.id));
+    for (const transaction of transactions.filter((transaction) =>
+      lines.some(
+        (line) =>
+          line.transactionId === transaction.id && line.ledgerAccountId === ledgerAccount.id,
+      ),
+    )) {
+      const line = required(
+        lines.find(
+          (line) =>
+            line.transactionId === transaction.id && line.ledgerAccountId === ledgerAccount.id,
+        ),
+      );
+      const payment = required(payments.find((payment) => payment.id === transaction.paymentId));
+      const state = stateOf(payment);
+      if (state.status !== "completed")
+        throw new InvariantError("A posting has no completed payment");
+      const actorId = audits.find((audit) => audit.subjectId === transaction.id)?.actorId;
+      const completion =
+        state.by === "manualApproval"
+          ? {
+              by: state.by,
+              at: state.at,
+              approver: approvers.find((user) => user.id === actorId) ?? null,
+            }
+          : { by: state.by, at: state.at };
       balance += line.side === "credit" ? line.amount : -line.amount;
       entries.push({
         paymentId: transaction.paymentId,
@@ -772,7 +853,10 @@ export async function readAccountLedger(tx: Tx, accountId: AccountId) {
         amount: line.amount,
         side: line.side,
         balance,
-        posting: await posting(tx, transaction.paymentId),
+        kind: payment.kind,
+        method: payment.method,
+        completion,
+        posting: ledgerPostings.find((posting) => posting.id === transaction.id) ?? null,
       });
     }
     balances.push({ currency: ledgerAccount.currency, balance, entries });

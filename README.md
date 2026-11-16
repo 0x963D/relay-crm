@@ -559,8 +559,10 @@ that an accountant cannot pay with a disclosed payment ID, and that tokens use 3
 
 `payments.list` groups scoped results as `waitingForApproval`, `waitingForProvider`, `needsReview`
 and `decidedThisWeek`.
-The last group uses the UTC calendar week. `limit` bounds each group. `payments.get` returns state
-and an event log ordered by its database sequence. Each accepted webhook delivery has an event,
+The last group uses the UTC calendar week. `limit` bounds each group. `counts` gives each full
+scoped group total before that limit. `payments.get` returns the customer in `account`, the
+attributed agent in `soldBy`, and `providerReference`, the checkout ID returned by the provider.
+It also returns state and an event log ordered by its database sequence. Each accepted webhook delivery has an event,
 including duplicates and late arrivals, with the observed money and whether state changed.
 It includes the posting only for accountants, managers, admins and owners. Those roles can call
 `accounts.ledger`, whose entries and running balances come from immutable lines, grouped by currency.
@@ -685,7 +687,9 @@ selects mutations such as `payment-`, `receipt-lease` or `truncate-`.
 
 ### Receipt delivery
 
-Run `pnpm outbox` with the repository environment. It uses `SMTP_URL` and `SMTP_FROM`. A scheduler
+Run `pnpm outbox` with the repository environment. It uses `SMTP_URL` and `SMTP_FROM` and needs
+no sign-in settings. `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts -t "outbox command"`
+checks SMTP delivery without sign-in settings. A scheduler
 can call `POST /api/payments/outbox` with `Authorization: Bearer <RELAY_OUTBOX_SECRET>`.
 The route is disabled without its secret or SMTP configuration. Sign-in codes keep their direct
 mailer path.
@@ -755,6 +759,13 @@ A receipt whose preparation outlasts the send timeout is marked `unknown` withou
 A provider report of pending, failed or expired with a different amount also enters review as a mismatch.
 
 Someone holding the app's database credentials can add makers or attribute a SQL edit to another person, but cannot remove existing makers.
+
+`accounts.ledger` returns each entry's `completion` with `by` and `at`. A manual completion also
+includes the second approver's name in `approver`, read from the ledger audit's actor. System
+completions identify `reconciler` or `providerWebhook`. The reader batches payments, audits,
+people and postings without a query per payment. Agents still receive no ledger or balance.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payment-reads.int.test.ts`
+for detail fields, scoped group totals, completion provenance and query counts with one payment and several payments.
 
 ### Application grants
 

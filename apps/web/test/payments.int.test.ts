@@ -1,6 +1,10 @@
 import { createReceiptMailer } from "../src/server/mailer.ts";
 import { openSmtpInbox } from "./support/smtp.ts";
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { expect, vi } from "vitest";
 import { test } from "@relay/store/testing";
 import { type Actor, type PaymentProvider } from "@relay/domain";
@@ -19,6 +23,56 @@ const env = {
   lateMs: 0,
   checkoutTtlMs: 86400000,
 };
+
+test("the outbox command delivers with SMTP and no sign-in settings", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const { id } = await db.store.createPayment(
+    actor,
+    {
+      key: "smtp-only-command",
+      accountId: await db.seedAccount(),
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      mode: "drop",
+    },
+    0,
+    randomUUID(),
+  );
+  await db.store.receivePaymentWebhook({
+    eventId: randomUUID(),
+    paymentId: id,
+    payloadHash: "fake",
+    observed: { status: "completed", money: { minor: 100n, currency: "GBP" } },
+  });
+  await db.ownerRows(
+    "UPDATE outbox SET recipient='fake-customer@example.com' WHERE payment_id=$1",
+    [id],
+  );
+  const inbox = await openSmtpInbox();
+  try {
+    const cli = createRequire(import.meta.url).resolve("tsx/cli");
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [cli, fileURLToPath(new URL("../scripts/outbox.ts", import.meta.url))],
+      {
+        env: {
+          DATABASE_URL: db.connectionString,
+          AUTH_SECRET: "",
+          AUTH_URL: "",
+          SMTP_URL: inbox.url,
+          SMTP_FROM: "fake-sender@example.com",
+        },
+      },
+    );
+    expect(stdout).toContain('"state":"sent"');
+    expect(inbox.messages).toHaveLength(1);
+    expect(await db.rows("SELECT state FROM outbox WHERE payment_id=$1", [id])).toEqual([
+      { state: "sent" },
+    ]);
+  } finally {
+    await inbox.close();
+  }
+});
 
 test("a never-created checkout leaves the scan after one check across five reconciler runs", async ({
   db,
