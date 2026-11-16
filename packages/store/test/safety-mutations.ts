@@ -98,6 +98,14 @@ const definitions: {
     test: "completion independently compares both approval role versions",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
+  {
+    name: "payment-application-role",
+    file: "packages/store/src/payments.ts",
+    before: "approver.roleVersion !== approval.roleVersion ||",
+    after: "",
+    test: "the second approval rechecks the other approver role version in the application",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
 ];
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));

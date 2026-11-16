@@ -80,3 +80,18 @@ test("completion independently compares both approval role versions", async ({ d
   );
   await refusesCompletion(db, w.id);
 });
+
+test("the second approval rechecks the other approver role version in the application", async ({
+  db,
+}) => {
+  const w = await staleApproval(db);
+  await db.ownerRows("ALTER TABLE payments DISABLE TRIGGER manual_approvals_required");
+  try {
+    await expect(db.store.approveManualPayment(w.b, w.input, requestId)).rejects.toMatchObject({
+      code: "roleChanged",
+    });
+  } finally {
+    await db.ownerRows("ALTER TABLE payments ENABLE TRIGGER manual_approvals_required");
+  }
+  expect((await db.store.getPayment(w.b, w.id)).state.status).toBe("pendingApproval");
+});
