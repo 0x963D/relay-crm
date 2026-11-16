@@ -1,6 +1,6 @@
 import { ClientAddressError } from "./client-address.ts";
 import { randomUUID } from "node:crypto";
-import { logToConsole, type Log } from "./log.ts";
+import { errorIdentity, logToConsole, type Log } from "./log.ts";
 
 declare global {
   var relayMissingAddressLogged: boolean | undefined;
@@ -15,9 +15,9 @@ export function reportFailure(
   if (error instanceof ClientAddressError) {
     if (!globalThis.relayMissingAddressLogged) {
       globalThis.relayMissingAddressLogged = true;
-      log("server.clientAddressUnavailable", { requestId, error });
+      log("server.clientAddressUnavailable", { requestId, error: errorIdentity(error) });
     }
-  } else log(event, { requestId, error });
+  } else log(event, { requestId, error: errorIdentity(error) });
   return { message: "Something went wrong.", requestId };
 }
 

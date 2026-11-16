@@ -6,6 +6,39 @@ import { createWebFormEndpoint } from "../src/server/intake/web-form.ts";
 
 const FORM_URL = "https://crm.example/api/intake/form";
 
+test("an intake database error logs its class, code and request ID without the submitted row", async ({
+  db,
+}) => {
+  await db.ownerRows(`CREATE FUNCTION fail_intake() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'cannot insert %', NEW.email; END $$;
+    CREATE TRIGGER fail_intake BEFORE INSERT ON leads FOR EACH ROW EXECUTE FUNCTION fail_intake()`);
+  const logged: Record<string, unknown>[] = [];
+  const form = createWebFormEndpoint({
+    intake: db.store.intake,
+    limits: db.store,
+    trustedProxyCount: 0,
+    now: () => new Date(),
+    log: (event, detail) => {
+      logged.push({ event, ...detail });
+    },
+  });
+  const email = "private-submission@example.com";
+  const response = await connections.run("127.0.0.1", () => form.POST(submit({ email })));
+  expect(response.status).toBe(503);
+  const body: unknown = await response.json();
+  expect(logged).toHaveLength(1);
+  expect(logged[0]).toMatchObject({
+    event: "webForm.intake.failed",
+    error: { class: "PrismaClientKnownRequestError" },
+  });
+  expect(logged[0]?.requestId).toMatch(/^[a-f0-9-]{36}$/);
+  expect(JSON.stringify(logged[0]?.error)).toMatch(/"code":"P[0-9]{4}"/);
+  expect(body).toMatchObject({ requestId: logged[0]?.requestId });
+  expect(JSON.stringify(logged)).not.toContain(email);
+  expect(JSON.stringify(logged)).not.toContain("message");
+  expect(JSON.stringify(body)).not.toContain(email);
+});
+
 function formOver(db: TestDatabase) {
   const form = createWebFormEndpoint({
     intake: db.store.intake,
