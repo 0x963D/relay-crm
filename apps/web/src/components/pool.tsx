@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { api, type Outputs } from "@/lib/api";
 import { failureCode, failureMessage } from "@/lib/failures";
 import { campaignLabel, shortDate, sourceLabel } from "@/lib/display";
@@ -38,6 +38,8 @@ export function PoolScreen({
   zone: string;
   onTotalChange: (total: number) => void;
 }) {
+  const feedback = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const client = useQueryClient();
   const query = useQuery(reads.pool());
   const people = useQuery(reads.agents());
@@ -143,6 +145,9 @@ export function PoolScreen({
             .map((lead) => lead.id);
           setPreview({ ...preview, kind: "stale", changed, remaining });
           await refresh();
+          requestAnimationFrame(() => {
+            panel.current?.querySelector<HTMLElement>("[data-repreview]")?.focus();
+          });
           return;
         }
       } else {
@@ -158,7 +163,10 @@ export function PoolScreen({
       );
       setSelected([]);
       setPreview({ kind: "editing" });
-      void refresh();
+      await refresh();
+      requestAnimationFrame(() => {
+        feedback.current?.focus();
+      });
     } catch (error) {
       setError(failureMessage(error));
     } finally {
@@ -217,14 +225,16 @@ export function PoolScreen({
           </div>
         </div>
       </header>
-      {success && (
-        <div className="sticky-feedback" role="status">
-          <Slip kind="green" icon="check">
-            Assigned
-          </Slip>{" "}
-          {success}
-        </div>
-      )}
+      <div ref={feedback} role="status" aria-live="polite" aria-atomic="true" tabIndex={-1}>
+        {success && (
+          <div className="sticky-feedback">
+            <Slip kind="green" icon="check">
+              Assigned
+            </Slip>{" "}
+            {success}
+          </div>
+        )}
+      </div>
       <div className="md workspace-pool">
         <div className="pane pool-list">
           {remote.status === "loading" ? (
@@ -362,6 +372,7 @@ export function PoolScreen({
           )}
         </div>
         <section
+          ref={panel}
           className="pane pane--side pad pool-panel"
           aria-label="Assign leads"
           aria-busy={pending}
@@ -503,6 +514,7 @@ export function PoolScreen({
                     <Button
                       className="btn--block"
                       size="lg"
+                      data-repreview
                       disabled={pending || preview.remaining.length === 0}
                       onClick={() => {
                         void makePreview(preview.remaining);

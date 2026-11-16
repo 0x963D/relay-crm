@@ -123,16 +123,34 @@ export function LeadDetail({
   const [visible, setVisible] = useState(20);
   const [expanded, setExpanded] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const feedback = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mode !== "rest")
+      form.current
+        ?.querySelector<HTMLElement>("button:not([disabled]), input, textarea, select")
+        ?.focus();
+  }, [mode]);
+  function closeComposer() {
+    setMode("rest");
+    setError(null);
+    requestAnimationFrame(() => {
+      if (opener.current?.isConnected && opener.current.getClientRects().length)
+        opener.current.focus();
+      else feedback.current?.focus();
+    });
+  }
   const request = useRef<{ body: string; key: string } | null>(null);
   const tabValue = mode === "attempt" ? channel : mode === "close" ? closing : mode;
   function open(next: Mode, nextChannel?: "call" | "whatsApp") {
     request.current = null;
     setExpanded(false);
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setMode(next);
     if (nextChannel) setChannel(nextChannel);
     setError(null);
     setSuccess(null);
-    setNote("");
   }
   async function save(event: SyntheticEvent) {
     event.preventDefault();
@@ -192,7 +210,7 @@ export function LeadDetail({
               ? "Note added to the timeline."
               : "Callback saved.",
         );
-      setMode("rest");
+      closeComposer();
       setNote("");
       await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
       onSaved();
@@ -212,7 +230,7 @@ export function LeadDetail({
         change: { kind: "clear" },
       });
       setSuccess("Callback cleared. The lead stays in the queue.");
-      setMode("rest");
+      closeComposer();
       await client.invalidateQueries({ queryKey: reads.lead(id).queryKey });
       onSaved();
     } catch (error) {
@@ -350,12 +368,14 @@ export function LeadDetail({
         </dl>
       </div>
       <div className="pad lead-body">
-        {success && (
-          <div className="alert alert--info" role="status">
-            <Icon name="check" />
-            <span>{success}</span>
-          </div>
-        )}
+        <div role="status" aria-live="polite" aria-atomic="true" tabIndex={-1} ref={feedback}>
+          {success && (
+            <div className="alert alert--info">
+              <Icon name="check" />
+              <span>{success}</span>
+            </div>
+          )}
+        </div>
         {error && (
           <Refusal title={mode === "close" ? "The lead was not closed" : "This was not saved"}>
             {error}
@@ -373,6 +393,13 @@ export function LeadDetail({
               }}
             >
               <form
+                ref={form}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !pending) {
+                    event.preventDefault();
+                    closeComposer();
+                  }
+                }}
                 className="col composer-form"
                 onSubmit={(event) => {
                   void save(event);
@@ -592,7 +619,7 @@ export function LeadDetail({
                       variant="ghost"
                       disabled={pending}
                       onClick={() => {
-                        setMode("rest");
+                        closeComposer();
                         setError(null);
                       }}
                     >
@@ -629,8 +656,8 @@ export function LeadDetail({
         <div className="row timeline-heading">
           <h3 className="h3">Timeline</h3>
           <span className="cap">Saved entries cannot be edited or deleted</span>
-          {canEdit && mode === "rest" && (
-            <div className="tl-actions">
+          {canEdit && (
+            <div className="tl-actions" hidden={mode !== "rest"}>
               <Button
                 variant="outline"
                 size="sm"
