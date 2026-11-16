@@ -32,6 +32,7 @@ test("WhatsApp attempts, lost reasons and wrong-number refusals use the real com
     .getByRole("radiogroup", { name: "View the demo as" })
     .getByRole("radio", { name: "Agent", exact: true })
     .click();
+  await expect(page.getByRole("heading", { name: "My queue", exact: true })).toBeVisible();
   await page
     .getByRole("button")
     .filter({ has: page.getByText("Lost Journey", { exact: true }) })
