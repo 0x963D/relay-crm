@@ -92,9 +92,13 @@ test("forward migration preserves a signed historical posting as credit and debi
     INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,amount) VALUES (gen_random_uuid(),'00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000004',100),(gen_random_uuid(),'00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000005',-100);
     COMMIT;`);
   await db.ownerRows(await readFile(new URL("0020_ledger_sides/migration.sql", directory), "utf8"));
-  expect(await db.ownerRows("SELECT side,amount::text FROM ledger_lines ORDER BY side")).toEqual([
-    { side: "credit", amount: "100" },
-    { side: "debit", amount: "100" },
+  expect(
+    await db.ownerRows(
+      "SELECT side,amount::text,ledger_account_id FROM ledger_lines ORDER BY side",
+    ),
+  ).toEqual([
+    { side: "credit", amount: "100", ledger_account_id: "00000000-0000-4000-8000-000000000004" },
+    { side: "debit", amount: "100", ledger_account_id: "00000000-0000-4000-8000-000000000005" },
   ]);
   await expect(db.ownerRows("UPDATE ledger_lines SET amount=101")).rejects.toThrow("append-only");
 });
