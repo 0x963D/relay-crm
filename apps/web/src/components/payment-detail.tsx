@@ -134,7 +134,7 @@ export function PaymentDetail({
         </Link>
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 ref={heading} tabIndex={-1} className="text-3xl font-bold">
+            <h2 ref={heading} tabIndex={-1} className="text-3xl font-bold outline-none">
               {formatMoney(payment.money)}
             </h2>
             <PaymentStatus payment={payment} />

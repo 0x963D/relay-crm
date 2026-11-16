@@ -2,6 +2,17 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("opening a payment moves focus without outlining its amount", async ({ page }) => {
+  await signIn(page, "accountant");
+  const payments = await rpc(page).payments.list.query({ limit: 100 });
+  await page.goto(`${browserState().url}/payments/${payments.needsReview[0]!.id}`);
+  const amount = page
+    .getByRole("article", { name: "Payment detail" })
+    .getByRole("heading", { level: 2 });
+  await expect(amount).toBeFocused();
+  await expect(amount).toHaveCSS("outline-style", "none");
+});
+
 test("payment events show causes before effects and omit an unowed webhook", async ({ page }) => {
   await signIn(page, "accountant");
   const payments = await rpc(page).payments.list.query({ limit: 100 });
