@@ -6,17 +6,21 @@ It is a local build. Nothing has been published. The name is a working title.
 ## The money invariant
 
 A completed payment credits its account exactly once through a balanced, immutable ledger posting.
-Webhook redelivery and reconciliation use the same settlement transaction, so concurrent completion cannot credit it again.
+Webhook redelivery, reconciliation and the final manual approval use the same settlement function, so concurrent completion cannot credit it again.
 
 The real-PostgreSQL test [payments.int.test.ts](packages/store/test/payments.int.test.ts),
 `a webhook, its duplicate and the reconciler collide and credit exactly once`, holds a database
 write gate until every caller has reached it. Run it with
 `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts -t "collide and credit exactly once"`.
 
+The manual collision test in [manual-payments.int.test.ts](packages/store/test/manual-payments.int.test.ts)
+forces two approvers to reach the payment write together. Run both proving tests with
+`pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
+
 ## Status
 
 Lead intake, email code sign-in, scoped access and lead assignment work through the API.
-The CRM screen is the existing lead list. Card payments work through the API and a plain sandbox checkout page.
+The CRM screen is the existing lead list. Card payments work through the API and a plain sandbox checkout page. Manual approvals and receipt delivery work through the API and worker.
 The work queue and CRM payment screens are not built.
 
 What works today:
@@ -168,6 +172,7 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 | `pnpm start`             | Serves the built app                                            |
 | `pnpm db:generate`       | Generates the Prisma client from the schema                     |
 | `pnpm db:migrate`        | Applies the migrations to `DATABASE_URL`                        |
+| `pnpm outbox`            | Delivers due payment receipts through SMTP                      |
 | `pnpm import:csv <file>` | Imports a CSV file through intake and prints a report           |
 | `pnpm test`              | Runs the unit tests. They need no database                      |
 | `pnpm test:int`          | Runs the integration tests against the server in `DATABASE_URL` |
@@ -191,7 +196,7 @@ Request a code at `POST /api/auth/email-otp/send-verification-otp` with
 with `{"email":"staff@example.com","otp":"123456"}`, then keep the session cookie.
 Send JSON and an `Origin` header matching `AUTH_URL` on auth and tRPC mutations.
 `POST /api/auth/sign-out` ends the session. Other auth endpoints are closed except session read.
-Mail delivery runs after the response and has no durable retry until an outbox is built.
+Sign-in code delivery runs after the response. It keeps its own mailer path and does not enter the receipt outbox.
 
 The tRPC router is exported as `AppRouter` from `apps/web/src/server/rpc.ts`.
 It serves these operations under `/api/trpc`:
@@ -232,15 +237,15 @@ The database requires an audit actor to be either a user or a named system actor
 Audit actions include lead assignment and reopening, checkout creation, payment state changes, review closure
 and ledger posting. Subjects are typed as leads, accounts, payments or ledger transactions.
 The database enforces these closed sets and object snapshots, and refuses audit updates and deletes.
-Each manual assignment operation generates a request ID, shared by all changed leads in its batch.
-Reopening uses its intake event ID. A distribution submission uses its idempotency receipt ID for
-both `request_id` and the foreign key `idempotency_id`. That foreign key checks at commit so the audit
+The HTTP boundary generates a request ID and returns it in `X-Request-ID`. Assignment activity,
+payment events and audit rows keep that ID. Idempotent operations also keep their separate
+`idempotency_id`. Reopening uses its intake event ID. The receipt foreign key checks at commit so the audit
 can precede its immutable receipt inside the same transaction.
 
 Forward migrations preserve stored receipts and decode old lifecycle snapshot strings into objects.
 Old audit rows use their own audit ID as a correlation ID because their original request was not stored.
-Receipts created before request hashing have no recoverable hash and refuse key reuse. New receipts
-always store a hash. These limits apply to historical data, not to newly recorded operations.
+Receipts created before request hashing have an `unrecoverable:<id>` marker and refuse key reuse.
+The hash column is required. New receipts store the request hash. These limits apply to historical data, not to newly recorded operations.
 
 `RACE_CONSTRAINTS` in `packages/store/src/tx.ts` classifies every public unique index as `retry` or
 `reject`. The PostgreSQL catalog test fails if an index has no classification or a named index is absent.
@@ -296,8 +301,8 @@ The planned journeys are:
    are not built.
 3. A payment credits its account exactly once through a balanced ledger posting. Card webhooks and
    reconciliation share settlement with the final manual approval. Notifications use an outbox.
-   Card payments, the ledger and reconciliation work. Settlement queues an outbox row.
-   Manual payments, approvals and receipt delivery are not built.
+   Card payments, manual approvals, the ledger, reconciliation and email receipts work through
+   the API. Payment screens are not built.
 
 Other work not built:
 
@@ -365,7 +370,15 @@ than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup
 repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
 `AUTH_URL` and SMTP are also unset.
 
-## Card payments and reconciliation
+## Payments and receipts
+
+A payment credits its account exactly once. Webhooks, reconciliation and the final manual approval
+call one settle function. It writes the payment, balanced ledger posting, audit and completion
+outbox row in the same transaction. The [card race](packages/store/test/payments.int.test.ts) and
+[manual approval race](packages/store/test/manual-payments.int.test.ts) prove this on PostgreSQL.
+Run them with `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
+
+### Card payments
 
 Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` to the app's HTTP
 origin, and distinct `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` values. The sandbox
@@ -380,7 +393,8 @@ edit scope decides who may create it. The request receipt is immutable; a replay
 checkout creation after an interrupted request. The provider uses the payment ID as its checkout key.
 `recordedById` and `soldById` are fixed at creation.
 
-`payments.list` groups scoped results as `waitingForProvider`, `needsReview` and `decidedThisWeek`.
+`payments.list` groups scoped results as `waitingForApproval`, `waitingForProvider`, `needsReview`
+and `decidedThisWeek`.
 The last group uses the UTC calendar week. `limit` bounds each group. `payments.get` returns state
 and an event log ordered by its database sequence. Each accepted webhook delivery has an event,
 including duplicates and late arrivals, with the observed money and whether state changed.
@@ -396,9 +410,9 @@ The audit preserves the reported money. Review has no transition to completed.
 
 PostgreSQL checks the payment state shape and transitions. Deferred constraint triggers require a
 completed payment to have a posting with balanced lines matching its account, currency and amount.
-The unique payment index refuses another posting. Triggers refuse updates and deletes on ledger
+The unique payment index refuses another posting. Triggers refuse updates, deletes and truncation on ledger
 accounts, postings and lines. Settlement writes the state, posting, audit and `paymentCompleted`
-outbox row in the same transaction. The outbox worker and receipt delivery are not implemented.
+outbox row in the same transaction. The worker delivers the receipt after commit.
 A replay writes no new state, posting, audit or outbox row; delivery/check history remains observable.
 
 Run `pnpm reconcile` using the repository environment. A scheduler can instead send
@@ -418,3 +432,76 @@ delivery; reconciliation recovers the completed provider status. This is a sandb
 not a durable notification worker. `pnpm test:prod` signs in an agent through SMTP, submits the
 sandbox form, reconciles a late delivery, and checks duplicate delivery and an amount mismatch
 through the production API. Its `LIVE_PAYMENT` output records each event log, posting and balance.
+
+### Manual payments
+
+`payments.recordManual` takes `accountId`, an idempotency `key`, positive minor-unit `amount`,
+`currency`, `kind`, a lowercase SHA-256 `receiptHash` and an optional `reference`. It stores the
+hash, not the receipt file. The owning agent or another person with account edit access may record
+it. The payment starts in `pendingApproval`. Partial unique indexes allow one waiting manual
+payment per account and one live payment per receipt hash. Rejected and cancelled payments release
+the receipt hash. Reusing the original request key replays its stored result.
+
+`payments.approve` takes `id`, the displayed terms `version` and the signed-in person's `roleVersion`
+from `payments.get`. Two different accountants, managers, admins or owners must approve. The
+recorder cannot approve. The second approval calls settlement inside its approval transaction.
+Manual settlement debits "Bank transfers and cash" and credits the customer. There is no posting
+before the second approval. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts`
+for the approval count, recorder refusal, role invalidation, duplicate account and receipt races,
+edit collision, direct SQL refusal and agent scope checks.
+
+Each approval records its approver, role version and time. A role-change trigger increments the
+user's role version and voids that person's approvals on waiting payments. Completed payments keep
+their historical approvals. The approving transaction reloads roles and versions. A database
+constraint independently requires two valid approvals at completion.
+
+`payments.get` and `payments.list` include the recorder, approval history, reasons a person cannot
+approve and the signed-in person's actions. Typed errors distinguish `pendingPayment`, `receiptUsed`,
+`paymentRecorder`, `alreadyApproved`, `roleChanged` and `refreshConflict`. The last tells the caller
+to refresh. `payments.editManual` accepts new money, receipt hash and reference only while the
+payment waits without valid approvals. It checks the displayed terms version. Editing and approving
+serialize on the payment, and the stale operation refuses the change.
+
+`payments.reject` and `payments.cancel` take `id`, `version` and a nonempty written `reason`.
+The recorder or a person with approval access may use them while the payment waits. Both are final
+states with no credit. The event log and audit retain the actor, reason and HTTP request ID.
+
+### Receipt delivery
+
+Run `pnpm outbox` with the repository environment. It uses `SMTP_URL` and `SMTP_FROM`. A scheduler
+can call `POST /api/payments/outbox` with `Authorization: Bearer <RELAY_OUTBOX_SECRET>`.
+The route is disabled without its secret or SMTP configuration. Sign-in codes keep their direct
+mailer path.
+
+The worker claims due rows with `FOR UPDATE SKIP LOCKED` and stores a lease token and expiry.
+It sends outside the settlement transaction. A PostgreSQL session advisory lock also excludes
+another live sender while the first holds the connection, even after lease expiry. A worker lost
+after leasing leaves a pending row that becomes eligible again. Before calling SMTP, the worker
+records an unknown attempt. A worker lost during delivery therefore leaves an uncertain outcome
+that does not retry automatically. The mailer aborts when the lock connection fails.
+
+| Outcome      | What happens next                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `sent`       | SMTP confirmed acceptance. No retry. Acceptance does not prove inbox placement.                               |
+| `suppressed` | The address is in `email_suppressions`. No mail is sent. The stored reason is returned.                       |
+| `failed`     | A confirmed refusal or connection failure retries after 5, 10 and 20 minutes, then stops after four attempts. |
+| `unknown`    | The connection ended without confirmation. No automatic retry, because the receipt may have arrived.          |
+
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/outbox.int.test.ts`
+for the retry schedule, maximum attempts, worker collisions, expired leases, suppression and manual
+requeue. `pnpm exec vitest run --project unit apps/web/test/mailer.test.ts` exercises real local SMTP
+acceptance, refusal and connection loss. Every retry sends the same `Message-ID`, derived from the
+outbox ID. Downstream deduplication depends on the mail server; SMTP does not provide exactly-once
+delivery.
+
+The payment read API returns receipt state, recipient, attempt history and next retry time.
+Accountants, managers, admins and owners may call `payments.requeueReceipt` with the payment `id`
+for a failed or unknown receipt. It records an audit and event, starts another bounded retry cycle,
+and preserves total attempts and the message identity. It refuses an active lease or a sender that still holds its session lock.
+Receipt delivery never changes payment completion or the ledger.
+
+`pnpm test:prod` signs in through a local SMTP receiver, records a manual payment, refuses another
+waiting payment for its account, approves as different people and reads the posting and balance.
+Its `LIVE_MANUAL` output includes the received plain-text receipt, failure schedule, suppressed
+address and unknown outcome. The test checks the real retry delay, then makes only its fixture row
+due to exercise delivery again without waiting. It also verifies authorized requeue over HTTP.
