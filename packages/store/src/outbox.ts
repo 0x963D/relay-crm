@@ -217,6 +217,10 @@ export async function requeueReceipt(db: Db, actor: Actor, id: PaymentId, reques
     const at = new Date();
     const row = await tx.outbox.findUnique({ where: { paymentId: id } });
     if (!row) throw new AccessError("accessDenied");
+    const locks = await tx.$queryRaw<
+      { locked: boolean }[]
+    >`SELECT pg_try_advisory_xact_lock(hashtextextended('receipt:' || ${row.id}::text,0)) AS locked`;
+    if (!locks[0]?.locked) throw new AccessError("refreshConflict");
     if (
       !["failed", "unknown"].includes(row.state) ||
       (row.leaseUntil !== null && row.leaseUntil > at)

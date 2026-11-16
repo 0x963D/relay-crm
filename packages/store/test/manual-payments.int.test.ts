@@ -185,7 +185,7 @@ test("SQL cannot bypass approvals or create another posting", async ({ db }) => 
       "UPDATE payments SET status='completed',completed_by='manualApproval',decided_at=now() WHERE id=$1",
       [w.id],
     ),
-  ).rejects.toThrow();
+  ).rejects.toMatchObject({ code: "23514", constraint: "manual_approvals_required" });
   await expect(
     db.rows(
       "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
@@ -213,4 +213,80 @@ test("agents cannot approve, read ledger lines or another agent's payment", asyn
   await expect(db.store.accountLedger(agent, w.accountId)).rejects.toMatchObject({
     code: "accessDenied",
   });
+});
+
+test("a failure while queuing the receipt rolls back the second approval and posting", async ({
+  db,
+}) => {
+  const w = await setup(db);
+  await db.store.approveManualPayment(w.a, w.input, requestId);
+  await db.rows(
+    "CREATE FUNCTION fail_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Receipt unavailable'; END $$; CREATE TRIGGER fail_receipt BEFORE INSERT ON outbox FOR EACH ROW EXECUTE FUNCTION fail_receipt()",
+  );
+  await expect(db.store.approveManualPayment(w.b, w.input, requestId)).rejects.toThrow(
+    "Receipt unavailable",
+  );
+  const view = await db.store.getPayment(w.a, w.id);
+  expect(view.state.status).toBe("pendingApproval");
+  expect(view.approvals).toHaveLength(1);
+  expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+  await db.rows("DROP TRIGGER fail_receipt ON outbox");
+  await db.store.approveManualPayment(w.b, w.input, requestId);
+  expect((await db.store.getPayment(w.b, w.id)).state.status).toBe("completed");
+});
+test("partial unique indexes also refuse direct SQL duplicates", async ({ db }) => {
+  const w = await setup(db);
+  await expect(
+    db.rows(
+      "INSERT INTO payments(id,account_id,amount,currency,method,kind,status,recorded_by_id,created_at,receipt_hash) SELECT gen_random_uuid(),account_id,amount,currency,method,kind,status,recorded_by_id,created_at,$2 FROM payments WHERE id=$1",
+      [w.id, "b".repeat(64)],
+    ),
+  ).rejects.toMatchObject({ code: "23505", constraint: "payments_pending_account_key" });
+  const other = await db.seedAccount();
+  await expect(
+    db.rows(
+      "INSERT INTO payments(id,account_id,amount,currency,method,kind,status,recorded_by_id,created_at,receipt_hash) SELECT gen_random_uuid(),$2,amount,currency,method,kind,status,recorded_by_id,created_at,receipt_hash FROM payments WHERE id=$1",
+      [w.id, other],
+    ),
+  ).rejects.toMatchObject({ code: "23505", constraint: "payments_live_receipt_key" });
+});
+test("editing untouched terms invalidates stale approvals and a written rejection releases the account", async ({
+  db,
+}) => {
+  const w = await setup(db);
+  const edited = await db.store.editManualPayment(
+    w.recorder,
+    {
+      ...w.input,
+      money: { ...money, minor: 49000n },
+      receiptHash: "b".repeat(64),
+      reference: "Corrected",
+    },
+    requestId,
+  );
+  expect(edited.version).toBe(1);
+  await expect(db.store.approveManualPayment(w.a, w.input, requestId)).rejects.toMatchObject({
+    code: "refreshConflict",
+  });
+  await expect(
+    db.store.decideManualPayment(
+      w.a,
+      { ...w.input, version: 1, decision: "reject", reason: " " },
+      requestId,
+    ),
+  ).rejects.toMatchObject({ code: "conflict" });
+  const rejected = await db.store.decideManualPayment(
+    w.a,
+    { ...w.input, version: 1, decision: "reject", reason: "Receipt does not match" },
+    requestId,
+  );
+  expect(rejected.state).toMatchObject({ status: "rejected", reason: "Receipt does not match" });
+  expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+  await expect(
+    db.store.recordManualPayment(
+      w.recorder,
+      { ...w.terms, key: "new-receipt", receiptHash: "b".repeat(64) },
+      requestId,
+    ),
+  ).resolves.toHaveProperty("id");
 });

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { setTimeout as sleep } from "node:timers/promises";
 import { test as databaseTest } from "@relay/store/testing";
 import { openSmtpInbox } from "./support/smtp.ts";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
@@ -338,13 +339,27 @@ databaseTest(
 );
 
 databaseTest(
-  "live sandbox payments reconcile late delivery, duplicate delivery and a mismatched amount",
+  "live payments reconcile cards, approve manual receipts and deliver through SMTP",
   async ({ db }) => {
     const userId = await db.seedUser("agent");
     await db.seedUser("accountant");
+    await db.seedUser("manager");
+    const teamId = await db.seedTeam("sales");
     const accountId = await db.seedAccount();
     await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
-    const inbox = await openSmtpInbox();
+    await db.seedLead({
+      email: "customer@example.com",
+      lifecycle: {
+        state: { status: "won", accountId, assignee: { ownerId: userId, teamId } },
+        firstAssignedAt: new Date(),
+        previousOwnerId: null,
+      },
+    });
+    let receiptOutcome: "sent" | "failed" | "unknown" = "sent";
+    const inbox = await openSmtpInbox((message) =>
+      message.includes("Subject: Your Relay payment receipt") ? receiptOutcome : "sent",
+    );
+    const outboxSecret = "fake-live-outbox-secret-for-production-tests";
     const reconcileSecret = "fake-live-reconcile-secret-for-production-tests";
     const server = await serve(
       (origin) => ({
@@ -356,6 +371,7 @@ databaseTest(
         RELAY_SANDBOX_URL: origin,
         RELAY_PAYMENT_WEBHOOK_SECRET: "fake-production-webhook-secret-for-tests",
         RELAY_RECONCILE_SECRET: reconcileSecret,
+        RELAY_OUTBOX_SECRET: outboxSecret,
         RELAY_RECONCILE_FIRST_MS: "0",
         RELAY_RECONCILE_INTERVAL_MS: "1000",
         RELAY_SANDBOX_LATE_MS: "2500",
@@ -390,6 +406,7 @@ databaseTest(
       };
       const agent = await signIn("user-1@team.example");
       const accountant = await signIn("user-2@team.example");
+      const manager = await signIn("user-3@team.example");
       const rpc = async (
         path: string,
         input: unknown,
@@ -513,6 +530,203 @@ databaseTest(
         );
       }
       expect(await db.rows("SELECT count(*)::int AS n FROM outbox")).toEqual([{ n: 2 }]);
+      const Receipt = z.object({
+        id: z.string(),
+        state: z.string(),
+        attempts: z.number(),
+        nextAttemptAt: z.date().nullable(),
+        history: z.array(
+          z.object({
+            state: z.string(),
+            number: z.number(),
+            reason: z.string().nullable(),
+            startedAt: z.date(),
+            finishedAt: z.date().nullable(),
+          }),
+        ),
+      });
+      const Manual = Detail.extend({
+        version: z.number(),
+        approvals: z.array(
+          z.object({
+            approverId: z.string(),
+            roleVersion: z.number(),
+            at: z.date(),
+            voidedAt: z.date().nullable(),
+          }),
+        ),
+        receipt: Receipt.nullable(),
+        actions: z.object({
+          approve: z.boolean(),
+          roleVersion: z.number(),
+          requeueReceipt: z.boolean(),
+        }),
+      });
+      const log = (label: string, value: unknown) =>
+        process.stdout.write(
+          `LIVE_MANUAL ${label} ${JSON.stringify(value, (_key, item: unknown) => (typeof item === "bigint" ? item.toString() : item))}\n`,
+        );
+      const record = async (key: string, hash: string, amount = "100") =>
+        z.object({ id: z.string() }).parse(
+          await rpc(
+            "payments.recordManual",
+            {
+              key,
+              accountId,
+              amount,
+              currency: "GBP",
+              kind: "repeat",
+              receiptHash: hash.repeat(64),
+              reference: "Local transfer",
+            },
+            agent,
+            true,
+          ),
+        ).id;
+      const approve = async (id: string, cookie: string) => {
+        const view = Manual.parse(await rpc("payments.get", { id }, cookie));
+        return rpc(
+          "payments.approve",
+          { id, version: view.version, roleVersion: view.actions.roleVersion },
+          cookie,
+          true,
+        );
+      };
+      const work = async () => {
+        const response = await fetch(server.url("/api/payments/outbox"), {
+          method: "POST",
+          headers: { authorization: `Bearer ${outboxSecret}` },
+        });
+        expect(response.status).toBe(200);
+        const result: unknown = await response.json();
+        return result;
+      };
+      expect((await fetch(server.url("/api/payments/outbox"), { method: "POST" })).status).toBe(
+        401,
+      );
+      const manualId = await record("manual-first", "a", "48000");
+      const refused = await post(
+        "/api/trpc/payments.recordManual",
+        {
+          json: {
+            key: "manual-duplicate",
+            accountId,
+            amount: "100",
+            currency: "GBP",
+            kind: "repeat",
+            receiptHash: "b".repeat(64),
+          },
+        },
+        agent,
+      );
+      const refusal: unknown = await refused.json();
+      expect(refused.status).toBe(409);
+      expect(refusal).toMatchObject({
+        error: { json: { data: { accessFailure: "pendingPayment" } } },
+      });
+      log("second-payment-refused", refusal);
+      const agentApproval = await post(
+        "/api/trpc/payments.approve",
+        { json: { id: manualId, version: 0, roleVersion: 0 } },
+        agent,
+      );
+      expect(agentApproval.status).toBe(403);
+      await approve(manualId, accountant);
+      const waiting = Manual.parse(await rpc("payments.get", { id: manualId }, accountant));
+      expect(waiting.state.status).toBe("pendingApproval");
+      expect(waiting.posting).toBeNull();
+      await approve(manualId, manager);
+      const completed = Manual.parse(await rpc("payments.get", { id: manualId }, accountant));
+      expect(completed.state.status).toBe("completed");
+      expect(completed.approvals).toHaveLength(2);
+      expect(completed.posting?.lines.map((l) => l.amount)).toEqual([48000n, -48000n]);
+      expect(completed.posting?.lines.map((l) => l.account.kind)).toContain("bankTransfersCash");
+      const manualLedger = Ledger.parse(
+        await rpc("accounts.ledger", { id: accountId }, accountant),
+      );
+      expect(manualLedger.balances).toEqual([
+        { currency: "GBP", balance: expectedBalance + 48000n },
+      ]);
+      log("completed", { payment: completed, ledger: manualLedger });
+      const cli = await promisify(execFile)("pnpm", ["outbox"], {
+        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+        shell: process.platform === "win32",
+        timeout: 20_000,
+        env: {
+          ...process.env,
+          DATABASE_URL: db.connectionString,
+          NODE_ENV: "production",
+          RELAY_DEV_ACTOR: "",
+          RELAY_SANDBOX: "",
+          AUTH_URL: origin,
+          AUTH_SECRET: "fake-production-payment-auth-secret-for-tests",
+          SMTP_URL: inbox.url,
+          SMTP_FROM: "relay@sender.example",
+        },
+      });
+      expect(cli.stdout).toContain('"state":"sent"');
+      log("pnpm-outbox", cli.stdout);
+      const received = inbox.messages.find((message) => message.includes(`Payment ${manualId}`));
+      expect(received).toContain("Received GBP 480.00.");
+      log("smtp-receipt", received);
+      expect(
+        Manual.parse(await rpc("payments.get", { id: manualId }, accountant)).receipt,
+      ).toMatchObject({ state: "sent", attempts: 1 });
+
+      const failedId = await record("manual-failed", "b");
+      await approve(failedId, accountant);
+      await approve(failedId, manager);
+      receiptOutcome = "failed";
+      await work();
+      const failed = Manual.parse(await rpc("payments.get", { id: failedId }, accountant));
+      expect(failed.receipt).toMatchObject({ state: "failed", attempts: 1 });
+      const last = failed.receipt?.history[0];
+      expect(failed.receipt?.nextAttemptAt?.getTime()).toBe(
+        (last?.finishedAt?.getTime() ?? 0) + 300000,
+      );
+      const beforeRetry = inbox.messages.length;
+      await work();
+      expect(inbox.messages).toHaveLength(beforeRetry);
+      log("failed-scheduled", failed.receipt);
+      await db.rows("UPDATE outbox SET next_attempt_at=now() WHERE payment_id=$1", [failedId]);
+      receiptOutcome = "sent";
+      await work();
+      const retried = Manual.parse(await rpc("payments.get", { id: failedId }, accountant));
+      expect(retried.receipt).toMatchObject({ state: "sent", attempts: 2 });
+      log("failed-retried-after-test-made-row-due", retried.receipt);
+
+      const suppressedId = await record("manual-suppressed", "c");
+      await approve(suppressedId, accountant);
+      await approve(suppressedId, manager);
+      await db.rows(
+        "INSERT INTO email_suppressions(email,reason) VALUES ('customer@example.com','Local suppression test')",
+      );
+      const beforeSuppression = inbox.messages.length;
+      await work();
+      expect(inbox.messages).toHaveLength(beforeSuppression);
+      const suppressed = Manual.parse(await rpc("payments.get", { id: suppressedId }, accountant));
+      expect(suppressed.receipt).toMatchObject({ state: "suppressed", attempts: 0 });
+      expect(suppressed.state.status).toBe("completed");
+      log("suppressed", suppressed.receipt);
+      await db.rows("DELETE FROM email_suppressions WHERE email='customer@example.com'");
+
+      const unknownId = await record("manual-unknown", "d");
+      await approve(unknownId, accountant);
+      await approve(unknownId, manager);
+      receiptOutcome = "unknown";
+      await work();
+      const unknown = Manual.parse(await rpc("payments.get", { id: unknownId }, accountant));
+      expect(unknown.receipt).toMatchObject({ state: "unknown", attempts: 1, nextAttemptAt: null });
+      const beforeUnknown = inbox.messages.length;
+      await work();
+      expect(inbox.messages).toHaveLength(beforeUnknown);
+      log("unknown-no-auto-retry", unknown.receipt);
+      await rpc("payments.requeueReceipt", { id: unknownId }, accountant, true);
+      receiptOutcome = "sent";
+      await work();
+      expect(
+        Manual.parse(await rpc("payments.get", { id: unknownId }, accountant)).receipt,
+      ).toMatchObject({ state: "sent", attempts: 2 });
     } finally {
       await server.stop();
       await inbox.close();

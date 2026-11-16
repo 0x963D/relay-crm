@@ -37,25 +37,19 @@ async function receipt(db: TestDatabase, suffix = "one") {
 test("two workers collide and deliver every row once", async ({ db }) => {
   const a = await receipt(db),
     b = await receipt(db, "two");
-  const entered = latch(),
-    release = latch();
   const deliveries: string[] = [];
-  const send = async (message: { id: string }): Promise<DeliveryOutcome> => {
+  const send = (message: { id: string }): Promise<DeliveryOutcome> => {
     deliveries.push(message.id);
-    if (deliveries.length === 1) {
-      entered.resolve();
-      await release.promise;
-    }
-    return { state: "sent" };
+    return Promise.resolve({ state: "sent" });
   };
-  const first = db.store.runOutbox(send, { at });
-  await entered.promise;
+  await db.gate.close("outbox");
+  const workers = Promise.all([db.store.runOutbox(send, { at }), db.store.runOutbox(send, { at })]);
   try {
-    expect(await db.store.runOutbox(send, { at })).toHaveLength(1);
+    await db.gate.waitForWaiters(2);
   } finally {
-    release.resolve();
+    await db.gate.open();
   }
-  await first;
+  await workers;
   expect(deliveries.sort()).toEqual([a.outboxId, b.outboxId].sort());
   expect(await db.rows("SELECT state,attempts FROM outbox ORDER BY id")).toEqual([
     { state: "sent", attempts: 1 },
@@ -75,9 +69,7 @@ test("a worker stopped after leasing is recovered after expiry", async ({ db }) 
   expect(await db.store.runOutbox(send, { at: new Date(at.getTime() + 60_000) })).toHaveLength(1);
   expect(calls).toBe(1);
 });
-test("an expired lease cannot overlap an in-flight sender even after explicit requeue", async ({
-  db,
-}) => {
+test("an expired lease still refuses requeue while the sender is active", async ({ db }) => {
   const w = await receipt(db);
   const entered = latch(),
     release = latch();
@@ -88,12 +80,12 @@ test("an expired lease cannot overlap an in-flight sender even after explicit re
     await release.promise;
     return { state: "sent" };
   };
-  const run = db.store.runOutbox(send, { at: new Date(0), leaseMs: 1 });
-  await run;
   const first = db.store.runOutbox(send, { at: new Date(), leaseMs: 1 });
   await entered.promise;
   await db.rows("UPDATE outbox SET lease_until=now()-interval '1 second'");
-  await db.store.requeueReceipt(w.actor, w.id, requestId);
+  await expect(db.store.requeueReceipt(w.actor, w.id, requestId)).rejects.toMatchObject({
+    code: "refreshConflict",
+  });
   try {
     expect(await db.store.runOutbox(send, { at })).toEqual([]);
   } finally {
