@@ -39,7 +39,7 @@ async function collision(db: TestDatabase, calls: () => Promise<unknown>[]) {
 }
 async function counts(db: TestDatabase) {
   return db.rows(`SELECT (SELECT count(*)::int FROM ledger_transactions) AS postings,
-    (SELECT count(*)::int FROM ledger_lines) AS lines, (SELECT coalesce(sum(amount),0)::text FROM ledger_lines) AS total,
+    (SELECT count(*)::int FROM ledger_lines) AS lines, (SELECT coalesce(sum(CASE side WHEN 'credit' THEN amount::numeric ELSE -amount::numeric END),0)::text FROM ledger_lines) AS total,
     (SELECT count(*)::int FROM outbox) AS outbox`);
 }
 test("two different approvals collide and credit exactly once", async ({ db }) => {

@@ -508,7 +508,7 @@ databaseTest(
         if (mode === "differentAmount") expect(detail.posting).toBeNull();
         else {
           expectedBalance += 39500n;
-          expect(detail.posting?.lines.map((l) => l.amount)).toEqual([39500n, -39500n]);
+          expect(detail.posting?.lines.map((l) => l.amount)).toEqual([39500n, 39500n]);
         }
         if (mode === "late") {
           expect(detail.events.find((e) => e.kind === "settlement")?.detail.by).toBe("reconciler");
@@ -639,7 +639,7 @@ databaseTest(
       const completed = Manual.parse(await rpc("payments.get", { id: manualId }, accountant));
       expect(completed.state.status).toBe("completed");
       expect(completed.approvals).toHaveLength(2);
-      expect(completed.posting?.lines.map((l) => l.amount)).toEqual([48000n, -48000n]);
+      expect(completed.posting?.lines.map((l) => l.amount)).toEqual([48000n, 48000n]);
       expect(completed.posting?.lines.map((l) => l.account.kind)).toContain("bankTransfersCash");
       const manualLedger = Ledger.parse(
         await rpc("accounts.ledger", { id: accountId }, accountant),

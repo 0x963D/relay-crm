@@ -17,6 +17,14 @@ The manual collision test in [manual-payments.int.test.ts](packages/store/test/m
 forces two approvers to reach the payment write together. Run both proving tests with
 `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
 
+A ledger line has a `side` of `debit` or `credit` and a positive amount in minor units.
+A posting balances when debits equal credits. Customer accounts are liabilities, so a payment
+credits the customer. The card provider and bank are assets, so the payment debits them.
+A customer balance is credits minus debits. The database checks both sides against the payment.
+The forward migration converts signed historical amounts to that convention.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/migrations.int.test.ts`
+to check postings, balances and historical conversion.
+
 ## Status
 
 Lead intake, email code sign-in, scoped access and lead assignment work through the API.

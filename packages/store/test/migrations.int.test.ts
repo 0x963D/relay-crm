@@ -74,3 +74,27 @@ test("forward migrations preserve historical receipts and decode audit snapshots
   );
   await expect(db.rows("DELETE FROM idempotency_records")).rejects.toThrow("append-only");
 });
+
+test("forward migration preserves a signed historical posting as credit and debit", async ({
+  db,
+}) => {
+  await db.rows("CREATE SCHEMA ledger_fixture; SET search_path TO ledger_fixture");
+  const directory = new URL("../prisma/migrations/", import.meta.url);
+  const migrations = (await readdir(directory)).filter((name) => /^\d{4}_/.test(name)).sort();
+  for (const name of migrations.filter((name) => name < "0020"))
+    await db.rows(await readFile(new URL(`${name}/migration.sql`, directory), "utf8"));
+  await db.rows(`BEGIN;
+    INSERT INTO users(id,email,name,role) VALUES ('00000000-0000-4000-8000-000000000001','migration@example.com','Historical','manager');
+    INSERT INTO accounts(id,created_at) VALUES ('00000000-0000-4000-8000-000000000002',now());
+    INSERT INTO payments(id,account_id,amount,currency,kind,status,recorded_by_id,created_at,decided_at,completed_by,next_check_at,sandbox_mode) VALUES ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000002',100,'GBP','first','completed','00000000-0000-4000-8000-000000000001',now(),now(),'reconciler',now(),'normal');
+    INSERT INTO ledger_accounts(id,account_id,kind,currency) VALUES ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000002','customer','GBP'),('00000000-0000-4000-8000-000000000005',NULL,'cardProviderSandbox','GBP');
+    INSERT INTO ledger_transactions(id,payment_id,at) VALUES ('00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000003',now());
+    INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,amount) VALUES (gen_random_uuid(),'00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000004',100),(gen_random_uuid(),'00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000005',-100);
+    COMMIT;`);
+  await db.rows(await readFile(new URL("0020_ledger_sides/migration.sql", directory), "utf8"));
+  expect(await db.rows("SELECT side,amount::text FROM ledger_lines ORDER BY side")).toEqual([
+    { side: "credit", amount: "100" },
+    { side: "debit", amount: "100" },
+  ]);
+  await expect(db.rows("UPDATE ledger_lines SET amount=101")).rejects.toThrow("append-only");
+});

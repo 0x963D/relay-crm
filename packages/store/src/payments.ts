@@ -269,8 +269,18 @@ async function settlePayment(
     const posting = await tx.ledgerTransaction.create({ data: { paymentId: row.id, at } });
     await tx.ledgerLine.createMany({
       data: [
-        { transactionId: posting.id, ledgerAccountId: customer.id, amount: row.amount },
-        { transactionId: posting.id, ledgerAccountId: provider.id, amount: -row.amount },
+        {
+          transactionId: posting.id,
+          ledgerAccountId: customer.id,
+          side: "credit",
+          amount: row.amount,
+        },
+        {
+          transactionId: posting.id,
+          ledgerAccountId: provider.id,
+          side: "debit",
+          amount: row.amount,
+        },
       ],
     });
     await writeAudit(tx, principal, {
@@ -513,7 +523,7 @@ async function posting(tx: Tx, id: string) {
   if (!transaction) return null;
   const lines = await tx.ledgerLine.findMany({
     where: { transactionId: transaction.id },
-    orderBy: { amount: "desc" },
+    orderBy: { side: "asc" },
   });
   const accounts = await tx.ledgerAccount.findMany({
     where: { id: { in: lines.map((l) => l.ledgerAccountId) } },
@@ -640,11 +650,12 @@ export async function accountLedger(db: Db, actor: Actor, accountId: AccountId) 
       const entries = [];
       for (const transaction of transactions) {
         const line = required(lines.find((l) => l.transactionId === transaction.id));
-        balance += line.amount;
+        balance += line.side === "credit" ? line.amount : -line.amount;
         entries.push({
           paymentId: transaction.paymentId,
           at: transaction.at,
           amount: line.amount,
+          side: line.side,
           balance,
           posting: await posting(tx, transaction.paymentId),
         });

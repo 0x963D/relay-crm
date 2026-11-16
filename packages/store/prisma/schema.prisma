@@ -412,6 +412,7 @@ model LedgerTransaction {
 }
 
 model LedgerLine {
+  side String
   id String @id @default(uuid(7)) @db.Uuid
   transactionId String @map("transaction_id") @db.Uuid
   ledgerAccountId String @map("ledger_account_id") @db.Uuid

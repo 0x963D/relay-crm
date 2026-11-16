@@ -28,7 +28,7 @@ async function setup(db: TestDatabase) {
 }
 async function counts(db: TestDatabase) {
   return db.rows(`SELECT (SELECT count(*)::int FROM ledger_transactions) AS postings,
-    (SELECT count(*)::int FROM ledger_lines) AS lines, (SELECT coalesce(sum(amount),0)::text FROM ledger_lines) AS total,
+    (SELECT count(*)::int FROM ledger_lines) AS lines, (SELECT coalesce(sum(CASE side WHEN 'credit' THEN amount::numeric ELSE -amount::numeric END),0)::text FROM ledger_lines) AS total,
     (SELECT count(*)::int FROM outbox) AS outbox`);
 }
 
@@ -213,7 +213,7 @@ test("the database refuses second postings, unbalanced postings and ledger mutat
       second,
     ]);
     await db.rows(
-      "INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,amount) SELECT gen_random_uuid(),$1,id,CASE WHEN kind='customer' THEN 39500 ELSE -39499 END FROM ledger_accounts",
+      "INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,side,amount) SELECT gen_random_uuid(),$1,id,CASE WHEN kind='customer' THEN 'credit' ELSE 'debit' END,CASE WHEN kind='customer' THEN 39500 ELSE 39499 END FROM ledger_accounts",
       [transaction],
     );
     await expect(db.rows("COMMIT")).rejects.toMatchObject({
@@ -318,4 +318,20 @@ test("a superseded check retains the provider answer without settling", async ({
     changed: false,
   });
   expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+});
+
+test("ledger lines expose positive credit and debit amounts", async ({ db }) => {
+  const { id, event, manager } = await setup(db);
+  await db.store.receivePaymentWebhook(event);
+  const posting = (await db.store.getPayment(manager, id)).posting;
+  expect(
+    posting?.lines.map((line) => ({
+      side: line.side,
+      amount: line.amount,
+      kind: line.account.kind,
+    })),
+  ).toEqual([
+    { side: "credit", amount: 39500n, kind: "customer" },
+    { side: "debit", amount: 39500n, kind: "cardProviderSandbox" },
+  ]);
 });
