@@ -249,3 +249,52 @@ test("multiple memberships require a team choice and the session API returns the
   if (!selected) throw new Error("No selected session");
   expect(await db.store.listLeads(selected.actor, { limit: 100 })).toEqual([]);
 });
+
+test("a completed request replays through a valid session after role revocation but never after expiry", async ({
+  db,
+}) => {
+  const userId = await db.seedUser("manager");
+  const ownerId = await db.seedUser("agent");
+  const teamId = await db.seedTeam("sales");
+  await db.rows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [ownerId, teamId]);
+  const leadId = await db.seedLead({
+    email: "replay@example.com",
+    lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
+  });
+  const { post, sent, auth } = setup(db.store);
+  await post("/email-otp/send-verification-otp", { email: "user-1@team.example", type: "sign-in" });
+  const signed = await post("/sign-in/email-otp", {
+    email: "user-1@team.example",
+    otp: sent[0]?.code,
+  });
+  const headers = new Headers({ cookie: await cookieOf(signed.response) });
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: await auth.principal(headers),
+  });
+  const preview = await caller.distribution.preview({
+    leadIds: [leadId],
+    agents: [{ ownerId, teamId }],
+    excludePreviousOwner: false,
+  });
+  const input = { previewId: preview.id, fingerprint: preview.fingerprint, key: "session-replay" };
+  const first = await caller.distribution.submit(input);
+  await db.rows("UPDATE users SET role='accountant' WHERE id=$1", [userId]);
+  const current = appRouter.createCaller({
+    store: db.store,
+    principal: await auth.principal(headers),
+  });
+  expect(await current.distribution.submit(input)).toEqual(first);
+  await expect(
+    current.distribution.submit({ ...input, fingerprint: "a".repeat(64) }),
+  ).rejects.toMatchObject({
+    code: "CONFLICT",
+    message: "The key was already used for a different request.",
+  });
+  await db.rows("UPDATE auth_sessions SET expires_at=now()-interval '1 second'");
+  const expired = appRouter.createCaller({
+    store: db.store,
+    principal: await auth.principal(headers),
+  });
+  await expect(expired.distribution.submit(input)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+});
