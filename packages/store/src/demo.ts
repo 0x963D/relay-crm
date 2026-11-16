@@ -39,7 +39,7 @@ const day = 86400000;
 const STAFF = [
   { ...DEMO_PEOPLE.manager, role: "manager" },
   { ...DEMO_PEOPLE.agent, role: "agent" },
-  { ...DEMO_PEOPLE.accountant, role: "manager" },
+  { ...DEMO_PEOPLE.accountant, role: "accountant" },
   {
     id: "00000000-0000-7000-8000-000000000104",
     name: "Tomasz Zielinski",
@@ -459,15 +459,8 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       },
       randomUUID(),
     );
-    await manual("Aoife Brennan", 24000n, "repeat", accountant);
-    await transact(owner, (tx) =>
-      tx.user.update({ where: { id: accountant.userId }, data: { role: "accountant" } }),
-    );
-    await store.approveManualPayment(
-      { ...accountant, role: "accountant" },
-      { id: mireille.id, version: 0, roleVersion: 1 },
-      randomUUID(),
-    );
+    await manual("Aoife Brennan", 24000n, "repeat", actor("Tomasz Zielinski"));
+    await approve(mireille.id, accountant);
     await store.runOutbox(async (message, signal): Promise<DeliveryOutcome> => {
       const state = deliveryStates.get(message.paymentId);
       return state

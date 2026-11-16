@@ -185,3 +185,15 @@ test.for([
     }
   },
 );
+
+test("demo people keep their final roles throughout seeded approvals", async ({ db }) => {
+  await seedDemo(options(db));
+  expect(
+    await db.rows("SELECT role,role_version FROM users WHERE id=$1", [DEMO_PEOPLE.accountant.id]),
+  ).toEqual([{ role: "accountant", role_version: 0 }]);
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS count FROM payment_approvals a JOIN users u ON u.id=a.approver_id WHERE a.role_version<>u.role_version OR u.role NOT IN ('manager','accountant','admin','owner')",
+    ),
+  ).toEqual([{ count: 0 }]);
+});
