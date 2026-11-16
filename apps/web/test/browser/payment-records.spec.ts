@@ -2,6 +2,30 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("account and checkout navigation moves keyboard focus into the opened record", async ({
+  page,
+}) => {
+  await signIn(page, "manager");
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Accounts", exact: true })
+    .click();
+  const accounts = await rpc(page).accounts.list.query({ limit: 100 });
+  const account = accounts.items.find((item) => item.mayEdit && !item.pendingPayment)!;
+  await page.locator(`a[href="/accounts/${account.id}"]`).click();
+  await expect(
+    page.getByRole("heading", { name: account.person?.name ?? "Account", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Create card checkout", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Create a card checkout", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("textbox", { name: "Amount", exact: true })).toBeFocused();
+});
+
 test("money routes show their loading state while navigation waits", async ({ page }) => {
   await signIn(page, "manager");
   for (const [path, label, loading] of [

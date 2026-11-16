@@ -51,6 +51,10 @@ export function PaymentForm({
   );
   const [copied, setCopied] = useState("");
   const result = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [accountId, mode, editing?.id]);
   const request = useRef<{ terms: string; key: string } | null>(null);
   useEffect(() => {
     const clear = () => {
@@ -242,7 +246,7 @@ export function PaymentForm({
         save.mutate();
       }}
     >
-      <h2 className="text-panel font-bold">
+      <h2 ref={heading} tabIndex={-1} className="text-panel font-bold outline-none">
         {editing
           ? "Edit manual payment"
           : mode === "card"

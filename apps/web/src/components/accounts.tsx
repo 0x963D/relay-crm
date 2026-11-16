@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
@@ -145,6 +145,10 @@ export function AccountDetail({
 }) {
   const trpc = useTRPC();
   const { data: account } = useSuspenseQuery(trpc.accounts.get.queryOptions({ id }));
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [id, ledger]);
   return (
     <article className="space-y-5 p-4 md:p-6">
       <h1 className="sr-only md:hidden">Account detail</h1>
@@ -152,7 +156,9 @@ export function AccountDetail({
         Back to accounts
       </Link>
       <header className="space-y-2 border-b pb-4">
-        <h2 className="text-2xl font-bold">{account.person?.name ?? "Account"}</h2>
+        <h2 ref={heading} tabIndex={-1} className="text-2xl font-bold outline-none">
+          {account.person?.name ?? "Account"}
+        </h2>
         <p className="text-caption text-secondary-foreground">
           {account.campaign ?? "No campaign"} · {account.person?.email ?? "No email address"}
         </p>
