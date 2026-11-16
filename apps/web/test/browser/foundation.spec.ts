@@ -143,7 +143,8 @@ test("attempts move between queue groups and only a conversation marks contacted
 });
 
 test("round-robin assigns exactly the preview and announces a stale refusal", async ({ page }) => {
-  for (const name of ["Round First", "Round Second", "Round Stale"]) await enquiry(page, name);
+  for (const name of ["Round First", "Round Second", "Round Stale", "Round Remaining"])
+    await enquiry(page, name);
   await signIn(page, "manager");
   await page.getByRole("tab", { name: "Round-robin", exact: true }).click();
   for (const name of ["Round First", "Round Second"])
@@ -162,7 +163,9 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   expect(owners.every(Boolean)).toBe(true);
   expect(new Set(owners).size).toBe(rows.length);
   await page.getByRole("checkbox", { name: "Select Round Stale", exact: true }).check();
-  await page.getByRole("button", { name: "Preview 1 lead", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select Round Remaining", exact: true }).check();
+  await page.getByRole("button", { name: "Preview 2 leads", exact: true }).click();
+  await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
   const stale = (await api.leads.pool.query({ limit: 100 })).rows.find(
     (row) => row.name === "Round Stale",
   );
@@ -170,6 +173,19 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   if (!stale || !agent) throw new Error("Missing fixture");
   await api.leads.assign.mutate({
     leadIds: [stale.id],
+    to: { ownerId: agent.ownerId, teamId: agent.teamId },
+  });
+  await page.getByRole("button", { name: "Assign 2 leads", exact: true }).click();
+  const repreview = page.getByRole("button", { name: "Preview the remaining 1 lead", exact: true });
+  await expect(repreview).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
+  const remaining = (await api.leads.pool.query({ limit: 100 })).rows.find(
+    (row) => row.name === "Round Remaining",
+  );
+  if (!remaining) throw new Error("Missing remaining lead");
+  await api.leads.assign.mutate({
+    leadIds: [remaining.id],
     to: { ownerId: agent.ownerId, teamId: agent.teamId },
   });
   await page.getByRole("button", { name: "Assign 1 lead", exact: true }).click();
@@ -219,4 +235,33 @@ test("server hydration and cached navigation avoid repeated reads", async ({ pag
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Mateus Carvalho", exact: true })).toBeVisible();
   expect(requests).toHaveLength(1);
+});
+
+test("tabs wait for hydration before accepting an action", async ({ page }) => {
+  const url = browserState().url;
+  const response = await page.request.post(`${url}/api/auth/demo`, {
+    headers: { origin: url },
+    data: { role: "manager" },
+  });
+  expect(response.status()).toBe(200);
+  let release: () => void = () => undefined;
+  const scripts = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/_next\/static\/.*\.js/, async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  try {
+    await page.goto(url, { waitUntil: "commit" });
+    const tab = page.getByRole("tab", { name: "Round-robin", exact: true });
+    await expect(tab).toBeVisible();
+    await expect(tab).toBeDisabled();
+    release();
+    await expect(tab).toBeEnabled();
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+  } finally {
+    release();
+  }
 });
