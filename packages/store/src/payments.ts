@@ -667,6 +667,11 @@ export async function getPayment(
     };
   });
 }
+export async function readAccountPayments(tx: Tx, accountId: AccountId) {
+  const rows = await tx.payment.findMany({ where: { accountId } });
+  return rows.map(payment);
+}
+
 export async function listPayments(
   db: Db,
   actor: Actor,

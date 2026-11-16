@@ -1,4 +1,4 @@
-import { readAccountLedger } from "./payments.ts";
+import { readAccountLedger, readAccountPayments } from "./payments.ts";
 import { scopeWhere } from "./scope.ts";
 import {
   AccountId,
@@ -27,23 +27,49 @@ function accountFromRow(row: AccountRow): Account {
 export async function listAccounts(db: Db, actor: Actor, page: { readonly limit: number }) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
+    const where = scopeWhere(recordScope(current, "account", "read"));
+    const total = await tx.account.count({ where });
     const rows = await tx.account.findMany({
-      where: scopeWhere(recordScope(current, "account", "read")),
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      where,
+      orderBy: [{ lead: { name: "asc" } }, { lead: { email: "asc" } }, { id: "asc" }],
       take: page.limit,
       include: {
         owner: { select: { id: true, name: true } },
-        lead: { select: { id: true, email: true, name: true } },
+        lead: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            intakeEvents: {
+              where: { outcome: "leadCreated" },
+              orderBy: { id: "asc" },
+              take: 1,
+              select: { campaign: true },
+            },
+          },
+        },
       },
     });
     const mayReadLedger = recordScope(current, "ledger", "read").kind === "all";
-    return Promise.all(
+    const items = await Promise.all(
       rows.map(async (row) => {
         const account = accountFromRow(row);
+        const payments = scopeAdmits(recordScope(current, "payment", "read"), account)
+          ? await readAccountPayments(tx, account.id)
+          : null;
         return {
           ...account,
+          campaign: row.lead?.intakeEvents[0]?.campaign ?? null,
+          paymentCount:
+            payments?.filter((payment) => payment.state.status === "completed").length ?? null,
+          paymentInProgress:
+            payments?.find(
+              (payment) =>
+                payment.state.status === "pendingApproval" ||
+                payment.state.status === "checkoutCreated",
+            )?.state ?? null,
           owner: row.owner,
-          person: row.lead,
+          person: row.lead ? { id: row.lead.id, name: row.lead.name, email: row.lead.email } : null,
           balances: mayReadLedger
             ? (await readAccountLedger(tx, account.id)).balances.map(({ currency, balance }) => ({
                 currency,
@@ -53,6 +79,7 @@ export async function listAccounts(db: Db, actor: Actor, page: { readonly limit:
         };
       }),
     );
+    return { items, total };
   });
 }
 export async function getAccount(db: Db, actor: Actor, id: AccountId): Promise<Account> {

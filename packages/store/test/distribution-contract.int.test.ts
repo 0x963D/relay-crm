@@ -365,7 +365,7 @@ describe("scoped records", () => {
     await w.pool("a@example.com");
     await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
     expect(await db.store.listLeads(w.actor, { limit: 100 })).toHaveLength(0);
-    expect(await db.store.listAccounts(w.actor, { limit: 100 })).toHaveLength(0);
+    expect(await db.store.listAccounts(w.actor, { limit: 100 })).toEqual({ items: [], total: 0 });
   });
 
   test("a team lead cannot submit a preview targeting a different current team", async ({ db }) => {

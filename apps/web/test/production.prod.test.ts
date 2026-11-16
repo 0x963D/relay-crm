@@ -176,19 +176,21 @@ databaseTest(
       expect(detail.timeline.map((item) => item.sequence)).toEqual(
         detail.timeline.map((item) => item.sequence).sort((a, b) => (a > b ? -1 : 1)),
       );
-      const Accounts = z.array(
-        z.object({
-          id: z.string(),
-          owner: z.object({ id: z.string() }).nullable(),
-          balances: z.array(z.unknown()).nullable(),
-        }),
-      );
-      const accounts = Accounts.parse(await rpc("accounts.list", { limit: 100 }, manager));
+      const Accounts = z.object({
+        items: z.array(
+          z.object({
+            id: z.string(),
+            owner: z.object({ id: z.string() }).nullable(),
+            balances: z.array(z.unknown()).nullable(),
+          }),
+        ),
+      });
+      const accounts = Accounts.parse(await rpc("accounts.list", { limit: 100 }, manager)).items;
       expect(accounts).toEqual([
         { id: detail.lifecycle.state.accountId, owner: { id: agentId }, balances: [] },
       ]);
       expect(
-        Accounts.parse(await rpc("accounts.list", { limit: 100 }, agent))[0]?.balances,
+        Accounts.parse(await rpc("accounts.list", { limit: 100 }, agent)).items[0]?.balances,
       ).toBeNull();
       const funnel = z
         .object({

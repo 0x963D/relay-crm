@@ -461,17 +461,19 @@ test("account lists share ledger balances and withhold them from lead workers", 
   const ledger = await db.store.accountLedger(w.manager, result.accountId);
   for (const role of ROLES) {
     const actor = role === "agent" ? w.agent : await w.makeActor(role);
-    const items = await db.store.listAccounts(actor, { limit: 100 });
+    const { items } = await db.store.listAccounts(actor, { limit: 100 });
     expect(items).toHaveLength(1);
     expect(items[0]?.owner?.id).toBe(w.agent.userId);
     expect(items[0]?.person?.id).toBe(id);
+    expect(items[0]?.paymentCount).toBe(1);
+    expect(items[0]?.paymentInProgress).toBeNull();
     expect(items[0]?.balances).toEqual(
       role === "agent" || role === "teamLead"
         ? null
         : ledger.balances.map(({ currency, balance }) => ({ currency, balance })),
     );
   }
-  expect(await db.store.listAccounts(w.other, { limit: 100 })).toEqual([]);
+  expect(await db.store.listAccounts(w.other, { limit: 100 })).toEqual({ items: [], total: 0 });
 });
 
 test("the database refuses winning without an account", async ({ db }) => {
@@ -676,4 +678,45 @@ test("the funnel separates equal campaign names by intake source", async ({ db }
       expect.objectContaining({ source: "csv", campaign: null, received: 1 }),
     ]),
   );
+});
+
+test("account lists sort by person name with a scoped total and payment summary", async ({
+  db,
+}) => {
+  const w = await world(db);
+  const accountIds = [];
+  for (const name of ["Ada", "Zoe"]) {
+    const id = await w.makeLead();
+    await db.store.editLead(w.manager, id, { name, phone: null });
+    await w.work(w.agent, id, noAnswer);
+    accountIds.push((await w.work(w.agent, id, won)).accountId);
+  }
+  const accountId = accountIds[0];
+  if (!accountId) throw new Error("No account");
+  await db.store.createPayment(
+    w.agent,
+    {
+      key: "progress",
+      accountId,
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      mode: "normal",
+    },
+    0,
+    randomUUID(),
+  );
+  for (const actor of [w.manager, w.agent]) {
+    const result = await db.store.listAccounts(actor, { limit: 1 });
+    expect(result.total).toBe(2);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: accountId,
+      campaign: "Evening course",
+      person: { name: "Ada" },
+      paymentCount: 0,
+      paymentInProgress: { status: "checkoutCreated" },
+    });
+    if (actor === w.agent) expect(result.items[0]?.balances).toBeNull();
+  }
+  expect(await db.store.listAccounts(w.other, { limit: 1 })).toEqual({ items: [], total: 0 });
 });

@@ -322,7 +322,7 @@ describe("record scoping", () => {
             ? [w.account, w.teammateAccount]
             : [w.account];
       expect(
-        (await db.store.listAccounts(w.actor, { limit: 100 })).map((a) => a.id).sort(),
+        (await db.store.listAccounts(w.actor, { limit: 100 })).items.map((a) => a.id).sort(),
       ).toEqual([...accounts].sort());
       for (const id of [w.account, w.outsideAccount, w.teammateAccount]) {
         const query = db.store.getAccount(w.actor, id);
