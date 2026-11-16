@@ -30,7 +30,6 @@ export interface WebFormEndpoint {
   POST(request: Request): Promise<Response>;
 }
 
-const MAX_BODY_BYTES = 100_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const Fields = z.object({
@@ -105,7 +104,7 @@ export function createWebFormEndpoint({
           ]))
         )
           return rateLimited();
-        const bytes = await readBody(request, MAX_BODY_BYTES);
+        const bytes = await readBody(request);
         if (bytes === null) return status(413);
         const body = parseBody(request.headers.get("content-type") ?? "", bytes);
         if (body.kind === "refused") return status(body.status);

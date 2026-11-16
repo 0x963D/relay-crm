@@ -324,3 +324,13 @@ logs the original error with that ID. The tRPC formatter preserves typed domain 
 `data.accessFailure` and their messages. It removes stack traces from every error response.
 The auth and intake HTTP boundaries catch unexpected exceptions. The form keeps its retryable
 503 response for intake failures, with the same fixed message and a logged request ID.
+
+## Request body limits
+
+`pnpm test -- apps/web/test/http.test.ts` verifies the shared streaming reader's exact boundary.
+Auth, tRPC and the public form accept at most 100,000 body bytes and return 413 above that limit.
+The reader checks the declared length first, then counts actual bytes, including chunked bodies,
+and cancels the stream when the limit is exceeded. Auth and tRPC parse only the bounded copy.
+`pnpm test:prod` sends JSON containing 2,000,000 padding characters to those routes, including sign-out, and expects 413.
+The signed Meta webhook keeps its separate 1,000,000-byte limit, checked by
+`pnpm test -- apps/web/test/meta-webhook.test.ts`.

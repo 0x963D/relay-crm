@@ -5,6 +5,7 @@ import type { Store } from "@relay/store";
 import { betterAuth } from "better-auth";
 import { emailOTP } from "better-auth/plugins";
 import { z } from "zod";
+import { boundedRequest } from "./http.ts";
 import { failureResponse, protectHttp } from "./errors.ts";
 import { clientAddress } from "./client-address.ts";
 import { allowRequest, limitKey, rateLimited } from "./rate-limit.ts";
@@ -83,7 +84,9 @@ export function createAuthentication(
     return session === null ? null : store.sessionPrincipal(session.session.id);
   }
 
-  async function handle(request: Request): Promise<Response> {
+  async function handle(incoming: Request): Promise<Response> {
+    const request = await boundedRequest(incoming);
+    if (request === null) return new Response(null, { status: 413 });
     const path = new URL(request.url).pathname.replace(/^\/api\/auth/, "");
     if (path === "/get-session" && request.method === "GET") return dispatch(request);
     if (path === "/sign-out" && request.method === "POST") return dispatch(request);

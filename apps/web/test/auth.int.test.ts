@@ -397,3 +397,20 @@ test("auth hides a store exception and logs it with the response request ID", as
     logged.mockRestore();
   }
 });
+
+test("auth rejects an oversized JSON body before parsing it", async ({ db }) => {
+  const { auth } = setup(db.store);
+  const response = await auth.handle(
+    new Request(`${origin}/api/auth/email-otp/send-verification-otp`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "unknown@example.com",
+        type: "sign-in",
+        pad: "x".repeat(2_000_000),
+      }),
+    }),
+  );
+  expect(response.status).toBe(413);
+  expect(await db.rows("SELECT key FROM auth_request_limits")).toEqual([]);
+});

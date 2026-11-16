@@ -12,6 +12,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
 import { z } from "zod";
+import { boundedRequest } from "./http.ts";
 import { reportFailure } from "./errors.ts";
 
 export interface RpcContext {
@@ -150,11 +151,13 @@ export const appRouter = t.router({
 });
 export type AppRouter = typeof appRouter;
 
-export function handleRpc(
-  request: Request,
+export async function handleRpc(
+  incoming: Request,
   context: () => Promise<RpcContext>,
   origin: string,
-): Promise<Response> | Response {
+): Promise<Response> {
+  const request = await boundedRequest(incoming);
+  if (request === null) return new Response(null, { status: 413 });
   if (request.method === "POST" && request.headers.get("origin") !== origin)
     return new Response(null, { status: 403 });
   return fetchRequestHandler({

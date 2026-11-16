@@ -218,6 +218,15 @@ databaseTest(
       expect(await assigning.json()).toMatchObject({
         error: { json: { data: { accessFailure: "accessDenied" } } },
       });
+      for (const path of [
+        "/api/auth/email-otp/send-verification-otp",
+        "/api/auth/sign-out",
+        "/api/trpc/leads.edit",
+        "/api/intake/form",
+      ]) {
+        const oversized = await post(path, { pad: "x".repeat(2_000_000) }, cookie);
+        expect(oversized.status).toBe(413);
+      }
       const editable = await db.seedLead({
         email: "editable@example.com",
         lifecycle: {
@@ -242,7 +251,7 @@ databaseTest(
       expect(server.output()).toContain(requestId);
       expect(server.output()).toContain("database password leaked in this message");
       await db.rows(
-        "CREATE TRIGGER force_limit_failure BEFORE INSERT ON auth_request_limits FOR EACH ROW EXECUTE FUNCTION force_internal_failure()",
+        "CREATE TRIGGER force_limit_failure BEFORE INSERT OR UPDATE ON auth_request_limits FOR EACH ROW EXECUTE FUNCTION force_internal_failure()",
       );
       for (const path of ["/api/auth/email-otp/send-verification-otp", "/api/intake/form"]) {
         const failed = await post(path, { email: "failure@example.com", type: "sign-in" });

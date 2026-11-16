@@ -165,3 +165,18 @@ test("production RPC errors hide internal messages and correlate the server log"
     vi.unstubAllEnvs();
   }
 });
+
+test("RPC rejects an oversized JSON body before context or parsing", async ({ db }) => {
+  const context = vi.fn(() => Promise.resolve({ store: db.store, principal: null }));
+  const response = await handleRpc(
+    new Request(`${origin}/api/trpc/leads.edit`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({ pad: "x".repeat(2_000_000) }),
+    }),
+    context,
+    origin,
+  );
+  expect(response.status).toBe(413);
+  expect(context).not.toHaveBeenCalled();
+});
