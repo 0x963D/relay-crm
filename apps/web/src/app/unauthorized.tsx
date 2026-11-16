@@ -1,7 +1,9 @@
+import { connection } from "next/server";
 import { DEMO_PEOPLE, DEMO_ROLES } from "@relay/store";
 import { composition } from "@/server/composition.ts";
 
-export default function NotSignedIn() {
+export default async function NotSignedIn() {
+  await connection();
   return (
     <main>
       <h1>Sign in to Relay CRM</h1>
