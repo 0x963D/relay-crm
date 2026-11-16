@@ -3,7 +3,13 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
-import { completedBy, eventDetail, reportedMoney, type PaymentView } from "@/lib/payments";
+import {
+  completedBy,
+  eventDetail,
+  reportedMoney,
+  groupPaymentEvents,
+  type PaymentView,
+} from "@/lib/payments";
 import { callbackDate, formatMoney, shortDate } from "@/lib/display";
 import { failureMessage, failureMessages } from "@/lib/failures";
 import { cn } from "@/lib/utils";
@@ -487,11 +493,15 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
         <span className="text-xs text-muted-foreground">Oldest first</span>
       </div>
       <Timeline name="Payment events">
-        {payment.events.map((event) => {
+        {groupPaymentEvents(payment.events).map(({ event, count, lastAt }) => {
           const detail = eventDetail(event.detail);
           const amount = reportedMoney(detail);
           const provider = event.kind === "webhookDelivery" || event.kind === "reconcilerCheck";
-          const absence = event.kind === "reconcilerCheck" && !webhookSeen && !absenceShown;
+          const absence =
+            event.kind === "reconcilerCheck" &&
+            detail.providerStatus === "completed" &&
+            !webhookSeen &&
+            !absenceShown;
           if (absence) absenceShown = true;
           if (event.kind === "webhookDelivery") webhookSeen = true;
           const title =
@@ -528,7 +538,7 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
             <Fragment key={String(event.sequence)}>
               {absence && (
                 <TimelineEntry icon="wait" gap>
-                  <p className="font-semibold">No webhook was recorded before this check</p>
+                  <h4 className="font-semibold">No webhook was recorded before this check</h4>
                   <p className="mt-1 text-caption text-secondary-foreground">
                     The reconciler checked the provider without a signed webhook having arrived.
                   </p>
@@ -546,9 +556,12 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
                 }
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <h4 className="font-semibold">{title}</h4>
+                  <h4 className="font-semibold">
+                    {count > 1 ? `${String(count)} reconciler checks changed nothing` : title}
+                  </h4>
                   <time className="text-xs text-muted-foreground" dateTime={event.at.toISOString()}>
                     {callbackDate(event.at, zone)}
+                    {count > 1 && ` to ${callbackDate(lastAt, zone)}`}
                   </time>
                 </div>
                 <div className="mt-1 space-y-1 text-caption text-secondary-foreground">
@@ -565,9 +578,6 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
                     </p>
                   )}
                   {provider && detail.changed === false && <p>Nothing changed.</p>}
-                  {provider && detail.status === "needsReview" && detail.changed === true && (
-                    <p>Moved to needs review. Nothing was credited.</p>
-                  )}
                   {event.kind === "settlement" && (
                     <p>The ledger posting was written and the receipt was queued.</p>
                   )}
@@ -583,6 +593,20 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
                   {typeof detail.reason === "string" && <p>{detail.reason}</p>}
                 </div>
               </TimelineEntry>
+              {provider && detail.changed === true && detail.status !== "completed" && (
+                <TimelineEntry icon={detail.status === "expired" ? "clock" : "error"}>
+                  <h4 className="font-semibold">
+                    {detail.status === "needsReview"
+                      ? "Moved to needs review"
+                      : detail.status === "expired"
+                        ? "Payment closed as expired"
+                        : "Payment closed as failed"}
+                  </h4>
+                  <p className="mt-1 text-caption text-secondary-foreground">
+                    Nothing was credited.
+                  </p>
+                </TimelineEntry>
+              )}
             </Fragment>
           );
         })}

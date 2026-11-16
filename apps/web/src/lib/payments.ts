@@ -53,3 +53,33 @@ export function reportedMoney(value: Record<string, unknown>): Money | null {
     ? { minor: BigInt(value.reportedAmount), currency: value.reportedCurrency }
     : null;
 }
+
+export function groupPaymentEvents<
+  T extends Pick<PaymentView["events"][number], "kind" | "at" | "detail">,
+>(events: readonly T[]) {
+  const groups: { event: T; count: number; lastAt: Date }[] = [];
+  for (const event of events) {
+    const last = groups.at(-1);
+    const detail = eventDetail(event.detail);
+    const prior = eventDetail(last?.event.detail);
+    if (
+      last &&
+      event.kind === "reconcilerCheck" &&
+      last.event.kind === event.kind &&
+      detail.changed === false &&
+      prior.changed === false &&
+      [
+        "providerStatus",
+        "status",
+        "error",
+        "superseded",
+        "reportedAmount",
+        "reportedCurrency",
+      ].every((key) => detail[key] === prior[key])
+    ) {
+      last.count += 1;
+      last.lastAt = event.at;
+    } else groups.push({ event, count: 1, lastAt: event.at });
+  }
+  return groups;
+}
