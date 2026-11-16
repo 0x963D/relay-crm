@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { EnvError, parseEnv } from "../src/server/env.ts";
 
@@ -94,4 +95,35 @@ it.each(["0", "20", "1.5", "1000001"])("refuses invalid auth circuit breaker %s"
   expect(() => parseEnv({ DATABASE_URL, RELAY_AUTH_GLOBAL_LIMIT: limit })).toThrow(
     /RELAY_AUTH_GLOBAL_LIMIT/,
   );
+});
+
+it.each(["a".repeat(32), "ab".repeat(32), "0123456789".repeat(4)])(
+  "refuses an obviously weak auth secret",
+  (secret) => {
+    expect(() =>
+      parseEnv({
+        DATABASE_URL,
+        AUTH_SECRET: secret,
+        AUTH_URL: "http://localhost:3000",
+        NODE_ENV: "development",
+      }),
+    ).toThrow(/AUTH_SECRET/);
+  },
+);
+
+it("refuses the actual example file's secret", () => {
+  const example = readFileSync(new URL("../../../.env.example", import.meta.url), "utf8");
+  const secret = /^AUTH_SECRET=(.+)$/m.exec(example)?.[1]?.trim();
+  if (!secret) throw new Error("The example file has no placeholder secret");
+  expect(() => parseEnv({ DATABASE_URL, AUTH_SECRET: secret })).toThrow(/AUTH_SECRET/);
+});
+
+it("accepts a sufficiently varied fake test secret", () => {
+  const env = parseEnv({
+    DATABASE_URL,
+    AUTH_SECRET: "fake-test-secret-with-varied-characters-12345",
+    AUTH_URL: "http://localhost:3000",
+    NODE_ENV: "development",
+  });
+  expect(env.auth).not.toBeNull();
 });

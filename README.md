@@ -115,7 +115,8 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
    pnpm db:generate
    ```
 
-2. Copy `.env.example` to `.env` and set `DATABASE_URL`. Use a dedicated database:
+2. Copy `.env.example` to `.env` and set `DATABASE_URL`. Clear the placeholder `AUTH_SECRET`
+   to keep sign-in off, or replace it with a generated secret before enabling sign-in. Use a dedicated database:
 
    ```sh
    docker run --name relay-crm-pg -e POSTGRES_USER=relay -e POSTGRES_PASSWORD=relay \
@@ -334,3 +335,18 @@ and cancels the stream when the limit is exceeded. Auth and tRPC parse only the 
 `pnpm test:prod` sends JSON containing 2,000,000 padding characters to those routes, including sign-out, and expects 413.
 The signed Meta webhook keeps its separate 1,000,000-byte limit, checked by
 `pnpm test -- apps/web/test/meta-webhook.test.ts`.
+
+## Generate an authentication secret
+
+Generate a secret locally, then put it in your deployment environment and untracked `.env`.
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+`pnpm test -- apps/web/test/env.test.ts` verifies that `AUTH_SECRET` needs at least
+32 characters and 12 distinct characters, and refuses the exact placeholder in `.env.example`.
+These checks reject obvious weak values. They do not measure entropy. Use the generator rather
+than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a
+repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
+`AUTH_URL` and SMTP are also unset.

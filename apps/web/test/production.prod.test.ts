@@ -322,3 +322,15 @@ databaseTest(
     }
   },
 );
+
+databaseTest(
+  "production startup refuses repeated-letter and example auth secrets",
+  async ({ db }) => {
+    for (const secret of ["a".repeat(32), "example-only-do-not-use-this-secret"]) {
+      await expect(
+        serve((origin) => ({ AUTH_URL: origin, AUTH_SECRET: secret }), db.connectionString),
+      ).rejects.toThrow(/AUTH_SECRET/);
+    }
+    expect(await db.rows("SELECT email FROM users")).toEqual([]);
+  },
+);

@@ -1,8 +1,15 @@
 import { ROLES, type Role } from "@relay/domain";
 import { z } from "zod";
 
+const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
+
 const Variables = z.object({
-  AUTH_SECRET: z.string().min(32).optional(),
+  AUTH_SECRET: z
+    .string()
+    .min(32)
+    .refine((value) => new Set(value).size >= 12, "must contain at least 12 distinct characters")
+    .refine((value) => value !== EXAMPLE_AUTH_SECRET, "must not use the secret from .env.example")
+    .optional(),
   AUTH_URL: z.url().optional(),
   RELAY_AUTH_GLOBAL_LIMIT: z.coerce.number().int().min(21).max(1_000_000).default(10_000),
   SMTP_URL: z.url().optional(),
