@@ -264,7 +264,7 @@ export function PaymentDetail({
                       ? "Waiting for the provider"
                       : "Not completed"
                 }
-                icon={completed ? "done" : "wait"}
+                icon={completed ? "done" : waiting ? "wait" : "ban"}
               />
               <Signoff
                 caption="Credited to this account"
