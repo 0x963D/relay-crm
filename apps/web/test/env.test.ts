@@ -11,8 +11,18 @@ const META = {
 };
 
 describe("parseEnv", () => {
+  it("configures receipt SMTP without enabling sign-in", () => {
+    const env = parseEnv({
+      DATABASE_URL,
+      SMTP_URL: "smtp://127.0.0.1:1",
+      SMTP_FROM: "fake@example.com",
+    });
+    expect(env.auth).toBeNull();
+    expect(env.smtp).toEqual({ kind: "smtp", url: "smtp://127.0.0.1:1", from: "fake@example.com" });
+  });
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
+      smtp: null,
       timeZone: "UTC",
       demo: false,
       outboxSecret: null,

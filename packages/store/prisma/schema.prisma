@@ -511,3 +511,10 @@ model PaymentMaker {
   @@id([paymentId, userId])
   @@map("payment_makers")
 }
+
+model JobLease {
+  route String @id
+  token String @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@map("job_leases")
+}

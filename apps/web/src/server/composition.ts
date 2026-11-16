@@ -33,8 +33,7 @@ function compose(env: Env): Composition {
   return {
     env,
     store,
-    receiptMailer:
-      env.auth?.delivery.kind === "smtp" ? createReceiptMailer(env.auth.delivery) : null,
+    receiptMailer: env.smtp ? createReceiptMailer(env.smtp) : null,
     payments: env.payments
       ? {
           provider: sandboxProvider(store, env.payments),

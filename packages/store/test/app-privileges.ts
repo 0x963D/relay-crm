@@ -10,6 +10,7 @@ export const APP_TABLE_PRIVILEGES: Readonly<Record<string, readonly string[]>> =
   email_suppressions: ["SELECT"],
   idempotency_records: ["INSERT", "SELECT"],
   intake_events: ["INSERT", "SELECT"],
+  job_leases: ["INSERT", "SELECT", "UPDATE"],
   leads: ["INSERT", "SELECT", "UPDATE"],
   ledger_accounts: ["INSERT", "SELECT"],
   ledger_lines: ["INSERT", "SELECT"],

@@ -101,6 +101,7 @@ export interface PaymentEnv {
 }
 
 export interface Env {
+  readonly smtp: Extract<AuthEnv["delivery"], { kind: "smtp" }> | null;
   readonly timeZone: string;
   readonly demo: boolean;
   readonly receipts: {
@@ -168,15 +169,15 @@ function metaEnv(variables: z.infer<typeof Variables>): MetaEnv | null {
   };
 }
 
-function authEnv(v: z.infer<typeof Variables>): AuthEnv | null {
-  if (!v.AUTH_SECRET && !v.AUTH_URL && !v.SMTP_URL && !v.SMTP_FROM) return null;
+function smtpEnv(v: z.infer<typeof Variables>): Env["smtp"] {
+  if (!v.SMTP_URL && !v.SMTP_FROM) return null;
+  if (!v.SMTP_URL || !v.SMTP_FROM) throw new EnvError("SMTP needs SMTP_URL and SMTP_FROM.");
+  return { kind: "smtp", url: v.SMTP_URL, from: v.SMTP_FROM };
+}
+
+function authEnv(v: z.infer<typeof Variables>, smtp: Env["smtp"]): AuthEnv | null {
+  if (!v.AUTH_SECRET && !v.AUTH_URL) return null;
   if (!v.AUTH_SECRET || !v.AUTH_URL) throw new EnvError("Sign-in needs AUTH_SECRET and AUTH_URL.");
-  const smtp =
-    v.SMTP_URL && v.SMTP_FROM
-      ? ({ kind: "smtp", url: v.SMTP_URL, from: v.SMTP_FROM } as const)
-      : null;
-  if ((v.SMTP_URL || v.SMTP_FROM) && !smtp)
-    throw new EnvError("SMTP needs SMTP_URL and SMTP_FROM.");
   if (!smtp && v.NODE_ENV !== "development")
     throw new EnvError("Sign-in outside development needs SMTP.");
   return {
@@ -215,7 +216,9 @@ export function parseEnv(
     throw new EnvError(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
+  const smtp = smtpEnv(parsed.data);
   return {
+    smtp,
     timeZone: parsed.data.RELAY_TIME_ZONE,
     demo: parsed.data.RELAY_DEMO === "1",
     receipts: {
@@ -226,7 +229,7 @@ export function parseEnv(
     outboxSecret: parsed.data.RELAY_OUTBOX_SECRET ?? null,
     payments: paymentEnv(parsed.data),
     trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,
-    auth: authEnv(parsed.data),
+    auth: authEnv(parsed.data, smtp),
     databaseUrl: DATABASE_URL,
     meta: metaEnv(parsed.data),
     devRole:

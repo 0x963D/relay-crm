@@ -167,10 +167,12 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
    and no membership of the owner role. `DATABASE_URL` is its connection. Do not put the owner
    credentials in the serving app's environment.
 
-   The app has schema usage and sequence usage. Immutable tables, including the ledger, grant
-   only `SELECT` and `INSERT`. Mutable business tables also grant `UPDATE`. Memberships,
-   authentication tables, request limits and email suppressions also grant `DELETE`.
-   No app table grants `TRUNCATE`, DDL or trigger control. The roles and grants migration lists every grant.
+   The app has schema usage and sequence usage. The tables below list its table grants and
+   additional column updates. Memberships, teams and email suppressions are read-only.
+   Authentication tables and request limits allow deletion. No app table grants `TRUNCATE`,
+   DDL or trigger control. `pnpm test -- packages/store/test/readme.test.ts` checks these tables
+   against `packages/store/test/app-privileges.ts`.
+
    The statement-level `BEFORE TRUNCATE` triggers remain a second defence, including for the owner.
    Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts packages/store/test/schema.int.test.ts`
    to check permissions and the truncate guards.
@@ -202,21 +204,23 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 
 ## Commands
 
-| Command                  | What it does                                                    |
-| ------------------------ | --------------------------------------------------------------- |
-| `pnpm dev`               | Starts the app in development mode                              |
-| `pnpm build`             | Builds the app. It needs no database                            |
-| `pnpm start`             | Serves the built app                                            |
-| `pnpm db:generate`       | Generates the Prisma client from the schema                     |
-| `pnpm db:migrate`        | Applies migrations through `MIGRATION_DATABASE_URL`             |
-| `pnpm outbox`            | Delivers due payment receipts through SMTP                      |
-| `pnpm import:csv <file>` | Imports a CSV file through intake and prints a report           |
-| `pnpm test`              | Runs the unit tests. They need no database                      |
-| `pnpm test:int`          | Runs the integration tests against the server in `DATABASE_URL` |
-| `pnpm test:prod`         | Builds and tests the production server against PostgreSQL       |
-| `pnpm lint`              | Runs ESLint with type-aware rules                               |
-| `pnpm format:check`      | Checks formatting with Prettier                                 |
-| `pnpm typecheck`         | Typechecks every package and its tests                          |
+| Command                                  | What it does                                                    |
+| ---------------------------------------- | --------------------------------------------------------------- |
+| `pnpm dev`                               | Starts the app in development mode                              |
+| `pnpm build`                             | Builds the app. It needs no database                            |
+| `pnpm start`                             | Serves the built app                                            |
+| `pnpm db:generate`                       | Generates the Prisma client from the schema                     |
+| `pnpm db:migrate`                        | Applies migrations through `MIGRATION_DATABASE_URL`             |
+| `pnpm reconcile`                         | Checks due card payments at the provider                        |
+| `pnpm test:mutations <output-directory>` | Removes safety checks and requires their tests to fail          |
+| `pnpm outbox`                            | Delivers due payment receipts through SMTP                      |
+| `pnpm import:csv <file>`                 | Imports a CSV file through intake and prints a report           |
+| `pnpm test`                              | Runs the unit tests. They need no database                      |
+| `pnpm test:int`                          | Runs the integration tests against the server in `DATABASE_URL` |
+| `pnpm test:prod`                         | Builds and tests the production server against PostgreSQL       |
+| `pnpm lint`                              | Runs ESLint with type-aware rules                               |
+| `pnpm format:check`                      | Checks formatting with Prettier                                 |
+| `pnpm typecheck`                         | Typechecks every package and its tests                          |
 
 The integration tests create a template database and one database per test, and drop each test's
 database when the test ends. Only `MIGRATION_DATABASE_URL` needs `CREATEDB`.
@@ -498,9 +502,9 @@ A win is never used as proof of contact. The report has no performance or export
 `accounts.list` returns `items` and the scoped `total` before the limit. It orders by the person's
 name, then email, then account ID. Each item includes the owner, the person's name and email,
 and the creating intake's campaign. An accountant can read this identity without access to lead
-records. Callers whose payment read scope admits the account receive `paymentCount`, the count
-of completed payments, and `paymentInProgress`, the state of a pending approval or card checkout.
-Other callers receive null for both payment fields. The existing payment decoder supplies the states.
+records. Every caller who can list an account can also read its payment summary. `paymentCount`
+counts completed payments, and `paymentInProgress` is the state of a pending approval or card checkout,
+or null when none is in progress. The existing payment decoder supplies the states.
 
 Callers who may read the ledger also receive `balances` by currency from the existing ledger
 reader. Agents and team leads receive `balances: null`. An account without ledger entries has an
@@ -523,6 +527,10 @@ call one settle function. It writes the payment, balanced ledger posting, audit 
 outbox row in the same transaction. The [card race](packages/store/test/payments.int.test.ts) and
 [manual approval race](packages/store/test/manual-payments.int.test.ts) exercise this on PostgreSQL.
 Run them with `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
+
+Someone holding the app's database credentials can record approvals in two eligible people's names and complete a manual payment, because the database checks who is named as approver and not who is connected.
+Someone holding the app's database credentials can change a closed lead's owner or account, or reopen a lost lead by inserting an intake event, because the database guards status changes and not the intake's origin.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payment-guards.int.test.ts packages/store/test/work.int.test.ts -t "database credentials"` to check these limits.
 
 ### Card payments
 
@@ -596,10 +604,17 @@ only `processed`, `sent`, `failed`, `suppressed`, `unknown`, `superseded` and `r
 `pnpm exec dotenv -- vitest run --project integration apps/web/test/job-routes.int.test.ts packages/store/test/jobs.int.test.ts`
 checks both HTTP routes. Each allows five failed authentication attempts per client address per
 60-second window, then returns 429 with `Retry-After: 60`. Valid secrets do not consume that failed
-attempt budget. Each route runs one job at a time across application processes connected to the
-same database, using a transaction advisory lock. An overlapping run returns 429. Finishing or
-failing releases the lock. The outbox and reconcile have separate locks. The lock transaction
-does not retry the job callback.
+attempt budget. The route guard only stops overlapping scheduled calls to the same route.
+An overlapping call returns 429. The outbox and reconcile routes use separate lease rows, with
+expiry one hour after the database clock. Finishing or failing releases the caller's lease token.
+A stopped caller's lease expires. The callback holds no transaction open and is never retried
+by the guard. `pnpm exec dotenv -- vitest run --project integration packages/store/test/jobs.int.test.ts`
+checks expiry, token ownership and the absence of a transaction during the callback.
+
+The command-line jobs do not acquire the route guard. Every entry point protects individual rows.
+Reconciliation conditionally claims each due payment and checks its claim token before settlement.
+The outbox leases each receipt using the database clock and skips rows held by another sender.
+Settlement still enforces the single posting when competing jobs observe the same payment.
 
 Both reconcile entry points scan candidates outside settlement, then claim each due payment with a conditional update.
 A competing job that loses the claim skips the provider call. The claim moves `nextCheckAt` forward,
@@ -740,3 +755,47 @@ A receipt whose preparation outlasts the send timeout is marked `unknown` withou
 A provider report of pending, failed or expired with a different amount also enters review as a mismatch.
 
 Someone holding the app's database credentials can add makers or attribute a SQL edit to another person, but cannot remove existing makers.
+
+### Application grants
+
+| Table                   | Privileges                             |
+| ----------------------- | -------------------------------------- |
+| `accounts`              | `INSERT`, `SELECT`                     |
+| `activities`            | `INSERT`, `SELECT`                     |
+| `audit_log`             | `INSERT`, `SELECT`                     |
+| `auth_accounts`         | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
+| `auth_request_limits`   | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
+| `auth_sessions`         | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
+| `auth_verifications`    | `DELETE`, `INSERT`, `SELECT`, `UPDATE` |
+| `distribution_previews` | `INSERT`, `SELECT`                     |
+| `email_suppressions`    | `SELECT`                               |
+| `idempotency_records`   | `INSERT`, `SELECT`                     |
+| `intake_events`         | `INSERT`, `SELECT`                     |
+| `job_leases`            | `INSERT`, `SELECT`, `UPDATE`           |
+| `leads`                 | `INSERT`, `SELECT`, `UPDATE`           |
+| `ledger_accounts`       | `INSERT`, `SELECT`                     |
+| `ledger_lines`          | `INSERT`, `SELECT`                     |
+| `ledger_transactions`   | `INSERT`, `SELECT`                     |
+| `memberships`           | `SELECT`                               |
+| `outbox`                | `INSERT`, `SELECT`                     |
+| `payment_approvals`     | `INSERT`, `SELECT`                     |
+| `payment_events`        | `INSERT`, `SELECT`                     |
+| `payment_makers`        | `INSERT`, `SELECT`                     |
+| `payments`              | `INSERT`, `SELECT`, `UPDATE`           |
+| `receipt_attempts`      | `INSERT`, `SELECT`                     |
+| `sandbox_checkouts`     | `INSERT`, `SELECT`, `UPDATE`           |
+| `teams`                 | `SELECT`                               |
+| `users`                 | `INSERT`, `SELECT`, `UPDATE`           |
+| `webhook_inbox`         | `INSERT`, `SELECT`                     |
+
+| Column                         | Additional privilege |
+| ------------------------------ | -------------------- |
+| `outbox.cycle_attempts`        | `UPDATE`             |
+| `outbox.lease_token`           | `UPDATE`             |
+| `outbox.lease_until`           | `UPDATE`             |
+| `outbox.next_attempt_at`       | `UPDATE`             |
+| `outbox.state`                 | `UPDATE`             |
+| `payment_approvals.voided_at`  | `UPDATE`             |
+| `receipt_attempts.finished_at` | `UPDATE`             |
+| `receipt_attempts.reason`      | `UPDATE`             |
+| `receipt_attempts.state`       | `UPDATE`             |
