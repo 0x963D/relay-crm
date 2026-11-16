@@ -15,29 +15,40 @@ What works today:
 - Existing staff sign in with an expiring email code. There is no sign-up. Unknown addresses
   receive the same response, get no mail and cannot obtain a session. Codes have limited guesses,
   and PostgreSQL stores request limits across application processes.
-- A session selects one current team. The server loads the current role and membership.
-  One domain function decides lead and account scope. Agents read and edit their own records.
-  Sales team leads read their team's leads and the pool, assign within that team, and edit only
-  their own records. Managers, admins and owners see and edit everything. Accountants read every
-  account and no leads, and cannot edit or assign.
+- A session starts in its sole team when the user has exactly one membership. With several
+  memberships, `session.current` returns the choices. Team-scoped operations require a selection
+  and return `teamSelectionRequired` until the user chooses. The server reloads current roles
+  and memberships inside each human record operation's transaction.
+- `recordScope` in `packages/domain/src/access.ts` decides all record and target-agent scope.
+  `scopeAdmits` applies that scope to a record. `scopeWhere` in `packages/store/src/scope.ts`
+  only translates it into a SQL filter. Lists and individual operations use those same decisions.
+  Agents read and edit their own records. Sales team leads read their team's leads and the pool,
+  assign within that team, and edit owned records that their read scope also admits.
+  Managers, admins and owners see and edit everything. Accountants read every account and no leads,
+  and cannot edit or assign. Edit and assignment scopes always stay within read scope.
 - Team leads and management manually assign pool leads, individually or in a batch.
   Round-robin has an immutable preview and a fingerprint. Changed leads invalidate the preview,
-  even if a lead returns to its earlier state. An idempotency key replays the first result.
+  even if a lead returns to its earlier state. A matching idempotency key and request replays the
+  stored result. A different request under the same key returns `idempotencyConflict`.
   The planner can exclude previous owners. Reassignment preserves status and follow-up detail.
-- Every assignment commits ownership, an activity and an append-only audit row together.
-  Writes reload permissions and scope within the same serializable transaction.
+  Reassigning the current owner returns `changed: false` with no items and writes no history.
+- Every changed assignment commits ownership, an activity and an append-only audit row together.
+  Intake reopening also audits the removed owner. Audit snapshots are JSON objects, with typed
+  subjects, database-enforced actions and a request ID. Distribution audits also reference their
+  idempotency receipt. These writes share the operation's serializable transaction.
 - A typed tRPC API parses inputs and uses superjson for dates.
 
-`pnpm test` reports 506 passing unit tests. `pnpm test:int` reports 97 passing integration tests
-against real PostgreSQL, including forced assignment races that check the persisted rows.
-`pnpm test:prod` reports 5 passing production tests. It checks unauthenticated behavior, the
-development grant, SMTP sign-in and scoped API errors after visiting the lead page.
+`pnpm test` runs unit tests. `pnpm test:int` runs integration tests against real PostgreSQL,
+including forced races, forward migration of populated tables and catalog checks for unique indexes.
+`pnpm test:prod` checks the production build, SMTP sign-in and scoped API errors.
+`pnpm test:mutations <output-directory>` removes each covered safety check in turn, requires its
+named test to fail, restores the source in `finally`, and reruns the unchanged tests.
 
 The form intake endpoint still has no rate limit. This build is not ready for public hosting.
 
 ## How it is built
 
-The workspace has three packages, and each one holds one kind of knowledge.
+`pnpm -r list --depth -1` lists the workspace packages. Each one holds one kind of knowledge.
 
 | Package           | What it knows                                                 | What it must not do                 |
 | ----------------- | ------------------------------------------------------------- | ----------------------------------- |
@@ -71,7 +82,7 @@ intake ledger and the activity timeline append-only.
 
 ## Run it
 
-You need Node.js 24, pnpm 11 and a PostgreSQL 17 server.
+Use the Node.js and pnpm versions declared in `package.json`, and a dedicated PostgreSQL server.
 
 1. Install the dependencies and generate the Prisma client.
 
@@ -151,12 +162,48 @@ It serves these operations under `/api/trpc`:
 - `leads.assign` assigns pool lead IDs to an agent's sales team. `leads.reassign` keeps the lead's status.
 - `distribution.preview` takes lead IDs, chosen agents and `excludePreviousOwner`.
 - `distribution.submit` takes `previewId`, `fingerprint` and an idempotency `key`.
-  Keys belong to the authenticated user. A replay uses the first result, even if its new input differs.
-  Current scope must still permit access to that result.
-- `session.selectTeam` selects a current membership for the session, or clears it.
+  Keys belong to the authenticated user. The same key, operation and request hash return exactly
+  the stored first result, including its original owners, after a role or scope change.
+  A valid session for that same actor is still required. Another actor cannot replay its receipt.
+  Different input or a different operation returns `idempotencyConflict` with the message
+  "The key was already used for a different request."
+- `session.current` returns the principal, current team and available memberships.
+- `session.selectTeam` selects a current membership or clears it. A sole membership is selected
+  again on the next session load. An unselected user with several memberships must choose before
+  using team-scoped operations.
 
 Out-of-scope records return access denied. A changed preview returns a typed conflict.
 The API error includes `data.accessFailure` for these domain refusals.
+
+## Shared store support
+
+`idempotent` in `packages/store/src/idempotency.ts` stores request hashes and JSON results in
+`idempotency_records`. Its unique key is `(scope, key)`. User scopes are `user:<user ID>`.
+System scopes are `system:<job name>`. The helper canonicalizes JSON object keys, preserves array
+order, and compares both the request hash and operation name before replaying. It runs inside the
+caller's transaction and does not authorize the operation. Callers authorize new work before writing.
+Distribution uses this helper. Its former receipt table and lookup no longer exist.
+
+`Principal` includes the named system actors `intake`, `providerWebhook` and `reconciler`.
+`recordScope` grants intake only lead identity lookup and reopening. It denies full-record reads,
+contact-field edits and assignment to every system actor. The payment jobs have no record permissions yet.
+The database requires an audit actor to be either a user or a named system actor, never both or neither.
+
+Audit actions are currently `leadAssigned` and `leadReopened`. Subjects are typed as leads or accounts.
+The database enforces these closed sets and object snapshots, and refuses audit updates and deletes.
+Each manual assignment operation generates a request ID, shared by all changed leads in its batch.
+Reopening uses its intake event ID. A distribution submission uses its idempotency receipt ID for
+both `request_id` and the foreign key `idempotency_id`. That foreign key checks at commit so the audit
+can precede its immutable receipt inside the same transaction.
+
+Forward migrations preserve stored receipts and decode old lifecycle snapshot strings into objects.
+Old audit rows use their own audit ID as a correlation ID because their original request was not stored.
+Receipts created before request hashing have no recoverable hash and refuse key reuse. New receipts
+always store a hash. These limits apply to historical data, not to newly recorded operations.
+
+`RACE_CONSTRAINTS` in `packages/store/src/tx.ts` classifies every public unique index as `retry` or
+`reject`. The PostgreSQL catalog test fails if an index has no classification or a named index is absent.
+A new index therefore needs an explicit retry decision.
 
 ## Intake sources
 
@@ -200,18 +247,19 @@ the same file records nothing new. If you correct one row and import again, only
 
 ## Roadmap
 
-The agreed v0.1 has three journeys:
+The planned journeys are:
 
 1. A lead arrives, a manager or team lead assigns it from the pool, and it lands in an agent's queue.
    Intake, sign-in, scope and assignment work now. The queue and assignment screens are not built.
 2. The agent works the lead to won or lost. The domain state machine exists. The work API and screens
    are not built.
-3. A payment is recorded, two different people approve it, and a conflicting payment is refused.
-   Payment storage, operations and screens are not built.
+3. A payment credits its account exactly once through a balanced ledger posting. Card webhooks and
+   reconciliation share settlement with the final manual approval. Notifications use an outbox.
+   Payments, the ledger, reconciliation and the outbox are not built.
 
-Not built and cut from v0.1:
+Other work not built:
 
-- The outbox and email connector beyond sign-in code delivery.
+- The email connector beyond sign-in code delivery.
 - The audit viewer.
 - Quota distribution.
 - Whitelabel theming.
