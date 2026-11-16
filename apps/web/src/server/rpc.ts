@@ -62,6 +62,9 @@ const authenticated = t.procedure.use(async ({ ctx, next }) => {
       cause.code === "accessDenied"
         ? "FORBIDDEN"
         : cause.code === "conflict" ||
+            cause.code === "refreshConflict" ||
+            cause.code === "pendingPayment" ||
+            cause.code === "receiptUsed" ||
             cause.code === "stalePreview" ||
             cause.code === "idempotencyConflict"
           ? "CONFLICT"
@@ -87,17 +90,83 @@ const LeadIds = z
   .refine((ids) => new Set(ids).size === ids.length, "Lead IDs must be unique.");
 const Page = z.object({ limit: z.int().min(1).max(100).default(100) }).strict();
 
+const MoneyInput = {
+  amount: z
+    .string()
+    .regex(/^[1-9]\d{0,18}$/)
+    .refine((v) => BigInt(v) <= 9223372036854775806n),
+  currency: z.string().refine(isCurrencyCode),
+};
+const ManualTermsInput = {
+  ...MoneyInput,
+  receiptHash: z.string().regex(/^[a-f0-9]{64}$/),
+  reference: z.string().trim().min(1).max(200).nullable().default(null),
+};
+const DecisionInput = { id: identifier(PaymentId), version: z.int().min(0) };
+const RefusalInput = z
+  .object({ ...DecisionInput, reason: z.string().trim().min(1).max(2000) })
+  .strict();
+function parsedMoney(input: { amount: string; currency: string }) {
+  if (!isCurrencyCode(input.currency)) throw new TRPCError({ code: "BAD_REQUEST" });
+  return { minor: BigInt(input.amount), currency: input.currency };
+}
+
 export const appRouter = t.router({
   payments: t.router({
+    recordManual: authenticated
+      .input(
+        z
+          .object({
+            ...ManualTermsInput,
+            key: z.string().min(1).max(200),
+            accountId: identifier(AccountId),
+            kind: z.enum(["first", "repeat"]),
+          })
+          .strict(),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.store.recordManualPayment(
+          ctx.actor,
+          { ...input, money: parsedMoney(input) },
+          ctx.requestId,
+        ),
+      ),
+    approve: authenticated
+      .input(z.object({ ...DecisionInput, roleVersion: z.int().min(0) }).strict())
+      .mutation(({ ctx, input }) =>
+        ctx.store.approveManualPayment(ctx.actor, input, ctx.requestId),
+      ),
+    reject: authenticated
+      .input(RefusalInput)
+      .mutation(({ ctx, input }) =>
+        ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "reject" }, ctx.requestId),
+      ),
+    cancel: authenticated
+      .input(RefusalInput)
+      .mutation(({ ctx, input }) =>
+        ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "cancel" }, ctx.requestId),
+      ),
+    editManual: authenticated
+      .input(z.object({ ...DecisionInput, ...ManualTermsInput }).strict())
+      .mutation(({ ctx, input }) =>
+        ctx.store.editManualPayment(
+          ctx.actor,
+          { ...input, money: parsedMoney(input) },
+          ctx.requestId,
+        ),
+      ),
     list: authenticated
       .input(Page)
       .query(({ ctx, input }) => ctx.store.listPayments(ctx.actor, input.limit)),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
-      .query(async ({ ctx, input }) => ({
-        ...(await ctx.store.getPayment(ctx.actor, input.id)),
-        checkoutPath: `/sandbox/checkout/${input.id}`,
-      })),
+      .query(async ({ ctx, input }) => {
+        const result = await ctx.store.getPayment(ctx.actor, input.id);
+        return {
+          ...result,
+          checkoutPath: result.method === "card" ? `/sandbox/checkout/${input.id}` : null,
+        };
+      }),
     closeReview: authenticated
       .input(
         z
@@ -113,11 +182,7 @@ export const appRouter = t.router({
           .object({
             key: z.string().min(1).max(200),
             accountId: identifier(AccountId),
-            amount: z
-              .string()
-              .regex(/^[1-9]\d{0,18}$/)
-              .refine((v) => BigInt(v) <= 9223372036854775806n),
-            currency: z.string().refine(isCurrencyCode),
+            ...MoneyInput,
             kind: z.enum(["first", "repeat"]),
             mode: z.enum(SANDBOX_MODES).default("normal"),
           })

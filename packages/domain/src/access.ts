@@ -76,11 +76,17 @@ export function recordScope(
             : "none",
     };
   }
-  if (record === "ledger" || access === "closeReview") {
+  if (
+    record === "ledger" ||
+    access === "closeReview" ||
+    access === "approve" ||
+    access === "requeueReceipt"
+  ) {
     return {
       kind:
         ((record === "ledger" && access === "read") ||
-          (record === "payment" && access === "closeReview")) &&
+          (record === "payment" &&
+            (access === "closeReview" || access === "approve" || access === "requeueReceipt"))) &&
         (actor.role === "accountant" ||
           actor.role === "manager" ||
           actor.role === "admin" ||

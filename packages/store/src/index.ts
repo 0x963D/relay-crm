@@ -28,6 +28,13 @@ import {
 } from "./distribution.ts";
 import { takeRequestLimit } from "./rate-limit.ts";
 import {
+  recordManualPayment,
+  approveManualPayment,
+  decideManualPayment,
+  editManualPayment,
+  type RecordManualPayment,
+  type ManualDecision,
+  type ManualTerms,
   createPayment,
   checkoutTerms,
   receivePaymentWebhook,
@@ -52,6 +59,20 @@ export type Store = ReturnType<typeof openStore>;
 export function openStore(config: { readonly connectionString: string }) {
   const db = connect(config.connectionString);
   return {
+    recordManualPayment: (actor: Actor, input: RecordManualPayment, requestId: string) =>
+      recordManualPayment(db, actor, input, requestId),
+    approveManualPayment: (
+      actor: Actor,
+      input: ManualDecision & { readonly roleVersion: number },
+      requestId: string,
+    ) => approveManualPayment(db, actor, input, requestId),
+    decideManualPayment: (
+      actor: Actor,
+      input: ManualDecision & { readonly reason: string; readonly decision: "reject" | "cancel" },
+      requestId: string,
+    ) => decideManualPayment(db, actor, input, requestId),
+    editManualPayment: (actor: Actor, input: ManualDecision & ManualTerms, requestId: string) =>
+      editManualPayment(db, actor, input, requestId),
     createPayment: (actor: Actor, input: CreatePayment, firstCheckMs: number, requestId: string) =>
       createPayment(db, actor, input, firstCheckMs, requestId),
     checkoutTerms: (actor: Actor, id: PaymentId) => checkoutTerms(db, actor, id),

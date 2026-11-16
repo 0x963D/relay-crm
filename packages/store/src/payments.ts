@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import {
   AccountId,
+  UserId,
   PaymentId,
   LedgerTransactionId,
   isCurrencyCode,
   recordScope,
   transitionPayment,
   type Actor,
+  type PaymentEvent,
   type Money,
   type PaymentState,
   type ProviderPayment,
@@ -32,10 +34,15 @@ function money(amount: bigint, currency: string): Money {
 }
 function stateOf(row: Payment): PaymentState {
   switch (row.status) {
+    case "pendingApproval":
     case "checkoutCreated":
       return { status: row.status };
     case "completed": {
-      if (row.completedBy !== "providerWebhook" && row.completedBy !== "reconciler")
+      if (
+        row.completedBy !== "providerWebhook" &&
+        row.completedBy !== "reconciler" &&
+        row.completedBy !== "manualApproval"
+      )
         throw new InvariantError("Invalid settlement caller");
       return { status: row.status, by: row.completedBy, at: required(row.decidedAt) };
     }
@@ -45,6 +52,8 @@ function stateOf(row: Payment): PaymentState {
         reported: money(required(row.reportedAmount), required(row.reportedCurrency)),
         at: required(row.decidedAt),
       };
+    case "rejected":
+    case "cancelled":
     case "failed":
       return { status: row.status, reason: required(row.reason), at: required(row.decidedAt) };
     case "expired":
@@ -60,7 +69,7 @@ function columns(state: PaymentState) {
     completedBy: state.status === "completed" ? state.by : null,
     reportedAmount: state.status === "needsReview" ? state.reported.minor : null,
     reportedCurrency: state.status === "needsReview" ? state.reported.currency : null,
-    reason: state.status === "failed" ? state.reason : null,
+    reason: "reason" in state ? state.reason : null,
   };
 }
 function snapshot(row: Payment) {
@@ -79,7 +88,10 @@ function payment(row: Payment) {
   return {
     id: required(PaymentId.parse(row.id)),
     accountId: required(AccountId.parse(row.accountId)),
-    method: "card" as const,
+    method: row.method,
+    version: row.version,
+    receiptHash: row.receiptHash,
+    reference: row.reference,
     kind: row.kind,
     money: money(row.amount, row.currency),
     state: stateOf(row),
@@ -200,24 +212,24 @@ export interface SettlementResult {
 }
 async function settlePayment(
   tx: Tx,
-  principal: SystemPrincipal,
+  principal: SystemPrincipal | Actor,
   paymentId: string,
-  observed: ProviderPayment,
+  event: PaymentEvent,
   requestId: string,
   at: Date,
 ): Promise<SettlementResult> {
-  if (recordScope(principal, "payment", "settle").kind !== "all")
+  const by =
+    event.type === "approve" ? "manualApproval" : event.type === "provider" ? event.by : null;
+  if (
+    !by ||
+    recordScope(principal, "payment", by === "manualApproval" ? "approve" : "settle").kind !== "all"
+  )
     throw new AccessError("accessDenied");
-  const by = principal.name;
-  if (by !== "providerWebhook" && by !== "reconciler") throw new AccessError("accessDenied");
   const row = required(await tx.payment.findUnique({ where: { id: paymentId } }));
+  if ((row.method === "manual") !== (by === "manualApproval"))
+    throw new AccessError("accessDenied");
   const before = stateOf(row);
-  const next = transitionPayment(
-    before,
-    { type: "provider", result: observed, by },
-    money(row.amount, row.currency),
-    at,
-  );
+  const next = transitionPayment(before, event, money(row.amount, row.currency), at);
   if (next === before) return { status: before.status, changed: false };
   const updated = await tx.payment.update({ where: { id: row.id }, data: columns(next) });
   const cause = { kind: "request", id: requestId } as const;
@@ -236,11 +248,12 @@ async function settlePayment(
     customer ??= await tx.ledgerAccount.create({
       data: { accountId: row.accountId, currency: row.currency, kind: "customer" },
     });
+    const debitKind = row.method === "manual" ? "bankTransfersCash" : "cardProviderSandbox";
     let provider = await tx.ledgerAccount.findFirst({
-      where: { kind: "cardProviderSandbox", currency: row.currency },
+      where: { kind: debitKind, currency: row.currency },
     });
     provider ??= await tx.ledgerAccount.create({
-      data: { currency: row.currency, kind: "cardProviderSandbox" },
+      data: { currency: row.currency, kind: debitKind },
     });
     const posting = await tx.ledgerTransaction.create({ data: { paymentId: row.id, at } });
     await tx.ledgerLine.createMany({
@@ -278,6 +291,7 @@ async function settlePayment(
         at,
         detail: {
           by,
+          requestId,
           transactionId: posting.id,
           amount: row.amount.toString(),
           currency: row.currency,
@@ -318,7 +332,7 @@ export async function receivePaymentWebhook(db: Db, event: ProviderEvent) {
           tx,
           { kind: "system", name: "providerWebhook" },
           row.id,
-          event.observed,
+          { type: "provider", result: event.observed, by: "providerWebhook" },
           randomUUID(),
           at,
         );
@@ -382,7 +396,14 @@ export async function finishPaymentCheck(
     const outcome =
       observed === null
         ? { status: stateOf(row).status, changed: false }
-        : await settlePayment(tx, RECONCILER, row.id, observed, token, at);
+        : await settlePayment(
+            tx,
+            RECONCILER,
+            row.id,
+            { type: "provider", result: observed, by: "reconciler" },
+            token,
+            at,
+          );
     await tx.paymentEvent.create({
       data: {
         paymentId: id,
@@ -480,7 +501,9 @@ async function posting(tx: Tx, id: string) {
           name:
             account.kind === "cardProviderSandbox"
               ? "Card provider, sandbox"
-              : (customer?.lead?.name ?? customer?.lead?.email ?? account.accountId),
+              : account.kind === "bankTransfersCash"
+                ? "Bank transfers and cash"
+                : (customer?.lead?.name ?? customer?.lead?.email ?? account.accountId),
         },
       };
     }),
@@ -496,6 +519,7 @@ export async function getPayment(db: Db, actor: Actor, id: PaymentId) {
     });
     return {
       ...payment(row),
+      ...(await approvalDetail(tx, current, row)),
       events,
       posting: recordScope(current, "ledger", "read").kind === "all" ? await posting(tx, id) : null,
     };
@@ -514,9 +538,13 @@ export async function listPayments(db: Db, actor: Actor, limit: number) {
     week.setUTCDate(week.getUTCDate() - ((week.getUTCDay() + 6) % 7));
     const rows: Payment[] = [];
     for (const filter of [
+      { status: "pendingApproval" },
       { status: "checkoutCreated" },
       { status: "needsReview" },
-      { status: { in: ["completed", "failed", "expired"] }, decidedAt: { gte: week } },
+      {
+        status: { in: ["completed", "failed", "expired", "rejected", "cancelled"] },
+        decidedAt: { gte: week },
+      },
     ]) {
       rows.push(
         ...(await tx.payment.findMany({
@@ -534,13 +562,17 @@ export async function listPayments(db: Db, actor: Actor, limit: number) {
       },
       select: { id: true, name: true },
     });
-    const items = rows.map((row) => ({
-      ...payment(row),
-      account: accounts.find((a) => a.id === row.accountId)?.lead ?? null,
-      recordedBy: users.find((u) => u.id === row.recordedById) ?? null,
-      soldBy: users.find((u) => u.id === row.soldById) ?? null,
-    }));
+    const items = await Promise.all(
+      rows.map(async (row) => ({
+        ...payment(row),
+        ...(await approvalDetail(tx, current, row)),
+        account: accounts.find((a) => a.id === row.accountId)?.lead ?? null,
+        recordedBy: users.find((u) => u.id === row.recordedById) ?? null,
+        soldBy: users.find((u) => u.id === row.soldById) ?? null,
+      })),
+    );
     return {
+      waitingForApproval: items.filter((p) => p.state.status === "pendingApproval").slice(0, limit),
       waitingForProvider: items.filter((p) => p.state.status === "checkoutCreated").slice(0, limit),
       needsReview: items.filter((p) => p.state.status === "needsReview").slice(0, limit),
       decidedThisWeek: items
@@ -588,4 +620,337 @@ export async function accountLedger(db: Db, actor: Actor, accountId: AccountId) 
     }
     return { accountId, balances };
   });
+}
+
+export interface ManualTerms {
+  readonly money: Money;
+  readonly receiptHash: string;
+  readonly reference: string | null;
+}
+export interface RecordManualPayment extends ManualTerms {
+  readonly accountId: AccountId;
+  readonly key: string;
+  readonly kind: "first" | "repeat";
+}
+export interface ManualDecision {
+  readonly id: PaymentId;
+  readonly version: number;
+}
+async function availableManualTerms(tx: Tx, accountId: string, hash: string, except?: string) {
+  if (
+    await tx.payment.findFirst({
+      where: { accountId, status: "pendingApproval", ...(except ? { id: { not: except } } : {}) },
+    })
+  )
+    throw new AccessError("pendingPayment");
+  if (
+    await tx.payment.findFirst({
+      where: {
+        receiptHash: hash,
+        status: { notIn: ["rejected", "cancelled"] },
+        ...(except ? { id: { not: except } } : {}),
+      },
+    })
+  )
+    throw new AccessError("receiptUsed");
+}
+export async function recordManualPayment(
+  db: Db,
+  actor: Actor,
+  input: RecordManualPayment,
+  requestId: string,
+) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    return idempotent(
+      tx,
+      current,
+      {
+        key: input.key,
+        operation: "recordManualPayment",
+        request: {
+          accountId: input.accountId,
+          amount: input.money.minor.toString(),
+          currency: input.money.currency,
+          receiptHash: input.receiptHash,
+          reference: input.reference,
+          kind: input.kind,
+        },
+      },
+      receipt,
+      async (idempotencyId) => {
+        const account = await tx.account.findFirst({
+          where: { id: input.accountId, ...scopeWhere(recordScope(current, "payment", "edit")) },
+        });
+        if (!account) throw new AccessError("accessDenied");
+        await availableManualTerms(tx, account.id, input.receiptHash);
+        const at = new Date();
+        const row = await tx.payment.create({
+          data: {
+            accountId: account.id,
+            method: "manual",
+            status: "pendingApproval",
+            amount: input.money.minor,
+            currency: input.money.currency,
+            kind: input.kind,
+            recordedById: current.userId,
+            soldById: account.ownerId,
+            receiptHash: input.receiptHash,
+            reference: input.reference,
+            createdAt: at,
+          },
+        });
+        await writeAudit(tx, current, {
+          action: "manualPaymentRecorded",
+          subject: { type: "payment", id: required(PaymentId.parse(row.id)) },
+          before: {},
+          after: { ...snapshot(row), receiptHash: row.receiptHash, reference: row.reference },
+          cause: { kind: "idempotency", id: idempotencyId, requestId },
+          at,
+        });
+        await tx.paymentEvent.create({
+          data: {
+            paymentId: row.id,
+            kind: "manualRecorded",
+            at,
+            detail: { actorId: current.userId, requestId },
+          },
+        });
+        return { id: row.id };
+      },
+    );
+  });
+}
+async function waitingPayment(tx: Tx, actor: Actor, input: ManualDecision) {
+  const row = await scopedPayment(tx, actor, input.id);
+  if (row.status !== "pendingApproval" || row.version !== input.version)
+    throw new AccessError("refreshConflict");
+  // This write serializes approval, edits and final decisions on the same payment.
+  await tx.payment.update({ where: { id: row.id }, data: { version: row.version } });
+  return row;
+}
+export async function approveManualPayment(
+  db: Db,
+  actor: Actor,
+  input: ManualDecision & { readonly roleVersion: number },
+  requestId: string,
+) {
+  return transact(db, async (tx) => {
+    await tx.$queryRaw`SELECT id FROM users WHERE id=${actor.userId}::uuid FOR UPDATE`;
+    const current = await currentActor(tx, actor);
+    const user = required(await tx.user.findUnique({ where: { id: current.userId } }));
+    if (user.roleVersion !== input.roleVersion) throw new AccessError("roleChanged");
+    if (recordScope(current, "payment", "approve").kind !== "all")
+      throw new AccessError("accessDenied");
+    const visible = await scopedPayment(tx, current, input.id);
+    if (visible.recordedById === current.userId) throw new AccessError("paymentRecorder");
+    if (
+      await tx.paymentApproval.findFirst({
+        where: { paymentId: input.id, approverId: current.userId, voidedAt: null },
+      })
+    )
+      throw new AccessError("alreadyApproved");
+    const row = await waitingPayment(tx, current, input);
+    const at = new Date();
+    await tx.paymentApproval.create({
+      data: {
+        paymentId: row.id,
+        approverId: current.userId,
+        roleVersion: user.roleVersion,
+        at,
+        requestId,
+      },
+    });
+    const approvals = await tx.paymentApproval.findMany({
+      where: { paymentId: row.id, voidedAt: null },
+    });
+    for (const approval of approvals) {
+      await tx.$queryRaw`SELECT id FROM users WHERE id=${approval.approverId}::uuid FOR SHARE`;
+      const approver = required(await tx.user.findUnique({ where: { id: approval.approverId } }));
+      if (
+        approver.roleVersion !== approval.roleVersion ||
+        recordScope(
+          { userId: required(UserId.parse(approver.id)), role: approver.role, team: null },
+          "payment",
+          "approve",
+        ).kind !== "all"
+      )
+        throw new AccessError("roleChanged");
+    }
+    await writeAudit(tx, current, {
+      action: "paymentApproved",
+      subject: { type: "payment", id: input.id },
+      before: { approvals: approvals.length - 1 },
+      after: { approvals: approvals.length, roleVersion: user.roleVersion },
+      cause: { kind: "request", id: requestId },
+      at,
+    });
+    await tx.paymentEvent.create({
+      data: {
+        paymentId: row.id,
+        kind: "approved",
+        at,
+        detail: { actorId: current.userId, roleVersion: user.roleVersion, requestId },
+      },
+    });
+    const outcome = await settlePayment(
+      tx,
+      current,
+      row.id,
+      { type: "approve", validApprovals: approvals.length },
+      requestId,
+      at,
+    );
+    return { id: input.id, ...outcome };
+  });
+}
+export async function decideManualPayment(
+  db: Db,
+  actor: Actor,
+  input: ManualDecision & { readonly reason: string; readonly decision: "reject" | "cancel" },
+  requestId: string,
+) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const row = await waitingPayment(tx, current, input);
+    if (
+      row.recordedById !== current.userId &&
+      recordScope(current, "payment", "approve").kind !== "all"
+    )
+      throw new AccessError("accessDenied");
+    const at = new Date();
+    const before = stateOf(row);
+    const next = transitionPayment(
+      before,
+      { type: input.decision, reason: input.reason },
+      money(row.amount, row.currency),
+      at,
+    );
+    if (next === before) throw new AccessError("conflict");
+    const updated = await tx.payment.update({ where: { id: row.id }, data: columns(next) });
+    await writeAudit(tx, current, {
+      action: "paymentStateChanged",
+      subject: { type: "payment", id: input.id },
+      before: snapshot(row),
+      after: snapshot(updated),
+      cause: { kind: "request", id: requestId },
+      at,
+    });
+    await tx.paymentEvent.create({
+      data: {
+        paymentId: row.id,
+        kind: updated.status,
+        at,
+        detail: { actorId: current.userId, reason: updated.reason, requestId },
+      },
+    });
+    return payment(updated);
+  });
+}
+export async function editManualPayment(
+  db: Db,
+  actor: Actor,
+  input: ManualDecision & ManualTerms,
+  requestId: string,
+) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const row = await waitingPayment(tx, current, input);
+    const account = await tx.account.findFirst({
+      where: { id: row.accountId, ...scopeWhere(recordScope(current, "payment", "edit")) },
+    });
+    if (!account) throw new AccessError("accessDenied");
+    if (await tx.paymentApproval.findFirst({ where: { paymentId: row.id, voidedAt: null } }))
+      throw new AccessError("refreshConflict");
+    await availableManualTerms(tx, row.accountId, input.receiptHash, row.id);
+    const updated = await tx.payment.update({
+      where: { id: row.id },
+      data: {
+        amount: input.money.minor,
+        currency: input.money.currency,
+        receiptHash: input.receiptHash,
+        reference: input.reference,
+        version: { increment: 1 },
+      },
+    });
+    const at = new Date();
+    await writeAudit(tx, current, {
+      action: "paymentEdited",
+      subject: { type: "payment", id: input.id },
+      before: {
+        ...snapshot(row),
+        receiptHash: row.receiptHash,
+        reference: row.reference,
+        version: row.version,
+      },
+      after: {
+        ...snapshot(updated),
+        receiptHash: updated.receiptHash,
+        reference: updated.reference,
+        version: updated.version,
+      },
+      cause: { kind: "request", id: requestId },
+      at,
+    });
+    await tx.paymentEvent.create({
+      data: {
+        paymentId: row.id,
+        kind: "edited",
+        at,
+        detail: { actorId: current.userId, requestId, version: updated.version },
+      },
+    });
+    return payment(updated);
+  });
+}
+async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
+  const recordedBy = await tx.user.findUnique({
+    where: { id: row.recordedById },
+    select: { id: true, name: true },
+  });
+  const ownUser = required(await tx.user.findUnique({ where: { id: actor.userId } }));
+  const approvals = await tx.paymentApproval.findMany({
+    where: { paymentId: row.id },
+    orderBy: [{ at: "asc" }, { id: "asc" }],
+  });
+  const users = await tx.user.findMany({
+    where: { id: { in: approvals.map((a) => a.approverId) } },
+    select: { id: true, name: true },
+  });
+  const history = approvals.map((a) => ({
+    ...a,
+    approver: users.find((u) => u.id === a.approverId),
+  }));
+  const mayApprove = recordScope(actor, "payment", "approve").kind === "all";
+  const refusal =
+    row.recordedById === actor.userId
+      ? "paymentRecorder"
+      : approvals.some((a) => a.approverId === actor.userId && a.voidedAt === null)
+        ? "alreadyApproved"
+        : !mayApprove
+          ? "accessDenied"
+          : row.status !== "pendingApproval"
+            ? "refreshConflict"
+            : null;
+  const mayDecide =
+    row.status === "pendingApproval" && (row.recordedById === actor.userId || mayApprove);
+  return {
+    recordedBy,
+    approvals: history,
+    cannotApprove: [
+      { user: recordedBy, reason: "paymentRecorder" as const, at: row.createdAt },
+      ...history.map((a) => ({
+        user: a.approver ?? null,
+        reason: a.voidedAt ? ("roleChanged" as const) : ("alreadyApproved" as const),
+        at: a.voidedAt ?? a.at,
+      })),
+    ],
+    actions: {
+      approve: row.method === "manual" && refusal === null,
+      approvalRefusal: refusal,
+      reject: mayDecide,
+      cancel: mayDecide,
+      roleVersion: ownUser.roleVersion,
+    },
+  };
 }

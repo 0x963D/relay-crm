@@ -1,8 +1,10 @@
 import type { Money } from "./money.ts";
 
-export type SettlementCaller = "providerWebhook" | "reconciler";
+export type SettlementCaller = "providerWebhook" | "reconciler" | "manualApproval";
 export type PaymentState =
   | { readonly status: "checkoutCreated" }
+  | { readonly status: "pendingApproval" }
+  | { readonly status: "rejected" | "cancelled"; readonly reason: string; readonly at: Date }
   | { readonly status: "completed"; readonly by: SettlementCaller; readonly at: Date }
   | { readonly status: "needsReview"; readonly reported: Money; readonly at: Date }
   | { readonly status: "failed"; readonly reason: string; readonly at: Date }
@@ -14,42 +16,65 @@ export interface ProviderPayment {
   readonly money: Money;
 }
 export type PaymentEvent =
-  | { readonly type: "provider"; readonly result: ProviderPayment; readonly by: SettlementCaller }
+  | {
+      readonly type: "provider";
+      readonly result: ProviderPayment;
+      readonly by: Exclude<SettlementCaller, "manualApproval">;
+    }
+  | { readonly type: "approve"; readonly validApprovals: number }
+  | { readonly type: "reject" | "cancel"; readonly reason: string }
   | { readonly type: "closeReview"; readonly reason: string };
 
 type Rule = (state: PaymentState, event: PaymentEvent, expected: Money, at: Date) => PaymentState;
-const RULES: Readonly<Record<PaymentStatus, Readonly<Record<PaymentEvent["type"], Rule | null>>>> =
-  {
-    checkoutCreated: {
-      provider: (state, event, expected, at) => {
-        if (event.type !== "provider") return state;
-        const { status, money } = event.result;
-        if (money.minor !== expected.minor || money.currency !== expected.currency)
-          return { status: "needsReview", reported: money, at };
-        switch (status) {
-          case "pending":
-            return state;
-          case "completed":
-            return { status, by: event.by, at };
-          case "expired":
-            return { status, at };
-          case "failed":
-            return { status, reason: "The provider reported failure.", at };
-        }
-      },
-      closeReview: null,
+const RULES: Readonly<
+  Record<PaymentStatus, Readonly<Partial<Record<PaymentEvent["type"], Rule | null>>>>
+> = {
+  checkoutCreated: {
+    provider: (state, event, expected, at) => {
+      if (event.type !== "provider") return state;
+      const { status, money } = event.result;
+      if (money.minor !== expected.minor || money.currency !== expected.currency)
+        return { status: "needsReview", reported: money, at };
+      switch (status) {
+        case "pending":
+          return state;
+        case "completed":
+          return { status, by: event.by, at };
+        case "expired":
+          return { status, at };
+        case "failed":
+          return { status, reason: "The provider reported failure.", at };
+      }
     },
-    needsReview: {
-      provider: null,
-      closeReview: (state, event, _expected, at) =>
-        event.type === "closeReview" && event.reason.trim().length > 0
-          ? { status: "failed", reason: event.reason.trim(), at }
-          : state,
-    },
-    completed: { provider: null, closeReview: null },
-    failed: { provider: null, closeReview: null },
-    expired: { provider: null, closeReview: null },
-  };
+    closeReview: null,
+  },
+  needsReview: {
+    provider: null,
+    closeReview: (state, event, _expected, at) =>
+      event.type === "closeReview" && event.reason.trim().length > 0
+        ? { status: "failed", reason: event.reason.trim(), at }
+        : state,
+  },
+  pendingApproval: {
+    approve: (state, event, _expected, at) =>
+      event.type === "approve" && event.validApprovals === 2
+        ? { status: "completed", by: "manualApproval", at }
+        : state,
+    reject: (state, event, _expected, at) =>
+      event.type === "reject" && event.reason.trim()
+        ? { status: "rejected", reason: event.reason.trim(), at }
+        : state,
+    cancel: (state, event, _expected, at) =>
+      event.type === "cancel" && event.reason.trim()
+        ? { status: "cancelled", reason: event.reason.trim(), at }
+        : state,
+  },
+  rejected: {},
+  cancelled: {},
+  completed: { provider: null, closeReview: null },
+  failed: { provider: null, closeReview: null },
+  expired: { provider: null, closeReview: null },
+};
 
 export function transitionPayment(
   state: PaymentState,

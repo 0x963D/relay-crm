@@ -96,6 +96,7 @@ model User {
   id        String   @id @default(uuid(7)) @db.Uuid
   email     String   @unique
   name      String
+  roleVersion Int @default(0) @map("role_version")
   role      Role
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
@@ -332,6 +333,10 @@ enum AuditAction {
   paymentStateChanged
   paymentReviewClosed
   ledgerPosted
+  manualPaymentRecorded
+  paymentApproved
+  paymentEdited
+  receiptRequeued
 
   @@map("audit_action")
 }
@@ -364,6 +369,9 @@ model AuditLog {
 
 
 model Payment {
+  version Int @default(0)
+  receiptHash String? @map("receipt_hash")
+  reference String?
   id String @id @default(uuid(7)) @db.Uuid
   accountId String @map("account_id") @db.Uuid
   amount BigInt
@@ -379,9 +387,9 @@ model Payment {
   reportedAmount BigInt? @map("reported_amount")
   reportedCurrency String? @map("reported_currency")
   reason String?
-  nextCheckAt DateTime @map("next_check_at") @db.Timestamptz(3)
+  nextCheckAt DateTime? @map("next_check_at") @db.Timestamptz(3)
   checkToken String? @map("check_token") @db.Uuid
-  sandboxMode String @map("sandbox_mode")
+  sandboxMode String? @map("sandbox_mode")
   @@index([status, nextCheckAt])
   @@index([accountId, createdAt])
   @@map("payments")
@@ -455,3 +463,15 @@ model SandboxCheckout {
   @@map("sandbox_checkouts")
 }
 
+
+model PaymentApproval {
+  id String @id @default(uuid(7)) @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+  approverId String @map("approver_id") @db.Uuid
+  roleVersion Int @map("role_version")
+  at DateTime @db.Timestamptz(3)
+  voidedAt DateTime? @map("voided_at") @db.Timestamptz(3)
+  requestId String @map("request_id") @db.Uuid
+  @@index([paymentId])
+  @@map("payment_approvals")
+}

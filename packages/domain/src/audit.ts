@@ -7,6 +7,10 @@ export const AUDIT_ACTIONS = [
   "paymentStateChanged",
   "paymentReviewClosed",
   "ledgerPosted",
+  "manualPaymentRecorded",
+  "paymentApproved",
+  "paymentEdited",
+  "receiptRequeued",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 export type AuditSubject =

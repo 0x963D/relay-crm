@@ -51,3 +51,35 @@ it("grants only the payment jobs their narrow system access", () => {
     }
   }
 });
+
+it("manual completion needs two approvals and cannot use a provider event", () => {
+  const pending: PaymentState = { status: "pendingApproval" };
+  expect(transitionPayment(pending, { type: "approve", validApprovals: 1 }, money, at)).toBe(
+    pending,
+  );
+  expect(transitionPayment(pending, { type: "approve", validApprovals: 2 }, money, at)).toEqual({
+    status: "completed",
+    by: "manualApproval",
+    at,
+  });
+  expect(
+    transitionPayment(
+      pending,
+      { type: "provider", by: "reconciler", result: { status: "completed", money } },
+      money,
+      at,
+    ),
+  ).toBe(pending);
+  for (const type of ["reject", "cancel"] as const) {
+    expect(transitionPayment(pending, { type, reason: " " }, money, at)).toBe(pending);
+    const decided = transitionPayment(pending, { type, reason: "Wrong receipt" }, money, at);
+    expect(decided).toEqual({
+      status: type === "reject" ? "rejected" : "cancelled",
+      reason: "Wrong receipt",
+      at,
+    });
+    expect(transitionPayment(decided, { type: "approve", validApprovals: 2 }, money, at)).toBe(
+      decided,
+    );
+  }
+});
