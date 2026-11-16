@@ -180,6 +180,7 @@ export function QueueScreen({
   return (
     <>
       <PageHeader
+        className={params.leadId ? "hidden md:flex" : undefined}
         title={profile.role === "agent" ? "My queue" : `${name}'s queue`}
         action={
           profile.role !== "agent" && (

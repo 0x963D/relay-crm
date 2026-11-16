@@ -94,6 +94,9 @@
 @utility grid-cols-label-value {
   grid-template-columns: auto 1fr;
 }
+@utility grid-cols-custody {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content;
+}
 @utility grid-cols-value-action {
   grid-template-columns: 1fr auto;
 }

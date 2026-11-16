@@ -285,7 +285,7 @@ test("empty and failed workspaces tell the viewer what happened", async ({ page 
   });
   await page.reload();
   await expect(page.getByRole("heading", { name: "The pool is empty", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Assign 0 leads to/ })).toBeDisabled();
+  await expect(page.getByRole("region", { name: "Assign leads", exact: true })).toHaveCount(0);
   await page.goto(`${browserState().url}/agents/${empty.ownerId}`);
   await expect(
     page.getByRole("heading", { name: "Dele Akinwale has no open leads", exact: true }),

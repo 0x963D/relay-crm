@@ -3,6 +3,25 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("board details keep compact rows, usable phone targets and an empty pool", async ({
+  page,
+}) => {
+  await signIn(page, "manager");
+  await expect.soft(page.getByRole("radio", { name: /Callum Reid/ })).toHaveCount(1);
+  await expect
+    .soft(page.getByRole("columnheader", { name: "Campaign", exact: true }))
+    .toHaveCSS("font-size", "13px");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const checkbox = page.getByRole("checkbox", { name: "Select all visible leads", exact: true });
+  const box = await checkbox.boundingBox();
+  expect.soft(box?.width).toBeGreaterThanOrEqual(44);
+  expect.soft(box?.height).toBeGreaterThanOrEqual(44);
+  await page.getByRole("radio", { name: "Agent", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+  await expect.soft(page.getByRole("heading", { name: "My queue", exact: true })).not.toBeVisible();
+});
+
 test("agent selection and phone Back restore focus to their controls", async ({ page }) => {
   await signIn(page, "manager");
   await page.getByRole("link", { name: "Agent queues", exact: true }).click();

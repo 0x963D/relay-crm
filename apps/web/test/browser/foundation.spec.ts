@@ -56,8 +56,6 @@ test("keyboard assignment and attempt preserve focus and drafts", async ({ page 
     page.getByRole("radiogroup", { name: "Who gets them?" }).getByRole("radio", { checked: true }),
   );
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("radio", { name: /Callum Reid Evening courses/ })).toBeFocused();
-  await page.keyboard.press("ArrowDown");
   await expect(recipient).toBeFocused();
   await page.keyboard.press("Space");
   await expect(recipient).toBeChecked();

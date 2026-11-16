@@ -80,16 +80,20 @@ export function Signoff({
     <div className="min-w-0">
       <div
         className={cn(
-          "flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 border-b pb-1 font-semibold",
+          "flex min-h-9 items-center gap-2 border-b pb-1 font-semibold",
           name
             ? "border-foreground"
             : "border-dashed border-waiting-foreground text-waiting-foreground",
         )}
       >
         {icon ? <Icon name={icon} /> : name ? <Avatar name={name} /> : <Icon name="wait" />}
-        <span className="break-words">{name ?? "Not assigned"}</span>
+        <span className="min-w-0 truncate" title={name ?? undefined}>
+          {name ?? "Not assigned"}
+        </span>
         {time && (
-          <span className="ms-auto text-xs font-normal text-secondary-foreground">{time}</span>
+          <span className="ms-auto shrink-0 whitespace-nowrap text-xs font-normal text-secondary-foreground">
+            {time}
+          </span>
         )}
       </div>
       <p className="pt-1 text-xs text-muted-foreground">{caption}</p>
@@ -167,13 +171,20 @@ export function PageHeader({
   title,
   children,
   action,
+  className,
 }: {
   title: string;
   children: ReactNode;
   action?: ReactNode;
+  className?: string | undefined;
 }) {
   return (
-    <header className="flex shrink-0 flex-wrap items-end justify-between gap-3 border-b px-4 py-4 md:px-6">
+    <header
+      className={cn(
+        "flex shrink-0 flex-wrap items-end justify-between gap-3 border-b px-4 py-4 md:px-6",
+        className,
+      )}
+    >
       <div className="min-w-0">
         <h1 className="text-title font-bold">{title}</h1>
         <div className="mt-1 text-caption text-secondary-foreground">{children}</div>

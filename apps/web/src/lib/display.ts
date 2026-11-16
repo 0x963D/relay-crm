@@ -1,3 +1,5 @@
+import { CURRENCIES, type Money } from "@relay/domain";
+
 export function shortDate(at: Date | null, zone: string): string {
   return at
     ? new Intl.DateTimeFormat("en-GB", {
@@ -116,7 +118,6 @@ export function custodyDate(
   }).format(at);
   return held ? `since ${text}` : text;
 }
-import { CURRENCIES, type Money } from "@relay/domain";
 
 export function formatMoney(money: Money): string {
   const digits = CURRENCIES[money.currency];

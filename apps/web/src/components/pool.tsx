@@ -10,6 +10,8 @@ import { Avatar, Empty, Loading, PageHeader, Refusal, Slip } from "./pieces";
 import { Icon } from "./icons";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import { Field } from "./ui/field";
+import { NativeSelect } from "./ui/native-select";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
@@ -36,6 +38,11 @@ export function PoolScreen({ zone }: { zone: string }) {
   const retry = useRef<HTMLButtonElement>(null);
   const rows = plan.kind === "stale" ? plan.rows : (pool?.rows ?? []);
   const recipients = agents.filter((agent) => chosen.includes(assignmentKey(agent)));
+  const people = agents
+    .filter(
+      (agent, index) => agents.findIndex((other) => other.ownerId === agent.ownerId) === index,
+    )
+    .map((agent) => recipients.find((recipient) => recipient.ownerId === agent.ownerId) ?? agent);
   useEffect(() => {
     if (message?.kind === "success") feedback.current?.focus();
     if (message?.kind === "error") refusal.current?.focus();
@@ -95,7 +102,7 @@ export function PoolScreen({ zone }: { zone: string }) {
       names.length === 1 ? `${String(names[0])}'s queue` : "the receiving agents' queues";
     setMessage({
       kind: "success",
-      text: `${String(selected.length)} ${selected.length === 1 ? "lead was" : "leads were"} assigned. They appear as not yet called in ${destination}.`,
+      text: `${String(selected.length)} ${selected.length === 1 ? "lead was" : "leads were"} assigned. ${selected.length === 1 ? "It appears" : "They appear"} as not yet called in ${destination}.`,
     });
     setSelected([]);
     setPlan({ kind: "editing" });
@@ -196,7 +203,7 @@ export function PoolScreen({ zone }: { zone: string }) {
             <Table className="table-fixed" aria-label="Unassigned leads">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-11 ps-4">
+                  <TableHead className="w-16 ps-4 md:w-11">
                     <Checkbox
                       aria-label="Select all visible leads"
                       disabled={busy || plan.kind === "stale"}
@@ -264,7 +271,10 @@ export function PoolScreen({ zone }: { zone: string }) {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="hidden whitespace-normal text-caption text-secondary-foreground @xl/pool:table-cell">
+                      <TableCell
+                        className="hidden truncate text-caption text-secondary-foreground @xl/pool:table-cell"
+                        title={row.origin?.campaign ?? undefined}
+                      >
                         {campaignLabel(row.origin?.campaign)}
                       </TableCell>
                       <TableCell className="hidden whitespace-normal text-caption text-secondary-foreground @3xl/pool:table-cell">
@@ -285,7 +295,8 @@ export function PoolScreen({ zone }: { zone: string }) {
                                 : "No longer in the pool"}
                             </Slip>
                           ) : person ? (
-                            <span className="font-semibold">
+                            <span className="flex items-center gap-1.5 font-semibold">
+                              <Icon name="next" size="small" />
                               {person.name}
                               {agents.filter((agent) => agent.ownerId === person.ownerId).length >
                                 1 && (
@@ -336,225 +347,256 @@ export function PoolScreen({ zone }: { zone: string }) {
             )}
           </div>
         </section>
-        <section
-          aria-label="Assign leads"
-          className={cn(
-            "@container/assignment min-h-0 w-full shrink-0 flex-col border-s md:flex md:w-96",
-            mobilePanel ? "flex" : "hidden",
-          )}
-        >
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 @sm/assignment:p-6">
-            <Button
-              variant="ghost"
-              className="md:hidden"
-              onClick={() => {
-                setMobilePanel(false);
-              }}
-            >
-              <Icon name="back" />
-              Back to leads
-            </Button>
-            <h2 ref={panelHeading} tabIndex={-1} className="text-panel font-bold">
-              Assign {selected.length} {selected.length === 1 ? "lead" : "leads"}
-            </h2>
-            <Tabs
-              value={method}
-              onValueChange={(value) => {
-                if (busy) return;
-                if (value === "hand" || value === "round") {
-                  setMethod(value);
-                  edit();
-                  setChosen(
-                    value === "round"
-                      ? [...new Map(agents.map((agent) => [agent.ownerId, agent])).values()].map(
-                          assignmentKey,
-                        )
-                      : agents[0]
-                        ? [assignmentKey(agents[0])]
-                        : [],
-                  );
-                }
-              }}
-            >
-              <TabsList aria-label="Assignment method" className="w-full">
-                <TabsTrigger value="hand">To one person</TabsTrigger>
-                <TabsTrigger value="round">Round-robin</TabsTrigger>
-              </TabsList>
-              <TabsContent
-                value={method}
-                aria-label="Assignment options"
-                className="space-y-4 pt-3"
+        {(pool.total > 0 || plan.kind === "stale") && (
+          <section
+            aria-label="Assign leads"
+            className={cn(
+              "@container/assignment min-h-0 w-full shrink-0 flex-col border-s md:flex md:w-96",
+              mobilePanel ? "flex" : "hidden",
+            )}
+          >
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 @sm/assignment:p-6">
+              <Button
+                variant="ghost"
+                className="md:hidden"
+                onClick={() => {
+                  setMobilePanel(false);
+                }}
               >
-                <div
-                  ref={refusal}
-                  role="alert"
-                  aria-live="assertive"
-                  aria-atomic="true"
-                  tabIndex={-1}
+                <Icon name="back" />
+                Back to leads
+              </Button>
+              <h2 ref={panelHeading} tabIndex={-1} className="text-panel font-bold">
+                Assign {selected.length} {selected.length === 1 ? "lead" : "leads"}
+              </h2>
+              <Tabs
+                value={method}
+                onValueChange={(value) => {
+                  if (busy) return;
+                  if (value === "hand" || value === "round") {
+                    setMethod(value);
+                    edit();
+                    setChosen(
+                      value === "round"
+                        ? people.map(assignmentKey)
+                        : agents[0]
+                          ? [assignmentKey(agents[0])]
+                          : [],
+                    );
+                  }
+                }}
+              >
+                <TabsList aria-label="Assignment method" className="w-full">
+                  <TabsTrigger value="hand">
+                    <Icon name="assign" size="small" />
+                    To one person
+                  </TabsTrigger>
+                  <TabsTrigger value="round">
+                    <Icon name="shuffle" size="small" />
+                    Round-robin
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent
+                  value={method}
+                  aria-label="Assignment options"
+                  className="space-y-4 pt-3"
                 >
-                  {message?.kind === "error" && (
-                    <Refusal announce={false} title="Assignment could not be completed">
-                      {message.text}
-                    </Refusal>
-                  )}
-                  {plan.kind === "stale" && (
-                    <StaleAssignment plan={plan} selectedCount={selected.length} zone={zone} />
-                  )}
-                </div>
-                {plan.kind !== "stale" &&
-                  (method === "hand" ? (
-                    <fieldset className="space-y-2">
-                      <legend className="text-caption font-semibold">Who gets them?</legend>
-                      <RadioGroup
-                        aria-label="Who gets them?"
-                        value={chosen[0] ?? ""}
-                        onValueChange={(value) => {
-                          edit();
-                          setChosen([value]);
-                        }}
-                      >
-                        {agents.map((agent) => (
-                          <label
-                            key={assignmentKey(agent)}
-                            className={cn(
-                              "flex min-h-11 items-center gap-2 rounded-md border px-3 py-2",
-                              chosen.includes(assignmentKey(agent)) && "border-primary bg-accent",
-                            )}
-                          >
-                            <RadioGroupItem value={assignmentKey(agent)} disabled={busy} />
-                            <Avatar name={agent.name} />
-                            <span className="flex-1">
-                              <span className="font-semibold">{agent.name}</span>
-                              <span className="block text-xs text-muted-foreground">
-                                {agent.team}
-                              </span>
-                            </span>
-                            <span className="text-caption text-secondary-foreground">
-                              {agent.openCount} in queue
-                            </span>
-                          </label>
-                        ))}
-                      </RadioGroup>
-                    </fieldset>
-                  ) : (
-                    <>
+                  <div
+                    ref={refusal}
+                    role="alert"
+                    aria-live="assertive"
+                    aria-atomic="true"
+                    tabIndex={-1}
+                  >
+                    {message?.kind === "error" && (
+                      <Refusal announce={false} title="Assignment could not be completed">
+                        {message.text}
+                      </Refusal>
+                    )}
+                    {plan.kind === "stale" && (
+                      <StaleAssignment plan={plan} selectedCount={selected.length} zone={zone} />
+                    )}
+                  </div>
+                  {plan.kind !== "stale" &&
+                    (method === "hand" ? (
                       <fieldset className="space-y-2">
-                        <legend className="text-caption font-semibold">Share between</legend>
-                        <div className="grid gap-2 @xs/assignment:grid-cols-2">
-                          {agents.map((agent) => (
+                        <legend className="text-caption font-semibold">Who gets them?</legend>
+                        <RadioGroup
+                          aria-label="Who gets them?"
+                          value={chosen[0] ?? ""}
+                          onValueChange={(value) => {
+                            edit();
+                            setChosen([value]);
+                          }}
+                        >
+                          {people.map((agent) => (
                             <label
                               key={assignmentKey(agent)}
-                              className="flex min-h-9 items-center gap-2"
+                              className={cn(
+                                "flex min-h-11 items-center gap-2 rounded-md border px-3 py-2",
+                                chosen.includes(assignmentKey(agent)) && "border-primary bg-accent",
+                              )}
                             >
-                              <Checkbox
-                                checked={chosen.includes(assignmentKey(agent))}
-                                disabled={busy}
-                                onCheckedChange={(value) => {
-                                  edit();
-                                  setChosen((ids) =>
-                                    value === true
-                                      ? [
-                                          ...ids.filter(
-                                            (id) => !id.startsWith(`${agent.ownerId}:`),
-                                          ),
-                                          assignmentKey(agent),
-                                        ]
-                                      : ids.filter((id) => id !== assignmentKey(agent)),
-                                  );
-                                }}
-                              />
+                              <RadioGroupItem value={assignmentKey(agent)} disabled={busy} />
                               <Avatar name={agent.name} />
-                              <span className="font-semibold">
-                                {agent.name}
-                                <span className="block text-xs font-normal text-muted-foreground">
-                                  {agent.team}
-                                </span>
+                              <span className="flex-1">
+                                <span className="font-semibold">{agent.name}</span>
+                              </span>
+                              <span className="text-caption text-secondary-foreground">
+                                {agent.openCount} in queue
                               </span>
                             </label>
                           ))}
-                        </div>
+                        </RadioGroup>
                       </fieldset>
-                      <label className="flex min-h-9 items-center gap-2 font-semibold">
-                        <Checkbox
-                          checked={exclude}
-                          disabled={busy}
-                          onCheckedChange={(value) => {
-                            edit();
-                            setExclude(value === true);
-                          }}
-                        />
-                        Skip a lead's previous owner
-                      </label>
-                    </>
-                  ))}
-                {plan.kind !== "editing" && (
-                  <AssignmentPreview
-                    plan={plan}
-                    recipients={recipients}
-                    zone={zone}
-                    previewHeading={previewHeading}
-                  />
-                )}
-                {plan.kind !== "stale" && (
-                  <p className="text-xs text-muted-foreground">
-                    {method === "hand"
-                      ? "Only agents have a queue, so only agents are listed. Assigned leads land in their queue as not yet called. Moving a lead to someone else later keeps its status."
-                      : "Nothing moves until you confirm. If one of these leads changes hands first, the preview is refused and nothing is assigned."}
-                  </p>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-          <div className="shrink-0 space-y-2 border-t bg-background p-4">
-            {plan.kind === "stale" ? (
-              <>
-                {plan.remaining.length > 0 && (
+                    ) : (
+                      <>
+                        <fieldset className="space-y-2">
+                          <legend className="text-caption font-semibold">Share between</legend>
+                          <div className="grid gap-2 @xs/assignment:grid-cols-2">
+                            {people.map((agent) => (
+                              <label
+                                key={assignmentKey(agent)}
+                                className="flex min-h-9 items-center gap-2"
+                              >
+                                <Checkbox
+                                  checked={chosen.includes(assignmentKey(agent))}
+                                  disabled={busy}
+                                  onCheckedChange={(value) => {
+                                    edit();
+                                    setChosen((ids) =>
+                                      value === true
+                                        ? [
+                                            ...ids.filter(
+                                              (id) => !id.startsWith(`${agent.ownerId}:`),
+                                            ),
+                                            assignmentKey(agent),
+                                          ]
+                                        : ids.filter((id) => id !== assignmentKey(agent)),
+                                    );
+                                  }}
+                                />
+                                <Avatar name={agent.name} />
+                                <span className="font-semibold">{agent.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <label className="flex min-h-9 items-center gap-2 font-semibold">
+                          <Checkbox
+                            checked={exclude}
+                            disabled={busy}
+                            onCheckedChange={(value) => {
+                              edit();
+                              setExclude(value === true);
+                            }}
+                          />
+                          Skip a lead's previous owner
+                        </label>
+                      </>
+                    ))}
+                  {plan.kind === "editing" &&
+                    recipients
+                      .filter(
+                        (person) =>
+                          agents.filter((agent) => agent.ownerId === person.ownerId).length > 1,
+                      )
+                      .map((person) => (
+                        <Field key={person.ownerId} label={`Team for ${person.name}`}>
+                          {(control) => (
+                            <NativeSelect
+                              {...control}
+                              value={assignmentKey(person)}
+                              disabled={busy}
+                              onChange={(event) => {
+                                edit();
+                                setChosen((ids) =>
+                                  ids.map((id) =>
+                                    id.startsWith(`${person.ownerId}:`) ? event.target.value : id,
+                                  ),
+                                );
+                              }}
+                            >
+                              {agents
+                                .filter((agent) => agent.ownerId === person.ownerId)
+                                .map((agent) => (
+                                  <option key={agent.teamId} value={assignmentKey(agent)}>
+                                    {agent.team}
+                                  </option>
+                                ))}
+                            </NativeSelect>
+                          )}
+                        </Field>
+                      ))}
+                  {plan.kind !== "editing" && (
+                    <AssignmentPreview
+                      plan={plan}
+                      recipients={recipients}
+                      zone={zone}
+                      previewHeading={previewHeading}
+                    />
+                  )}
+                  {plan.kind !== "stale" && (
+                    <p className="text-xs text-muted-foreground">
+                      {method === "hand"
+                        ? "Only agents have a queue, so only agents are listed. Assigned leads land in their queue as not yet called. Moving a lead to someone else later keeps its status."
+                        : "Nothing moves until you confirm. If one of these leads changes hands first, the preview is refused and nothing is assigned."}
+                    </p>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </div>
+            <div className="shrink-0 space-y-2 border-t bg-background p-4">
+              {plan.kind === "stale" ? (
+                <>
+                  {plan.remaining.length > 0 && (
+                    <Button
+                      ref={retry}
+                      size="lg"
+                      className="w-full whitespace-normal"
+                      busy={busy}
+                      onClick={() => {
+                        makePreview(plan.remaining);
+                      }}
+                    >
+                      <Icon name="refresh" />
+                      Preview the remaining {plan.remaining.length}{" "}
+                      {plan.remaining.length === 1 ? "lead" : "leads"}
+                    </Button>
+                  )}
                   <Button
-                    ref={retry}
-                    size="lg"
-                    className="w-full whitespace-normal"
-                    busy={busy}
+                    variant="ghost"
+                    className="w-full"
                     onClick={() => {
-                      makePreview(plan.remaining);
+                      edit();
+                      setSelected([]);
+                      void refresh();
                     }}
                   >
-                    <Icon name="refresh" />
-                    Preview the remaining {plan.remaining.length}{" "}
-                    {plan.remaining.length === 1 ? "lead" : "leads"}
+                    Cancel
                   </Button>
-                )}
+                </>
+              ) : (
                 <Button
-                  variant="ghost"
-                  className="w-full"
+                  size="lg"
+                  className="w-full whitespace-normal"
+                  busy={busy}
+                  disabled={!selected.length || !chosen.length}
                   onClick={() => {
-                    edit();
-                    setSelected([]);
-                    void refresh();
+                    if (method === "round" && plan.kind === "editing") makePreview();
+                    else assign();
                   }}
                 >
-                  Cancel
+                  {busy
+                    ? "Please wait…"
+                    : `${method === "round" && plan.kind === "editing" ? "Preview" : "Assign"} ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}${method === "hand" && recipients[0] ? ` to ${recipients[0].name}` : ""}`}
                 </Button>
-              </>
-            ) : (
-              <Button
-                size="lg"
-                className="w-full whitespace-normal"
-                busy={busy}
-                disabled={!selected.length || !chosen.length}
-                onClick={() => {
-                  if (method === "round" && plan.kind === "editing") makePreview();
-                  else assign();
-                }}
-              >
-                {busy
-                  ? "Please wait…"
-                  : `${method === "round" && plan.kind === "editing" ? "Preview" : "Assign"} ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}${method === "hand" && recipients[0] ? ` to ${recipients[0].name}` : ""}`}
-              </Button>
-            )}
-          </div>
-        </section>
+              )}
+            </div>
+          </section>
+        )}
       </div>
-      {!mobilePanel && (
+      {!mobilePanel && pool.total > 0 && (
         <div className="shrink-0 border-t bg-background p-3 md:hidden">
           <Button
             className="w-full"

@@ -212,6 +212,15 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
                 >
                   Close lead
                 </Button>
+                <Button
+                  variant="ghost"
+                  busy={busy}
+                  onClick={() => {
+                    open("note");
+                  }}
+                >
+                  Add note
+                </Button>
               </div>
             )}
           </div>
@@ -242,7 +251,7 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
             <span className="break-all">{lead.email}</span>
           </div>
         </div>
-        <div className="grid gap-4 @2xl/detail:grid-cols-3">
+        <div className="grid gap-4 @2xl/detail:grid-cols-custody">
           <Signoff
             caption="Received from"
             name={sourceLabel(lead.custody.receivedFrom?.source)}
@@ -271,7 +280,9 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
           ).map(([caption, value]) => (
             <div key={caption}>
               <dt className="text-xs text-muted-foreground">{caption}</dt>
-              <dd className="mt-1 break-words text-caption">{value ?? "Unknown"}</dd>
+              <dd className="mt-1 truncate text-caption" title={value ?? undefined}>
+                {value ?? "Unknown"}
+              </dd>
             </div>
           ))}
         </dl>
@@ -360,7 +371,7 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
           {canEdit && (
             <div
               hidden={!!mode}
-              className="flex w-full flex-wrap gap-2 @3xl/detail:ms-auto @3xl/detail:w-auto"
+              className="flex w-full flex-wrap gap-2 @2xl/detail:ms-auto @2xl/detail:w-auto"
             >
               <Button
                 variant="outline"
@@ -381,15 +392,6 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
               >
                 <Icon name="callback" />
                 {callbackAt ? "Move callback" : "Set callback"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  open("note");
-                }}
-              >
-                Add note
               </Button>
             </div>
           )}

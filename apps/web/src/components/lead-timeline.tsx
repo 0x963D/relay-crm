@@ -1,6 +1,7 @@
 import type { Outputs } from "@/lib/api";
 import { shortDate, sourceLabel, callbackDate } from "@/lib/display";
-import { Icon, type IconName } from "./icons";
+import type { IconName } from "./icons";
+import { Timeline, TimelineEntry } from "./timeline";
 import { Slip } from "./pieces";
 type Lead = Outputs["leads"]["get"];
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,48 +74,43 @@ function timelineEntry(
 
 export function LeadTimeline({ lead, zone, limit }: { lead: Lead; zone: string; limit: number }) {
   return (
-    <ol aria-label="Lead history" className="space-y-5">
+    <Timeline name="Lead history">
       {lead.timeline.slice(0, limit).map((entry) => {
         const display = timelineEntry(entry, zone, lead);
         return (
-          <li key={entry.id} className="flex gap-3">
-            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-secondary-foreground">
-              <Icon name={display.icon} size="small" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">{display.title}</span>
-                {entry.summary?.kind === "attempt" && (
-                  <Slip icon={entry.summary.outcome === "noAnswer" ? "missed" : "check"}>
-                    {entry.summary.outcome === "noAnswer"
-                      ? `No answer ×${String(entry.summary.noAnswerCount ?? 1)}`
-                      : "Spoke to them"}
-                  </Slip>
-                )}
-                {entry.summary?.kind === "attempt" && entry.summary.callbackAt && (
-                  <Slip kind="outline" icon="callback">
-                    Callback {callbackDate(entry.summary.callbackAt, zone)}
-                  </Slip>
-                )}
-                <time
-                  className="text-xs text-muted-foreground @xl/detail:ms-auto"
-                  dateTime={entry.at.toISOString()}
-                >
-                  {shortDate(entry.at, zone)}
-                </time>
-              </div>
-              {display.body && (
-                <p className="mt-1 whitespace-pre-wrap break-words text-secondary-foreground">
-                  {display.body}
-                </p>
+          <TimelineEntry key={entry.id} icon={display.icon}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">{display.title}</span>
+              {entry.summary?.kind === "attempt" && (
+                <Slip icon={entry.summary.outcome === "noAnswer" ? "missed" : "check"}>
+                  {entry.summary.outcome === "noAnswer"
+                    ? `No answer ×${String(entry.summary.noAnswerCount ?? 1)}`
+                    : "Spoke to them"}
+                </Slip>
               )}
-              {entry.actor && entry.kind !== "assignment" && (
-                <p className="mt-1 text-caption text-muted-foreground">{entry.actor.name}</p>
+              {entry.summary?.kind === "attempt" && entry.summary.callbackAt && (
+                <Slip kind="outline" icon="callback">
+                  Callback {callbackDate(entry.summary.callbackAt, zone)}
+                </Slip>
               )}
+              <time
+                className="text-xs text-muted-foreground @xl/detail:ms-auto"
+                dateTime={entry.at.toISOString()}
+              >
+                {callbackDate(entry.at, zone)}
+              </time>
             </div>
-          </li>
+            {display.body && (
+              <p className="mt-1 whitespace-pre-wrap break-words text-secondary-foreground">
+                {display.body}
+              </p>
+            )}
+            {entry.actor && entry.kind !== "assignment" && (
+              <p className="mt-1 text-caption text-muted-foreground">{entry.actor.name}</p>
+            )}
+          </TimelineEntry>
         );
       })}
-    </ol>
+    </Timeline>
   );
 }

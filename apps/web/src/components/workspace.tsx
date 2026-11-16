@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
+import { useCachedCount } from "@/lib/trpc/use-cached-count";
 import type { Outputs } from "@/lib/api";
 import { isLeadManager } from "@/lib/workspace";
 import { authFailure } from "@/lib/failures";
@@ -23,6 +24,11 @@ const roleNames = {
   agent: "Agent",
   accountant: "Accountant",
 };
+const poolCount = (data: Outputs["leads"]["pool"]) => data.total;
+const agentCount = (data: Outputs["leads"]["agents"]) =>
+  new Set(data.map((agent) => agent.ownerId)).size;
+const queueCount = (data: Outputs["leads"]["queue"]) =>
+  Object.values(data.counts).reduce((sum, n) => sum + n, 0);
 export function Workspace({
   profile,
   demo,
@@ -36,6 +42,17 @@ export function Workspace({
   const router = useRouter();
   const trpc = useTRPC();
   const client = useQueryClient();
+  const poolTotal = useCachedCount(trpc.leads.pool.queryKey(), poolCount);
+  const agentTotal = useCachedCount(trpc.leads.agents.queryKey(), agentCount);
+  const queueTotal = useCachedCount(
+    trpc.leads.queue.queryKey({ agentId: profile.userId }),
+    queueCount,
+  );
+  const counts: Record<string, number | undefined> = {
+    "/pool": poolTotal,
+    "/agents": agentTotal,
+    "/queue": queueTotal,
+  };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectTeam = useMutation(
@@ -87,6 +104,11 @@ export function Workspace({
         >
           <Icon name={item.icon} />
           <span>{item.label}</span>
+          {counts[item.href] !== undefined && (
+            <span aria-hidden="true" className="ms-auto text-caption tabular-nums">
+              {counts[item.href]}
+            </span>
+          )}
         </Link>
       ))}
     </nav>
