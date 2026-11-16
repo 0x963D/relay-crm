@@ -62,6 +62,20 @@ test("the operation-built demo covers the board, balances its postings and seeds
   );
   expect(ledger.balances[0]?.balance).toBe(118500n);
   expect(ledger.balances[0]?.entries).toHaveLength(3);
+  expect(
+    await db.rows(
+      "SELECT count(DISTINCT date_trunc('day',t.at))::int AS days FROM ledger_transactions t JOIN payments p ON p.id=t.payment_id JOIN leads l ON l.account_id=p.account_id WHERE l.name='Jonas Weber'",
+    ),
+  ).toEqual([{ days: 3 }]);
+  const callbacks = await db.rows(
+    "SELECT extract(hour FROM call_back_at AT TIME ZONE 'UTC')::int AS hour FROM leads WHERE name IN ('Hye-jin Park','Mateus Carvalho')",
+  );
+  expect(callbacks).toHaveLength(2);
+  for (const row of callbacks) {
+    expect(Number(row.hour)).toBeGreaterThanOrEqual(9);
+    expect(Number(row.hour)).toBeLessThan(18);
+  }
+
   for (const entry of ledger.balances.flatMap((balance) => balance.entries)) {
     const lines = entry.posting?.lines ?? [];
     expect(
