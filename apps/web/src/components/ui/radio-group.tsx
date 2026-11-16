@@ -5,10 +5,14 @@ import { cn } from "cn";
 export function RadioGroup({ className, ...props }: ComponentProps<typeof Primitive.Root>) {
   return <Primitive.Root className={cn("field", className)} {...props} />;
 }
-export function RadioGroupItem({ className, ...props }: ComponentProps<typeof Primitive.Item>) {
+export function RadioGroupItem({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof Primitive.Item>) {
   return (
     <Primitive.Item className={cn("radio", className)} {...props}>
-      <Primitive.Indicator className="radio-dot" />
+      {children ?? <Primitive.Indicator className="radio-dot" />}
     </Primitive.Item>
   );
 }

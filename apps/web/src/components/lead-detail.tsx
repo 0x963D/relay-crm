@@ -8,6 +8,8 @@ import {
   shortDate,
   sourceLabel,
   custodyDate,
+  callbackFields,
+  dayLabel,
   callbackDate,
   overdueBy,
 } from "@/lib/display";
@@ -154,6 +156,14 @@ export function LeadDetail({
     request.current = null;
     setExpanded(false);
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (next === "callback" && query.data) {
+      const state = query.data.lifecycle.state;
+      if (state.status === "working" && state.stage.kind === "callBack") {
+        const fields = callbackFields(state.stage.at, zone);
+        setDay(fields.day);
+        setTime(fields.time);
+      }
+    }
     setMode(next);
     if (nextChannel) setChannel(nextChannel);
     setError(null);
@@ -431,16 +441,23 @@ export function LeadDetail({
                   </h3>
                   <span className="sp" />
                   {mode === "attempt" && (
-                    <TabsList aria-label="Attempt channel">
-                      <TabsTrigger value="call">
+                    <RadioGroup
+                      className="tabs channel-choices"
+                      aria-label="Attempt channel"
+                      value={channel}
+                      onValueChange={(value) => {
+                        if (value === "call" || value === "whatsApp") setChannel(value);
+                      }}
+                    >
+                      <RadioGroupItem value="call" aria-label="Call">
                         <Icon name="call" size="small" />
                         Call
-                      </TabsTrigger>
-                      <TabsTrigger value="whatsApp">
+                      </RadioGroupItem>
+                      <RadioGroupItem value="whatsApp" aria-label="WhatsApp">
                         <Icon name="whatsapp" size="small" />
                         WhatsApp
-                      </TabsTrigger>
-                    </TabsList>
+                      </RadioGroupItem>
+                    </RadioGroup>
                   )}
                   {mode === "close" && (
                     <TabsList aria-label="Close outcome">
@@ -545,6 +562,11 @@ export function LeadDetail({
                                 setDay(e.target.value);
                               }}
                             />
+                            {day && (
+                              <span className="help">
+                                {dayLabel(new Date(`${day}T12:00:00Z`), "UTC")}
+                              </span>
+                            )}
                           </label>
                           <label className="field">
                             <span className="label">Time</span>
@@ -572,7 +594,11 @@ export function LeadDetail({
                       <Textarea
                         aria-labelledby="work-note-label"
                         aria-describedby={mode === "close" ? "lost-help" : undefined}
-                        required
+                        required={
+                          mode === "attempt" ||
+                          mode === "note" ||
+                          (mode === "close" && closing === "lost")
+                        }
                         maxLength={4000}
                         value={note}
                         onChange={(e) => {

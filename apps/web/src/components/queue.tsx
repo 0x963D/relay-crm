@@ -116,6 +116,20 @@ export function QueueScreen({
     };
   }, [remote]);
   const queue = remote.status === "ready" ? remote.value : null;
+  const agentOptions = [
+    ...new Map(
+      agents.map((agent) => [
+        agent.ownerId,
+        {
+          ...agent,
+          teams: agents
+            .filter((other) => other.ownerId === agent.ownerId)
+            .map((other) => other.team)
+            .join(", "),
+        },
+      ]),
+    ).values(),
+  ];
   const name = agents.find((a) => a.ownerId === agentId)?.name ?? "Agent";
   const total = queue ? Object.values(queue.counts).reduce((n, v) => n + v, 0) : 0;
   useEffect(() => {
@@ -173,9 +187,9 @@ export function QueueScreen({
                 router.push(`/?view=queue&agent=${e.target.value}`);
               }}
             >
-              {agents.map((agent) => (
-                <option key={`${agent.ownerId}:${agent.teamId}`} value={agent.ownerId}>
-                  {agent.name}
+              {agentOptions.map((agent) => (
+                <option key={agent.ownerId} value={agent.ownerId}>
+                  {agent.name} � {agent.teams}
                 </option>
               ))}
             </select>
@@ -214,7 +228,10 @@ export function QueueScreen({
                 <ul>
                   {all(group.key).map((item) => (
                     <li key={item.id}>
-                      <div className="qrow" data-selected={item.id === selectedId}>
+                      <div
+                        className="qrow"
+                        data-selected={item.id === selectedId && (params.has("lead") || undefined)}
+                      >
                         <button
                           type="button"
                           className="q-select"
