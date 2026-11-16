@@ -1,17 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  useSuspenseQuery,
-  keepPreviousData,
-} from "@tanstack/react-query";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
+import { usePagedQuery } from "@/lib/trpc/use-paged-query";
 import { failureCode, failureMessage } from "@/lib/failures";
 import { callbackDate, campaignLabel, sourceLabel } from "@/lib/display";
 import { cn } from "@/lib/utils";
-import { Avatar, Empty, PageHeader, Refusal, Slip } from "./pieces";
+import { Avatar, Empty, Loading, PageHeader, Refusal, Slip } from "./pieces";
 import { Icon } from "./icons";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -24,13 +19,8 @@ export function PoolScreen({ zone }: { zone: string }) {
   const trpc = useTRPC();
   const client = useQueryClient();
   const [limit, setLimit] = useState(14);
-  const { data: initialPool } = useSuspenseQuery(
-    trpc.leads.pool.queryOptions({ limit: 14, offset: 0 }),
-  );
-  const pageQuery = useQuery(
-    trpc.leads.pool.queryOptions({ limit, offset: 0 }, { placeholderData: keepPreviousData }),
-  );
-  const pool = pageQuery.data ?? initialPool;
+  const pageQuery = usePagedQuery(trpc.leads.pool.queryOptions({ limit, offset: 0 }), "pool");
+  const pool = pageQuery.data;
   const { data: agents } = useSuspenseQuery(trpc.leads.agents.queryOptions({ offset: 0 }));
   const [selected, setSelected] = useState<string[]>([]);
   const [method, setMethod] = useState<"hand" | "round">("hand");
@@ -44,7 +34,7 @@ export function PoolScreen({ zone }: { zone: string }) {
   const previewHeading = useRef<HTMLHeadingElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const retry = useRef<HTMLButtonElement>(null);
-  const rows = plan.kind === "stale" ? plan.rows : pool.rows;
+  const rows = plan.kind === "stale" ? plan.rows : (pool?.rows ?? []);
   const recipients = agents.filter((agent) => chosen.includes(assignmentKey(agent)));
   useEffect(() => {
     if (message?.kind === "success") feedback.current?.focus();
@@ -89,7 +79,7 @@ export function PoolScreen({ zone }: { zone: string }) {
       onError: failed,
       onSuccess: (preview, input) => {
         setSelected(input.leadIds);
-        setPlan({ kind: "preview", preview, rows: pool.rows, at: new Date() });
+        setPlan({ kind: "preview", preview, rows, at: new Date() });
       },
     }),
   );
@@ -160,6 +150,16 @@ export function PoolScreen({ zone }: { zone: string }) {
         to: { ownerId: recipients[0].ownerId, teamId: recipients[0].teamId },
       });
   }
+  if (!pool) {
+    if (pageQuery.error)
+      return (
+        <Refusal title="The pool could not be loaded" retry={() => void pageQuery.refetch()}>
+          {failureMessage(pageQuery.error, "read")}
+        </Refusal>
+      );
+    return <Loading label="Loading pool" />;
+  }
+  const hasMore = pool.rows.length < pool.total && limit < 100;
   return (
     <>
       <PageHeader title="Lead pool">
@@ -315,15 +315,17 @@ export function PoolScreen({ zone }: { zone: string }) {
                 ? `Showing ${String(rows.length - plan.changed.length)} still in the pool, and ${String(plan.changed.length)} that changed hands`
                 : `Showing ${String(rows.length)} of ${String(pool.total)}, newest first`}
             </p>
-            {pool.rows.length < pool.total && plan.kind !== "stale" && (
+            {(hasMore || limit > 14) && plan.kind !== "stale" && (
               <Button
                 variant="outline"
                 size="sm"
+                busy={pageQuery.isFetching}
+                aria-disabled={!hasMore || pageQuery.isFetching}
                 onClick={() => {
-                  setLimit((value) => Math.min(value + 14, 100));
+                  if (hasMore) setLimit((value) => Math.min(value + 14, 100));
                 }}
               >
-                Show more leads
+                {hasMore ? "Show more leads" : "All leads shown"}
               </Button>
             )}
           </div>

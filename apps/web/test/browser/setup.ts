@@ -34,6 +34,7 @@ export default async function setup() {
         SMTP_FROM: "relay@tidewell.example",
         RELAY_DEMO: "1",
         RELAY_TIME_ZONE: "UTC",
+        RELAY_TRUSTED_PROXY_COUNT: "1",
       }),
       db.connectionString,
     );

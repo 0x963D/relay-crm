@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
+import { usePagedQuery } from "@/lib/trpc/use-paged-query";
 import type { Outputs } from "@/lib/api";
 import { failureMessage } from "@/lib/failures";
 import { campaignLabel, dayLabel, sourceLabel, callbackDate, overdueLabel } from "@/lib/display";
@@ -135,14 +136,14 @@ export function QueueScreen({
   const client = useQueryClient();
   const params = useParams<{ leadId?: string }>();
   const [limit, setLimit] = useState(20);
-  const { data: queue } = useSuspenseQuery(trpc.leads.queue.queryOptions({ agentId, limit }));
+  const pageQuery = usePagedQuery(trpc.leads.queue.queryOptions({ agentId, limit }), agentId);
+  const queue = pageQuery.data;
   const people = useQuery(
     trpc.leads.agents.queryOptions({ offset: 0 }, { enabled: profile.role !== "agent" }),
   );
   const name = people.data?.find((agent) => agent.ownerId === agentId)?.name ?? "Agent";
-  const total = Object.values(queue.counts).reduce((sum, count) => sum + count, 0);
   useEffect(() => {
-    if (!queue.nextCallbackAt) return;
+    if (!queue?.nextCallbackAt) return;
     const delay = Math.max(1000, queue.nextCallbackAt.getTime() - Date.now() + 100);
     const timer = setTimeout(
       () => void client.invalidateQueries({ queryKey: trpc.leads.queue.queryKey() }),
@@ -151,7 +152,19 @@ export function QueueScreen({
     return () => {
       clearTimeout(timer);
     };
-  }, [client, queue.nextCallbackAt, trpc]);
+  }, [client, queue?.nextCallbackAt, trpc]);
+  if (!queue) {
+    if (pageQuery.error)
+      return (
+        <Refusal title="The queue could not be loaded" retry={() => void pageQuery.refetch()}>
+          {failureMessage(pageQuery.error, "read")}
+        </Refusal>
+      );
+    return <Loading label="Loading queue" />;
+  }
+  const total = Object.values(queue.counts).reduce((sum, count) => sum + count, 0);
+  const hasMore =
+    limit < 100 && groups.some((group) => queue[group.key].length < queue.counts[group.key]);
   return (
     <>
       <PageHeader
@@ -266,15 +279,22 @@ export function QueueScreen({
               </section>
             ))
           )}
-          {groups.some((group) => queue[group.key].length < queue.counts[group.key]) && (
+          {pageQuery.error && (
+            <Refusal title="More leads could not be loaded" retry={() => void pageQuery.refetch()}>
+              {failureMessage(pageQuery.error, "read")}
+            </Refusal>
+          )}
+          {(hasMore || limit > 20) && (
             <Button
               variant="outline"
               className="m-4"
+              busy={pageQuery.isFetching}
+              aria-disabled={!hasMore || pageQuery.isFetching}
               onClick={() => {
-                setLimit((value) => Math.min(value + 20, 100));
+                if (hasMore) setLimit((value) => Math.min(value + 20, 100));
               }}
             >
-              Show more leads
+              {hasMore ? "Show more leads" : "All leads shown"}
             </Button>
           )}
           {people.isError && (
