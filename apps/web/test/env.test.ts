@@ -178,7 +178,7 @@ it("a production build requires an explicit demo deployment for sandbox payments
   expect(parseEnv(values, true)).toMatchObject({ demo: false });
 });
 
-it.each(["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_RECONCILE_SECRET"])(
+it.each(["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_RECONCILE_SECRET", "RELAY_OUTBOX_SECRET"])(
   "%s follows the authentication secret strength rule",
   (name) => {
     for (const secret of ["a".repeat(40), "example-only-do-not-use-this-secret", "too-short"]) {
@@ -187,6 +187,9 @@ it.each(["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_RECONCILE_SECRET"])(
   },
 );
 it.each([
+  ["AUTH_SECRET", "RELAY_OUTBOX_SECRET"],
+  ["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_OUTBOX_SECRET"],
+  ["RELAY_RECONCILE_SECRET", "RELAY_OUTBOX_SECRET"],
   ["AUTH_SECRET", "RELAY_PAYMENT_WEBHOOK_SECRET"],
   ["AUTH_SECRET", "RELAY_RECONCILE_SECRET"],
   ["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_RECONCILE_SECRET"],

@@ -405,9 +405,9 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 ```
 
 `pnpm test -- apps/web/test/env.test.ts` verifies that `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`
-and `RELAY_RECONCILE_SECRET` each need at least
+`RELAY_RECONCILE_SECRET` and `RELAY_OUTBOX_SECRET` each need at least
 32 characters and 12 distinct characters, and refuses the exact placeholder in `.env.example`.
-The three secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather
+The four secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather
 than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a
 repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
 `AUTH_URL` and SMTP are also unset.

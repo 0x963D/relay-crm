@@ -29,7 +29,7 @@ const Variables = z.object({
     .min(1)
     .max(3600000)
     .default(RECEIPT_SEND_TIMEOUT_MS),
-  RELAY_OUTBOX_SECRET: z.string().min(32).optional(),
+  RELAY_OUTBOX_SECRET: Secret.optional(),
   RELAY_TIME_ZONE: z
     .string()
     .refine((value) => {
@@ -203,10 +203,11 @@ export function parseEnv(
     parsed.data.AUTH_SECRET,
     parsed.data.RELAY_PAYMENT_WEBHOOK_SECRET,
     parsed.data.RELAY_RECONCILE_SECRET,
+    parsed.data.RELAY_OUTBOX_SECRET,
   ].filter((value) => value !== undefined);
   if (new Set(secrets).size !== secrets.length)
     throw new EnvError(
-      "AUTH_SECRET, RELAY_PAYMENT_WEBHOOK_SECRET and RELAY_RECONCILE_SECRET must be distinct.",
+      "AUTH_SECRET, RELAY_PAYMENT_WEBHOOK_SECRET, RELAY_RECONCILE_SECRET and RELAY_OUTBOX_SECRET must be distinct.",
     );
   if (parsed.data.RELAY_SANDBOX && !developmentBuild && parsed.data.RELAY_DEMO !== "1")
     throw new EnvError("Sandbox payments in a production build require RELAY_DEMO=1.");
