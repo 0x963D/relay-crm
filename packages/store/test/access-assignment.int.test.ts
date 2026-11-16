@@ -397,3 +397,12 @@ test("foreign target membership and non-membership have the same refusal", async
     });
   }
 });
+
+test("lead lists reload the current role and membership", async ({ db }) => {
+  const w = await world(db);
+  await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
+  expect((await db.store.listLeads(w.actor, { limit: 100 })).map((l) => l.id)).toEqual([w.own]);
+  await db.rows("UPDATE users SET role='teamLead' WHERE id=$1", [w.actor.userId]);
+  await db.rows("DELETE FROM memberships WHERE user_id=$1", [w.actor.userId]);
+  expect((await db.store.listLeads(w.actor, { limit: 100 })).map((l) => l.id)).toEqual([w.own]);
+});

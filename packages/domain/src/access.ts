@@ -64,7 +64,10 @@ export function recordScope(actor: Actor, record: RecordKind, access: RecordAcce
   return { kind: "intersection", scopes: [scope, read] };
 }
 
-export function scopeAdmits(scope: RecordScope, record: LeadState | Account): boolean {
+export function scopeAdmits(
+  scope: RecordScope,
+  record: LeadState | Pick<Account, "ownerId" | "teamId">,
+): boolean {
   const owner = "status" in record ? assigneeOf(record) : record;
   switch (scope.kind) {
     case "intersection":
@@ -80,4 +83,16 @@ export function scopeAdmits(scope: RecordScope, record: LeadState | Account): bo
     case "none":
       return false;
   }
+}
+
+export function scopeHasRecords(scope: RecordScope): boolean {
+  return scope.kind === "intersection"
+    ? scope.scopes.every(scopeHasRecords)
+    : scope.kind !== "none";
+}
+
+export function isAssignableAgent(
+  candidate: { readonly role: Role; readonly teamKind: TeamKind } | null,
+): boolean {
+  return candidate?.role === "agent" && candidate.teamKind === "sales";
 }

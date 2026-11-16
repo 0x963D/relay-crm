@@ -1,7 +1,9 @@
 export {
   recordScope,
+  isAssignableAgent,
   ROLES,
   scopeAdmits,
+  scopeHasRecords,
   TEAM_KINDS,
   type Actor,
   type LeadAccess,

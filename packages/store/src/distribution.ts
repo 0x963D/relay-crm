@@ -5,6 +5,9 @@ import {
   TeamId,
   planDistribution,
   recordScope,
+  isAssignableAgent,
+  scopeAdmits,
+  scopeHasRecords,
   transition,
   type Actor,
   type Assignment,
@@ -26,18 +29,12 @@ function digest(value: unknown): string {
 }
 
 async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
-  const scope = recordScope(actor, "lead", "assign");
-  if (
-    scope.kind === "none" ||
-    (scope.kind !== "all" && (scope.kind !== "teamAndPool" || scope.teamId !== to.teamId))
-  ) {
-    throw new AccessError("accessDenied");
-  }
+  if (!scopeAdmits(recordScope(actor, "lead", "assign"), to)) throw new AccessError("accessDenied");
   const member = await tx.membership.findUnique({
     where: { userId_teamId: { userId: to.ownerId, teamId: to.teamId } },
     include: { user: true, team: true },
   });
-  if (member?.user.role !== "agent" || member.team.kind !== "sales")
+  if (!isAssignableAgent(member ? { role: member.user.role, teamKind: member.team.kind } : null))
     throw new AccessError("invalidAgent");
 }
 
@@ -136,7 +133,7 @@ export async function previewDistribution(
 ): Promise<DistributionPreview> {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
-    if (recordScope(current, "lead", "assign").kind === "none")
+    if (!scopeHasRecords(recordScope(current, "lead", "assign")))
       throw new AccessError("accessDenied");
     const leads: DistributionLead[] = [];
     for (const id of [...new Set(request.leadIds)].sort()) {
@@ -219,7 +216,7 @@ export async function submitDistribution(
         throw new AccessError("idempotencyConflict");
       return { items: storedItems(prior.result) };
     }
-    if (recordScope(current, "lead", "assign").kind === "none")
+    if (!scopeHasRecords(recordScope(current, "lead", "assign")))
       throw new AccessError("accessDenied");
     const preview = await tx.distributionPreview.findUnique({ where: { id: input.previewId } });
     if (preview?.actorId !== current.userId || preview.fingerprint !== input.fingerprint)

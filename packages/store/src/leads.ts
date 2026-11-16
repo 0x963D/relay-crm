@@ -7,11 +7,11 @@ import {
   type IntakeSource,
   type Lead,
   type LeadLifecycle,
-  type LeadScope,
 } from "@relay/domain";
-import type { Prisma } from "./generated/client.ts";
+import { currentActor } from "./auth.ts";
+import { scopeWhere } from "./scope.ts";
 import { InvariantError, leadFromRow, lifecycleFromRow, lifecycleToColumns } from "./lead-row.ts";
-import type { Db, Tx } from "./tx.ts";
+import { transact, type Db, type Tx } from "./tx.ts";
 import { AccessError } from "./errors.ts";
 
 export interface LeadListItem extends Lead {
@@ -19,42 +19,28 @@ export interface LeadListItem extends Lead {
   readonly origin: { readonly source: IntakeSource; readonly campaign: string | null } | null;
 }
 
-function recordScopeWhere(scope: LeadScope): Prisma.LeadWhereInput {
-  switch (scope.kind) {
-    case "intersection":
-      return { AND: scope.scopes.map(recordScopeWhere) };
-    case "all":
-      return {};
-    case "team":
-      return { teamId: scope.teamId };
-    case "teamAndPool":
-      return { OR: [{ teamId: scope.teamId }, { status: "new" }] };
-    case "own":
-      return { ownerId: scope.userId };
-    case "none":
-      return { id: { in: [] } };
-  }
-}
-
 export async function listLeads(
   db: Db,
   actor: Actor,
   page: { readonly limit: number },
 ): Promise<readonly LeadListItem[]> {
-  const rows = await db.lead.findMany({
-    where: recordScopeWhere(recordScope(actor, "lead", "read")),
-    // UUID v7 ascends with time, so the ID breaks ties in the same direction.
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: page.limit,
-    include: {
-      intakeEvents: {
-        where: { outcome: "leadCreated" },
-        select: { source: true, campaign: true },
-        take: 1,
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const rows = await tx.lead.findMany({
+      where: scopeWhere(recordScope(current, "lead", "read")),
+      // UUID v7 ascends with time, so the ID breaks ties in the same direction.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: page.limit,
+      include: {
+        intakeEvents: {
+          where: { outcome: "leadCreated" },
+          select: { source: true, campaign: true },
+          take: 1,
+        },
       },
-    },
+    });
+    return rows.map((row) => ({ ...leadFromRow(row), origin: row.intakeEvents[0] ?? null }));
   });
-  return rows.map((row) => ({ ...leadFromRow(row), origin: row.intakeEvents[0] ?? null }));
 }
 
 function leadId(value: string): LeadId {

@@ -64,6 +64,19 @@ async function ownerOf(db: TestDatabase): Promise<Actor> {
   return { userId: await db.seedUser("owner"), role: "owner", team: null };
 }
 
+async function persistActor(db: TestDatabase, actor: Actor): Promise<void> {
+  await db.rows("UPDATE users SET role=$1 WHERE id=$2", [actor.role, actor.userId]);
+  await db.rows("DELETE FROM memberships WHERE user_id=$1", [actor.userId]);
+  if (actor.team) {
+    await db.rows("UPDATE teams SET kind=$1 WHERE id=$2", [actor.team.kind, actor.team.id]);
+    await db.rows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,$3)", [
+      actor.userId,
+      actor.team.id,
+      actor.team.isLead,
+    ]);
+  }
+}
+
 function byId(leads: readonly Seeded[]): ReadonlyMap<LeadId, LeadLifecycle> {
   return new Map(leads.map((lead) => [lead.id, lead.lifecycle]));
 }
@@ -92,6 +105,7 @@ describe("listLeads scoping", () => {
     for (const role of ROLES) {
       for (const team of teams) {
         const actor: Actor = { userId: world.ana.ownerId, role, team };
+        await persistActor(db, actor);
         const scope = recordScope(actor, "lead", "read");
         const admitted = world.leads
           .filter((lead) => scopeAdmits(scope, lead.lifecycle.state))
@@ -110,7 +124,9 @@ describe("listLeads scoping", () => {
   test("gives each scope the number of leads the seeded world holds for it", async ({ db }) => {
     const world = await seedWorld(db);
     const count = async (actor: Omit<Actor, "userId">): Promise<number> => {
-      const listed = await db.store.listLeads({ userId: world.ana.ownerId, ...actor }, EVERYTHING);
+      const current = { userId: world.ana.ownerId, ...actor };
+      await persistActor(db, current);
+      const listed = await db.store.listLeads(current, EVERYTHING);
       return listed.length;
     };
     const leadsTeamA = { id: world.ana.teamId, kind: "sales", isLead: true } as const;
