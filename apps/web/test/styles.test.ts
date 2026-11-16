@@ -9,6 +9,7 @@ test("the style guard rejects literal values and class-coupled styles in every s
   mkdirSync(parent, { recursive: true });
   const root = mkdtempSync(join(parent, "style-guard-"));
   const classes = [
+    String.fromCharCode(0xfffd),
     "w-[13.5rem]",
     "text-[0.8125rem]",
     "h-[calc(100dvh-3rem)]",

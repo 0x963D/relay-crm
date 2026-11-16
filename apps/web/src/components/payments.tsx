@@ -238,8 +238,8 @@ function CompactPayment({
           <PaymentStatus payment={payment} compact />
         </div>
         <p className="mt-1 text-caption text-secondary-foreground">
-          <strong className="text-foreground">{formatMoney(payment.money)}</strong> �{" "}
-          {payment.method === "manual" ? "Manual" : "Card"} �{" "}
+          <strong className="text-foreground">{formatMoney(payment.money)}</strong> ·{" "}
+          {payment.method === "manual" ? "Manual" : "Card"} ·{" "}
           {payment.kind === "first" ? "First" : "Repeat"}
         </p>
       </Link>

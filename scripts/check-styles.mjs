@@ -12,6 +12,7 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
 )) {
   const path = relative(".", join(root, file)).replaceAll("\\", "/");
   const source = readFileSync(join(root, file), "utf8");
+  if (source.includes("\uFFFD")) violations.push(`${path}: invalid UTF-8 replacement character`);
   function report(kind, value, index) {
     counts[kind]++;
     if (!allow.some((entry) => entry.file === path && entry.value === value && entry.reason))
