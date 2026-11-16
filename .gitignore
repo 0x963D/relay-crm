@@ -9,3 +9,6 @@ coverage/
 packages/store/src/generated/
 
 /relay-demo.cookies
+
+/test-results/
+/playwright-report/
