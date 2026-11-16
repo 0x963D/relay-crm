@@ -647,7 +647,7 @@ test("the app role cannot leave won or dead or reopen lost without intake", asyn
     await w.work(w.agent, id, closing);
     for (const sql of [
       "UPDATE leads SET status='working',stage='ready',account_id=NULL,lost_note=NULL,dead_reason=NULL WHERE id=$1",
-      "UPDATE leads SET status='new',stage=NULL,owner_id=NULL,team_id=NULL,account_id=NULL,lost_note=NULL,dead_reason=NULL WHERE id=$1",
+      "UPDATE leads SET status='new',stage=NULL,previous_owner_id=owner_id,owner_id=NULL,team_id=NULL,account_id=NULL,lost_note=NULL,dead_reason=NULL WHERE id=$1",
     ]) {
       await expect(db.rows(sql, [id])).rejects.toMatchObject({ code: "23514" });
     }
@@ -660,7 +660,7 @@ test("the app role cannot leave won or dead or reopen lost without intake", asyn
 test("the funnel separates equal campaign names by intake source", async ({ db }) => {
   const w = await world(db);
   for (const source of ["metaLeadAds", "webForm", "csv"] as const) {
-    await db.store.intake(
+    const intake = await db.store.intake(
       submissionExample({
         email: `${source}@example.com`,
         externalId: source,
@@ -668,6 +668,12 @@ test("the funnel separates equal campaign names by intake source", async ({ db }
         campaign: source === "csv" ? null : "Evening",
       }),
     );
+    if (source === "metaLeadAds" && "leadId" in intake.outcome) {
+      await w.work(w.manager, intake.outcome.leadId, {
+        kind: "close",
+        closing: { kind: "dead", reason: "duplicate" },
+      });
+    }
   }
   const funnel = await db.store.campaignFunnel(w.manager);
   expect(funnel).toMatchObject({ campaignCount: 1, otherSourceCount: 2 });
@@ -719,4 +725,117 @@ test("account lists sort by person name with a scoped total and payment summary"
     if (actor === w.agent) expect(result.items[0]?.balances).toBeNull();
   }
   expect(await db.store.listAccounts(w.other, { limit: 1 })).toEqual({ items: [], total: 0 });
+});
+
+test("the queue filters an admitted agent's leads by the viewer's selected team", async ({
+  db,
+}) => {
+  const w = await world(db);
+  const lead = await w.makeActor("teamLead");
+  const ownTeam = await w.makeLead();
+  const otherTeam = await w.makeLead();
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [
+    w.agent.userId,
+    w.otherTeam,
+  ]);
+  await db.store.reassignLead(
+    w.manager,
+    otherTeam,
+    { ownerId: w.agent.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  const queue = await db.store.workQueue(lead, {
+    agentId: w.agent.userId,
+    at: AT,
+    timeZone: "UTC",
+    limit: 100,
+  });
+  expect(queue.notYetCalled.map((item) => item.id)).toEqual([ownTeam]);
+});
+
+test("a note does not count as an attempt in the queue", async ({ db }) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  await w.work(w.agent, id, { kind: "note", note: "Call after work" });
+  const queue = await db.store.workQueue(w.agent, {
+    agentId: w.agent.userId,
+    at: AT,
+    timeZone: "UTC",
+    limit: 100,
+  });
+  expect(queue.notYetCalled.map((item) => item.id)).toEqual([id]);
+  expect(queue.notYetCalled[0]?.noAnswerCount).toBe(0);
+});
+
+test("a note on a closed lead is refused without history", async ({ db }) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  await w.work(w.agent, id, noAnswer);
+  await w.work(w.agent, id, lost);
+  const before = await db.counts();
+  await expect(w.work(w.agent, id, { kind: "note", note: "Too late" })).rejects.toMatchObject({
+    code: "leadClosed",
+  });
+  expect(await db.counts()).toEqual(before);
+});
+
+test("a lost close saves its written reason and one closure activity", async ({ db }) => {
+  const w = await world(db);
+  const id = await w.makeLead();
+  await w.work(w.agent, id, noAnswer);
+  await w.work(w.agent, id, lost);
+  const detail = await db.store.getLead(w.agent, id);
+  expect(detail.lifecycle.state).toMatchObject({ status: "lost", reason: "Chose a closer school" });
+  expect(detail.lostNote).toBe("Chose a closer school");
+  const closures = detail.timeline.filter((item) => item.kind === "closure");
+  expect(closures).toHaveLength(1);
+  expect(closures[0]?.detail).toMatchObject({
+    actorId: w.agent.userId,
+    closing: { kind: "lost", note: "Chose a closer school" },
+  });
+});
+
+test("the funnel counts reopened and reassigned leads once under their creating intake", async ({
+  db,
+}) => {
+  const w = await world(db);
+  const reopened = await w.makeLead(w.agent, "funnel-reopened@example.com");
+  const moved = await w.makeLead();
+  await w.work(w.agent, reopened, noAnswer);
+  await w.work(w.agent, reopened, lost);
+  await db.store.intake(
+    submissionExample({
+      email: "funnel-reopened@example.com",
+      externalId: "new-intake",
+      source: "metaLeadAds",
+      campaign: "Different",
+    }),
+  );
+  await db.store.reassignLead(
+    w.manager,
+    moved,
+    { ownerId: w.other.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  expect((await db.store.campaignFunnel(w.manager)).rows).toEqual([
+    expect.objectContaining({
+      campaign: "Evening course",
+      source: "webForm",
+      received: 2,
+      unassigned: 1,
+      won: 0,
+    }),
+  ]);
+});
+
+test("a team lead must select a team before listing accounts", async ({ db }) => {
+  const w = await world(db);
+  const lead = await w.makeActor("teamLead");
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
+    lead.userId,
+    w.otherTeam,
+  ]);
+  await expect(
+    db.store.listAccounts({ ...lead, team: null }, { limit: 100 }),
+  ).rejects.toMatchObject({ code: "teamSelectionRequired" });
 });

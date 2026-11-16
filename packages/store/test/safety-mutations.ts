@@ -337,6 +337,65 @@ definitions.push(
     testFile: "packages/store/test/payment-safety.int.test.ts",
   },
 );
+definitions.push(
+  {
+    name: "work-queue-scope",
+    file: "packages/store/src/leads.ts",
+    before: '        scopeWhere(recordScope(actor, "lead", "read")),',
+    after: "",
+    test: "the queue filters an admitted agent's leads by the viewer's selected team",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-note-attempt",
+    file: "packages/store/src/work.ts",
+    before: 'if (summary?.kind !== "attempt") continue;',
+    after: "if (summary === null) continue;",
+    test: "a note does not count as an attempt in the queue",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-closed-note",
+    file: "packages/store/src/work.ts",
+    before: 'if (!isOpen(before.state)) throw new AccessError("leadClosed");',
+    after: "",
+    test: "a note on a closed lead is refused without history",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-lost-activity",
+    file: "packages/store/src/work.ts",
+    before: "await tx.activity.create({",
+    after: 'if (work.kind !== "close") await tx.activity.create({',
+    test: "a lost close saves its written reason and one closure activity",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-funnel-identity",
+    file: "packages/store/src/work.ts",
+    before: "const leads = await funnelLeadRows(tx, current);",
+    after:
+      'const leads = (await tx.intakeEvent.findMany({ where: { leadId: { not: null } }, include: { lead: { include: { intakeEvents: { where: { outcome: "leadCreated" }, take: 1 } } } } })).flatMap((event) => event.lead ? [event.lead] : []);',
+    test: "the funnel counts reopened and reassigned leads once under their creating intake",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-account-team",
+    file: "packages/domain/src/access.ts",
+    before: "if (actor.team === null && (actor.teams?.length ?? 0) > 1)",
+    after: "if (false && actor.team === null && (actor.teams?.length ?? 0) > 1)",
+    test: "a team lead must select a team before listing accounts",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+  {
+    name: "work-account-order",
+    file: "packages/store/src/accounts.ts",
+    before: 'orderBy: [{ lead: { name: "asc" } }, { lead: { email: "asc" } }, { id: "asc" }],',
+    after: 'orderBy: [{ createdAt: "desc" }, { id: "desc" }],',
+    test: "account lists sort by person name with a scoped total and payment summary",
+    testFile: "packages/store/test/work.int.test.ts",
+  },
+);
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));
 if (!mutations.length) throw new Error("No matching mutations.");
@@ -347,8 +406,27 @@ const files = [
 ];
 const command = `pnpm exec dotenv -- vitest run --project integration ${files.join(" ")}`;
 
-async function run(name: string) {
-  const result = spawnSync(command, { shell: true, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+async function run(name: string, selected?: { test: string; testFile?: string }) {
+  const args = [
+    resolve("node_modules/dotenv-cli/cli.js"),
+    "--",
+    process.execPath,
+    resolve("node_modules/vitest/vitest.mjs"),
+    "run",
+    "--project",
+    "integration",
+    ...(selected
+      ? [
+          selected.testFile ?? "packages/store/test/access-assignment.int.test.ts",
+          "-t",
+          selected.test,
+        ]
+      : files),
+  ];
+  const result = spawnSync(process.execPath, args, {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
   const output = `${result.stdout}${result.stderr}`;
   await writeFile(resolve(outputDirectory, `${name}.log`), output);
   if (result.error) throw result.error;
@@ -364,7 +442,7 @@ for (const mutation of mutations) {
     throw new Error(`Expected one replacement for ${mutation.name}`);
   try {
     await writeFile(mutation.file, original.replace(mutation.before, mutation.after));
-    const result = await run(mutation.name);
+    const result = await run(mutation.name, mutation);
     const failures = result.output.split("\n").filter((line) => line.includes("FAIL"));
     const caught = result.status !== 0 && failures.some((line) => line.includes(mutation.test));
     results.push({

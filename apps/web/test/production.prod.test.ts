@@ -1,3 +1,4 @@
+import { submissionExample } from "@relay/domain/testing";
 import { randomUUID } from "node:crypto";
 import { signPaymentBody } from "../src/server/payments/webhook.ts";
 import superjson from "superjson";
@@ -36,6 +37,7 @@ databaseTest(
         SMTP_URL: inbox.url,
         SMTP_FROM: "relay@sender.example",
         RELAY_TIME_ZONE: "Pacific/Auckland",
+        RELAY_DEMO: "1",
       }),
       db.connectionString,
     );
@@ -131,6 +133,10 @@ databaseTest(
           z.object({ kind: z.string(), sequence: z.bigint(), detail: z.unknown() }),
         ),
       });
+      const workedQueue = z
+        .object({ noCallbackSet: z.array(z.object({ id: z.string() })) })
+        .parse(await rpc("leads.queue", {}, agent));
+      expect(workedQueue.noCallbackSet.map((lead) => lead.id)).toEqual([id]);
       const unanswered = Detail.parse(await rpc("leads.get", { id }, agent));
       expect(unanswered.contactedAt).toBeNull();
       expect(unanswered.noAnswerCount).toBe(1);
@@ -155,6 +161,7 @@ databaseTest(
           channel: "call",
           outcome: "spokeToThem",
           note: "Agreed to join the evening course",
+          callback: { kind: "set", at: callbackAt },
         },
         agent,
         true,
@@ -226,6 +233,152 @@ databaseTest(
       ).toEqual(requestIds.sort());
       process.stdout.write(
         `LIVE_WORK ${JSON.stringify({ queue, unanswered, callbackAt, detail, accounts, funnel, correlatedWrites: requestIds.length }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
+      );
+      const dated = z
+        .object({
+          timeline: z.array(
+            z.object({
+              kind: z.string(),
+              summary: z
+                .object({ callbackAt: z.date().nullable(), noAnswerCount: z.number().nullable() })
+                .nullable(),
+            }),
+          ),
+        })
+        .parse(await rpc("leads.get", { id }, agent));
+      expect(dated.timeline.find((entry) => entry.kind === "attempt")?.summary).toEqual({
+        callbackAt,
+        noAnswerCount: 1,
+      });
+      const secondAgentId = await db.seedUser("agent");
+      await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [
+        secondAgentId,
+        teamId,
+      ]);
+      const secondAgent = await signIn("user-3@team.example");
+      const email = "returning-journey@example.com";
+      const enquiry = () =>
+        post("/api/intake/form", {
+          submissionId: randomUUID(),
+          email,
+          name: "Ada Journey",
+          campaign: "Evening course",
+        });
+      expect((await enquiry()).status).toBe(202);
+      const returningId = z
+        .array(z.object({ id: z.string(), email: z.string() }))
+        .parse(await rpc("leads.list", { limit: 100 }, manager))
+        .find((lead) => lead.email === email)?.id;
+      if (!returningId) throw new Error("No returning lead");
+      const to = { ownerId: agentId, teamId };
+      await rpc("leads.assign", { leadIds: [returningId], to }, manager, true);
+      await rpc(
+        "leads.logAttempt",
+        {
+          id: returningId,
+          key: "returning-attempt",
+          channel: "call",
+          outcome: "noAnswer",
+          note: "Rang out",
+        },
+        agent,
+        true,
+      );
+      await rpc(
+        "leads.close",
+        {
+          id: returningId,
+          key: "returning-lost",
+          closing: { kind: "lost", note: "Chose a closer school" },
+        },
+        agent,
+        true,
+      );
+      const lostDetail = z
+        .object({
+          lostNote: z.string().nullable(),
+          lifecycle: z.object({ state: z.object({ status: z.string() }) }),
+          timeline: z.array(z.object({ kind: z.string(), detail: z.unknown() })),
+        })
+        .parse(await rpc("leads.get", { id: returningId }, agent));
+      expect(lostDetail).toMatchObject({
+        lostNote: "Chose a closer school",
+        lifecycle: { state: { status: "lost" } },
+      });
+      expect(lostDetail.timeline[0]).toMatchObject({
+        kind: "closure",
+        detail: { closing: { kind: "lost", note: "Chose a closer school" } },
+      });
+      expect((await enquiry()).status).toBe(202);
+      await rpc("leads.assign", { leadIds: [returningId], to }, manager, true);
+      const reopenedQueue = Queue.parse(await rpc("leads.queue", {}, agent));
+      expect(reopenedQueue.notYetCalled.map((lead) => lead.id)).toEqual([returningId]);
+      await rpc(
+        "leads.logAttempt",
+        {
+          id: returningId,
+          key: "after-reopen",
+          channel: "call",
+          outcome: "noAnswer",
+          note: "Rang out again",
+        },
+        agent,
+        true,
+      );
+      await rpc(
+        "leads.reassign",
+        { leadId: returningId, to: { ownerId: secondAgentId, teamId } },
+        manager,
+        true,
+      );
+      const reassignedQueue = Queue.parse(await rpc("leads.queue", {}, secondAgent));
+      expect(reassignedQueue.notYetCalled.map((lead) => lead.id)).toEqual([returningId]);
+      await db.store.intake(
+        submissionExample({
+          source: "metaLeadAds",
+          email: "ad-journey@example.com",
+          externalId: "ad-journey",
+          campaign: "Evening course",
+        }),
+      );
+      const sourceFunnel = z
+        .object({
+          campaignCount: z.number(),
+          otherSourceCount: z.number(),
+          rows: z.array(
+            z.object({
+              source: z.string().nullable(),
+              campaign: z.string().nullable(),
+              received: z.number(),
+            }),
+          ),
+        })
+        .parse(await rpc("reports.funnel", undefined, manager));
+      expect(sourceFunnel.campaignCount).toBe(1);
+      expect(sourceFunnel.otherSourceCount).toBe(1);
+      expect(sourceFunnel.rows).toEqual([
+        { source: "webForm", campaign: "Evening course", received: 2 },
+        { source: "metaLeadAds", campaign: "Evening course", received: 1 },
+      ]);
+      const managerAccounts = await rpc("accounts.list", { limit: 100 }, manager);
+      const agentAccounts = await rpc("accounts.list", { limit: 100 }, agent);
+      expect(managerAccounts).toMatchObject({
+        total: 1,
+        items: [
+          expect.objectContaining({
+            campaign: "Evening course",
+            paymentCount: 0,
+            paymentInProgress: null,
+            balances: [],
+          }),
+        ],
+      });
+      expect(agentAccounts).toMatchObject({
+        total: 1,
+        items: [expect.objectContaining({ balances: null })],
+      });
+      process.stdout.write(
+        `LIVE_QUEUE_FIXES ${JSON.stringify({ workedQueue, dated, lostDetail, reopenedQueue, reassignedQueue, sourceFunnel, managerAccounts, agentAccounts }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
       );
     } finally {
       await server.stop();
