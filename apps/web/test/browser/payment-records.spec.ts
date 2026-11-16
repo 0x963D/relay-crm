@@ -2,6 +2,24 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("payment groups share columns and align amount headers with their figures", async ({
+  page,
+}) => {
+  await signIn(page, "accountant");
+  const amounts = page.getByRole("columnheader", { name: "Amount", exact: true });
+  const geometry = await amounts.evaluateAll((headers) =>
+    headers.map((header) => ({
+      x: Math.round(header.getBoundingClientRect().x),
+      align: getComputedStyle(header).textAlign,
+    })),
+  );
+  expect(geometry.length).toBeGreaterThan(1);
+  expect(new Set(geometry.map((header) => header.x)).size).toBe(1);
+  expect(geometry.every((header) => header.align === "end" || header.align === "right")).toBe(true);
+  const approval = page.getByRole("table", { name: "Waiting for approval", exact: true });
+  expect(await approval.locator("tbody tr td:last-child svg").count()).toBeGreaterThan(0);
+});
+
 test("payment rows and ledger amounts fit at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, "accountant");

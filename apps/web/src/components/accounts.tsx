@@ -239,7 +239,12 @@ function AccountLedger({ id, zone }: { id: string; zone: string }) {
                 "The posting’s other line",
                 "Balance",
               ].map((label) => (
-                <TableHead key={label}>{label}</TableHead>
+                <TableHead
+                  key={label}
+                  className={label === "When" || label === "Payment" ? undefined : "text-end"}
+                >
+                  {label}
+                </TableHead>
               ))}
             </TableRow>
           </TableHeader>

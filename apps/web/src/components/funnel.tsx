@@ -110,7 +110,14 @@ export function FunnelScreen() {
                   "Won",
                   "Conversion",
                 ].map((label) => (
-                  <TableHead key={label}>{label}</TableHead>
+                  <TableHead
+                    key={label}
+                    className={
+                      label === "Campaign and source" || label === "Funnel" ? undefined : "text-end"
+                    }
+                  >
+                    {label}
+                  </TableHead>
                 ))}
               </TableRow>
             </TableHeader>

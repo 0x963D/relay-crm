@@ -3,6 +3,7 @@ import type { PaymentView, PaymentRow } from "@/lib/payments";
 import { paymentStatus } from "@/lib/payments";
 import { formatMoney } from "@/lib/display";
 import { Slip } from "./pieces";
+import { Icon } from "./icons";
 import {
   Table,
   TableBody,
@@ -12,6 +13,25 @@ import {
   TableRow,
   TableFooter,
 } from "./ui/table";
+
+export function PaymentPart({ actions }: { actions: PaymentRow["actions"] }) {
+  const approved = actions.approvalRefusal === "alreadyApproved";
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon
+        name={actions.approve || approved ? "check" : actions.cancel ? "close" : "ban"}
+        size="small"
+      />
+      {actions.approve
+        ? "You can approve"
+        : actions.cancel
+          ? "You can cancel it"
+          : approved
+            ? "You approved it"
+            : "You cannot approve"}
+    </span>
+  );
+}
 
 export function PaymentStatus({
   payment,

@@ -9,7 +9,7 @@ import { callbackDate, formatMoney } from "@/lib/display";
 import { failureMessage } from "@/lib/failures";
 import { cn } from "@/lib/utils";
 import { PageHeader, Loading, Refusal, Empty } from "./pieces";
-import { PaymentStatus } from "./payment-pieces";
+import { PaymentStatus, PaymentPart } from "./payment-pieces";
 import { Button } from "./ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
@@ -118,7 +118,16 @@ export function PaymentsScreen({
                   </ul>
                   {!compact && (
                     <div className="hidden md:block">
-                      <Table aria-label={label}>
+                      <Table aria-label={label} className="table-fixed">
+                        <colgroup>
+                          <col className="w-1/5" />
+                          <col className="w-1/8" />
+                          <col className="w-1/12" />
+                          <col className="w-1/12" />
+                          <col className="w-1/6" />
+                          <col className="w-1/6" />
+                          <col />
+                        </colgroup>
                         <TableHeader>
                           <TableRow>
                             {[
@@ -134,7 +143,12 @@ export function PaymentsScreen({
                                   ? "Your part"
                                   : "When",
                             ].map((name) => (
-                              <TableHead key={name}>{name}</TableHead>
+                              <TableHead
+                                key={name}
+                                className={name === "Amount" ? "text-end" : undefined}
+                              >
+                                {name}
+                              </TableHead>
                             ))}
                           </TableRow>
                         </TableHeader>
@@ -144,7 +158,7 @@ export function PaymentsScreen({
                               key={payment.id}
                               data-state={payment.id === selected ? "selected" : undefined}
                             >
-                              <TableCell>
+                              <TableCell className="whitespace-normal">
                                 <Link
                                   href={`/payments/${payment.id}`}
                                   className="font-semibold text-primary underline-offset-4 hover:underline"
@@ -152,34 +166,34 @@ export function PaymentsScreen({
                                   {payment.account?.name ?? payment.account?.email ?? "Account"}
                                 </Link>
                               </TableCell>
-                              <TableCell className="font-semibold">
+                              <TableCell className="text-end font-semibold">
                                 {formatMoney(payment.money)}
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="whitespace-normal">
                                 {payment.method === "manual" ? "Manual" : "Card"}
                               </TableCell>
-                              <TableCell>{payment.kind === "first" ? "First" : "Repeat"}</TableCell>
-                              <TableCell>{payment.recordedBy?.name ?? "Staff member"}</TableCell>
-                              <TableCell>
+                              <TableCell className="whitespace-normal">
+                                {payment.kind === "first" ? "First" : "Repeat"}
+                              </TableCell>
+                              <TableCell className="whitespace-normal">
+                                {payment.recordedBy?.name ?? "Staff member"}
+                              </TableCell>
+                              <TableCell className="whitespace-normal">
                                 <PaymentStatus payment={payment} compact={compact} />
                               </TableCell>
-                              <TableCell>
-                                {key === "waitingForApproval"
-                                  ? payment.actions.approve
-                                    ? "You can approve"
-                                    : payment.actions.cancel
-                                      ? "You can cancel it"
-                                      : payment.actions.approvalRefusal === "alreadyApproved"
-                                        ? "You approved it"
-                                        : "You cannot approve"
-                                  : callbackDate(
-                                      key === "waitingForProvider"
-                                        ? payment.nextCheckAt
-                                        : "at" in payment.state
-                                          ? payment.state.at
-                                          : payment.createdAt,
-                                      zone,
-                                    )}
+                              <TableCell className="whitespace-normal">
+                                {key === "waitingForApproval" ? (
+                                  <PaymentPart actions={payment.actions} />
+                                ) : (
+                                  callbackDate(
+                                    key === "waitingForProvider"
+                                      ? payment.nextCheckAt
+                                      : "at" in payment.state
+                                        ? payment.state.at
+                                        : payment.createdAt,
+                                    zone,
+                                  )
+                                )}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -232,7 +246,7 @@ function CompactPayment({
 }: {
   payment: Pick<
     PaymentRow,
-    "id" | "account" | "state" | "approvals" | "money" | "method" | "kind" | "createdAt"
+    "id" | "account" | "state" | "approvals" | "money" | "method" | "kind" | "createdAt" | "actions"
   >;
   selected?: string | undefined;
   zone: string;
