@@ -191,17 +191,19 @@ databaseTest(
         Accounts.parse(await rpc("accounts.list", { limit: 100 }, agent))[0]?.balances,
       ).toBeNull();
       const funnel = z
-        .array(
-          z.object({
-            campaign: z.string().nullable(),
-            received: z.number(),
-            unassigned: z.number(),
-            contacted: z.number().nullable(),
-            won: z.number(),
-            conversion: z.number().nullable(),
-          }),
-        )
-        .parse(await rpc("reports.funnel", undefined, manager));
+        .object({
+          rows: z.array(
+            z.object({
+              campaign: z.string().nullable(),
+              received: z.number(),
+              unassigned: z.number(),
+              contacted: z.number().nullable(),
+              won: z.number(),
+              conversion: z.number().nullable(),
+            }),
+          ),
+        })
+        .parse(await rpc("reports.funnel", undefined, manager)).rows;
       expect(funnel).toEqual([
         {
           campaign: "Evening course",

@@ -449,8 +449,9 @@ export async function campaignFunnel(db: Db, actor: Actor) {
     if (recordScope(current, "lead", "read").kind !== "all") throw new AccessError("accessDenied");
     const leads = await funnelLeadRows(tx, current);
     const campaigns = new Map<
-      string | null,
+      string,
       {
+        source: IntakeSource | null;
         campaign: string | null;
         received: number;
         unassigned: number;
@@ -460,8 +461,11 @@ export async function campaignFunnel(db: Db, actor: Actor) {
       }
     >();
     for (const lead of leads) {
+      const source = lead.intakeEvents[0]?.source ?? null;
       const campaign = lead.intakeEvents[0]?.campaign ?? null;
-      const item = campaigns.get(campaign) ?? {
+      const key = JSON.stringify([source, campaign]);
+      const item = campaigns.get(key) ?? {
+        source,
         campaign,
         received: 0,
         unassigned: 0,
@@ -474,14 +478,24 @@ export async function campaignFunnel(db: Db, actor: Actor) {
       if (lead.contactedAt !== null) item.knownContacted += 1;
       else if (!lead.workHistoryKnown) item.contactUnknown += 1;
       if (lead.status === "won") item.won += 1;
-      campaigns.set(campaign, item);
+      campaigns.set(key, item);
     }
-    return [...campaigns.values()]
+    const rows = [...campaigns.values()]
       .sort((a, b) => b.received - a.received || (a.campaign ?? "").localeCompare(b.campaign ?? ""))
       .map((item) => ({
         ...item,
         contacted: item.contactUnknown === 0 ? item.knownContacted : null,
         conversion: item.received === 0 ? null : item.won / item.received,
       }));
+    return {
+      rows,
+      campaignCount: rows.filter((row) => row.source === "metaLeadAds" && row.campaign !== null)
+        .length,
+      otherSourceCount: new Set(
+        rows
+          .filter((row) => row.source !== "metaLeadAds" || row.campaign === null)
+          .map((row) => row.source),
+      ).size,
+    };
   });
 }

@@ -78,7 +78,7 @@ test("only spoke to them records contact and no-answer history survives callback
     status: "working",
     stage: { kind: "noAnswer", count: 1 },
   });
-  expect((await db.store.campaignFunnel(w.manager))[0]).toMatchObject({
+  expect((await db.store.campaignFunnel(w.manager)).rows[0]).toMatchObject({
     received: 1,
     contacted: 0,
     won: 0,
@@ -96,7 +96,7 @@ test("only spoke to them records contact and no-answer history survives callback
   detail = await db.store.getLead(w.agent, id);
   expect(detail.contactedAt).toBeInstanceOf(Date);
   expect(detail.noAnswerCount).toBe(2);
-  expect((await db.store.campaignFunnel(w.manager))[0]).toMatchObject({ contacted: 1 });
+  expect((await db.store.campaignFunnel(w.manager)).rows[0]).toMatchObject({ contacted: 1 });
 });
 
 test("a work replay has one activity and audit with the acting user and request ID", async ({
@@ -373,7 +373,7 @@ for (const role of ROLES) {
       else await expect(queue).rejects.toMatchObject({ code: "accessDenied" });
     }
     const funnel = db.store.campaignFunnel(actor);
-    if (management) await expect(funnel).resolves.toBeInstanceOf(Array);
+    if (management) await expect(funnel).resolves.toHaveProperty("rows");
     else await expect(funnel).rejects.toMatchObject({ code: "accessDenied" });
   });
 }
@@ -414,9 +414,10 @@ test("the funnel counts original leads once and keeps missing contact history un
   );
   const historical = await w.makeLead();
   await db.rows("UPDATE leads SET work_history_known=false WHERE id=$1", [historical]);
-  expect(await db.store.campaignFunnel(w.manager)).toEqual([
+  expect((await db.store.campaignFunnel(w.manager)).rows).toEqual([
     {
       campaign: "Evening course",
+      source: "webForm",
       received: 3,
       unassigned: 1,
       knownContacted: 0,
@@ -652,4 +653,27 @@ test("the app role cannot leave won or dead or reopen lost without intake", asyn
       closing.closing.kind,
     );
   }
+});
+
+test("the funnel separates equal campaign names by intake source", async ({ db }) => {
+  const w = await world(db);
+  for (const source of ["metaLeadAds", "webForm", "csv"] as const) {
+    await db.store.intake(
+      submissionExample({
+        email: `${source}@example.com`,
+        externalId: source,
+        source,
+        campaign: source === "csv" ? null : "Evening",
+      }),
+    );
+  }
+  const funnel = await db.store.campaignFunnel(w.manager);
+  expect(funnel).toMatchObject({ campaignCount: 1, otherSourceCount: 2 });
+  expect(funnel.rows).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ source: "metaLeadAds", campaign: "Evening", received: 1 }),
+      expect.objectContaining({ source: "webForm", campaign: "Evening", received: 1 }),
+      expect.objectContaining({ source: "csv", campaign: null, received: 1 }),
+    ]),
+  );
 });
