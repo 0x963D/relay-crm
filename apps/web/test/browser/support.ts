@@ -21,16 +21,11 @@ export function rpc(page: Page) {
     ],
   });
 }
-export async function signIn(page: Page, role: "manager" | "agent" | "accountant") {
+export async function signIn(page: Page, role: "manager" | "agent") {
   await page.goto(browserState().url);
   await page
     .getByRole("button", {
-      name:
-        role === "manager"
-          ? "Priya Raman Manager"
-          : role === "agent"
-            ? "Dele Akinwale Agent"
-            : "Esther Okafor Accountant",
+      name: role === "manager" ? "Priya Raman Manager" : "Dele Akinwale Agent",
       exact: true,
     })
     .click();

@@ -30,7 +30,7 @@ Use the same variables with later Compose commands. `RELAY_TIME_ZONE` selects th
 callbacks and reset, and defaults to UTC.
 
 The invented company is Tidewell Language School. The sign-in page offers Priya Raman, manager,
-Dele Akinwale, agent, and Esther Okafor, accountant. The manager opens the lead pool, and the agent
+and Dele Akinwale, agent. The manager opens the lead pool, and the agent
 opens a queue with five groups. Staff can also sign in with an emailed code.
 The lead screens support assignment by hand, round-robin previews, attempts, callbacks, notes and
 closing a lead. A rejected preview assigns nothing. Only "Spoke to them" marks a lead contacted.
@@ -175,8 +175,8 @@ to check postings and balances.
 ## Status
 
 All three journeys have a backend and typed API. A lead arrives and is assigned, an agent works
-it to won or lost, and a customer makes a payment. There are no CRM journey screens yet.
-The repository still has its lead-list scaffold and a plain sandbox checkout form.
+it to won or lost, and a customer makes a payment. The sign-in, queue, lead detail, pool and
+assignment screens are built. Payment, account and funnel screens are still to come.
 Nothing has been published.
 
 What works today:
