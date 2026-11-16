@@ -158,6 +158,7 @@ test("manual payment needs two other approvers and appears in the ledger; a seco
     .fill("tomasz.zielinski@tidewell.example");
   await second.getByRole("button", { name: "Send me a code", exact: true }).click();
   await expect(second.getByRole("textbox", { name: "6-digit code", exact: true })).toBeVisible();
+  await expect.poll(latestCode).toMatch(/^\d{6}$/);
   await second.getByRole("textbox", { name: "6-digit code", exact: true }).fill(await latestCode());
   await second.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(second.getByRole("navigation", { name: "Main" })).toBeVisible();
@@ -313,6 +314,10 @@ test("receipt retry keeps the posting and refuses another attempt at the cap", a
   await expect(api.payments.requeueReceipt.mutate({ id: cappedId })).rejects.toMatchObject({
     data: { accessFailure: "receiptAttemptLimit" },
   });
+  const capped = await api.payments.get.query({ id: cappedId });
+  const reason = capped.receipt?.history.find((attempt) => attempt.reason)?.reason;
+  if (!reason) throw new Error("The failed receipt needs a recorded reason");
+  await expect(page.getByRole("region", { name: "Receipt", exact: true })).toContainText(reason);
   await accessibility(page, "receipt-cap-refusal");
   await page.goto(`${browserState().url}/payments/${retryId}`);
   await page.getByRole("button", { name: "Send again", exact: true }).click();
@@ -450,4 +455,31 @@ test("@capture payment creation, refusals and the campaign funnel", async ({ pag
     page.getByRole("alert").filter({ hasText: "already has a payment in progress" }),
   ).toBeVisible();
   await capture("10-manual-refused");
+  await openAccount(page, "Hana Kobayashi");
+  await page.getByRole("link", { name: "Record manual payment", exact: true }).click();
+  await page.getByRole("textbox", { name: "Amount", exact: true }).fill("8.10");
+  await page.getByLabel("Receipt", { exact: true }).setInputFiles({
+    name: "edit-receipt.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Manual edit capture receipt"),
+  });
+  await page.getByRole("button", { name: "Send for approval", exact: true }).click();
+  await page.getByRole("link", { name: "Edit payment", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeVisible();
+  await capture("09-manual-edit");
+  await Promise.all([
+    page.waitForURL(`${browserState().url}/queue`),
+    page.getByRole("radio", { name: "Agent", exact: true }).click(),
+  ]);
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Accounts", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
+  await capture("24-accounts-agent");
+  await openAccount(page, "Leila Farouk");
+  await capture("22-account-agent");
+  await page.getByRole("link", { name: "Create card checkout", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Amount", exact: true })).toBeVisible();
+  await capture("22-checkout-agent");
 });

@@ -103,13 +103,13 @@ export async function latestCode() {
     for (const message of messages) {
       const raw: unknown = await (await fetch(`${inbox}/api/v1/message/${message.ID}`)).json();
       const text = z.object({ Text: z.string() }).parse(raw).Text;
-      if (/\b\d{6}\b/.test(text)) {
+      if (/Your sign-in code is \d{6}\./.test(text)) {
         contents = text;
         break;
       }
     }
   } else contents = await readFile(inbox, "utf8");
-  const codes = [...contents.matchAll(/\b(\d{6})\b/g)];
+  const codes = [...contents.matchAll(/Your sign-in code is (\d{6})\./g)];
   return codes.at(-1)?.[1] ?? "";
 }
 export async function saveAttempt(

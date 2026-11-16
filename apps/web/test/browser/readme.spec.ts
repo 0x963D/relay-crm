@@ -27,7 +27,10 @@ test("@capture @readme fixed-day screenshots of the running product", async ({ p
   await page.getByRole("button", { name: /^Preview \d+ leads$/ }).click();
   await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toBeVisible();
   await capture("pool");
-  await page.getByRole("radio", { name: "Accountant", exact: true }).click();
+  await Promise.all([
+    page.waitForURL(`${browserState().url}/payments`),
+    page.getByRole("radio", { name: "Accountant", exact: true }).click(),
+  ]);
   const api = rpc(page);
   const accounts = await api.accounts.list.query({ limit: 100 });
   const account = accounts.items.find((row) => row.person?.name === "Jonas Weber");
