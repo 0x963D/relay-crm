@@ -12,7 +12,6 @@ import {
   type LeadWork,
   type PaymentId,
   type SandboxMode,
-  type DeliveryOutcome,
 } from "@relay/domain";
 import { openStore } from "./index.ts";
 import { DEMO_COMPANY, DEMO_KEY, DEMO_PEOPLE } from "./demo-state.ts";
@@ -513,7 +512,8 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
         observed: { status, money },
       });
     }
-    await completedManual("Jonas Weber", 39500n, "first");
+    const retrying = await completedManual("Jonas Weber", 39500n, "first");
+    deliveryStates.set(retrying, "failed");
     await completedManual("Jonas Weber", 39500n, "repeat", true);
     const recovered = await card("Jonas Weber", 39500n, "repeat", "drop");
     await store.paySandboxCheckout(recovered.token);
@@ -535,7 +535,8 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     await store.receivePaymentWebhook(event);
     await store.receivePaymentWebhook(event);
     deliveryStates.set(duplicate.id, "unknown");
-    deliveryStates.set(await completedManual("Hana Kobayashi", 39500n, "repeat"), "failed");
+    const exhausted = await completedManual("Hana Kobayashi", 39500n, "repeat");
+    deliveryStates.set(exhausted, "failed");
     await completedManual("Aoife Brennan", 48000n, "first");
     await completedManual("Chiara Bianchi", 24000n, "first", false, ffion);
     await completedManual("Mireille Dubois", 39500n, "first", false, noor);
@@ -584,21 +585,33 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     );
     await manual("Aoife Brennan", 24000n, "repeat", actor("Tomasz Zielinski"));
     await approve(mireille.id, accountant);
-    await store.runOutbox(
-      async (message, signal): Promise<DeliveryOutcome> => {
-        const state = deliveryStates.get(message.paymentId);
-        return state
-          ? {
-              state,
-              reason:
-                state === "failed"
-                  ? "Invented SMTP connection refusal. Automatic retry is scheduled."
-                  : "Invented connection loss after DATA. Delivery is unknown.",
-            }
-          : options.deliver(message, signal);
-      },
-      { at: new Date(required(history[13]).at.getTime() + 7 * 3600000) },
+    const delivery: ReceiptDelivery = async (message, signal) => {
+      const state = deliveryStates.get(message.paymentId);
+      return state
+        ? {
+            state,
+            reason:
+              state === "failed"
+                ? "Invented SMTP connection refusal."
+                : "Invented connection loss after DATA. Delivery is unknown.",
+          }
+        : options.deliver(message, signal);
+    };
+    const receiptStart = new Date(required(history[13]).at.getTime() + 6 * 3600000);
+    await store.runOutbox(delivery, { at: receiptStart });
+    await transact(app, (tx) =>
+      tx.outbox.update({ where: { paymentId: retrying }, data: { nextAttemptAt: dueToday } }),
     );
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const cycleStart = receiptStart.getTime() + cycle * 45 * 60000;
+      if (cycle > 0) {
+        paymentTime = new Date(cycleStart);
+        await store.requeueReceipt(manager, exhausted, randomUUID());
+        await store.runOutbox(delivery, { at: paymentTime });
+      }
+      for (const minutes of [5, 15, 35])
+        await store.runOutbox(delivery, { at: new Date(cycleStart + minutes * 60000) });
+    }
     await transact(
       owner,
       (tx) => tx.$executeRaw`UPDATE demo_seed SET state='ready' WHERE key=${DEMO_KEY}`,

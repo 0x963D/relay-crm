@@ -318,3 +318,24 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
     await db.rows("SELECT count(*)::int AS count FROM payments WHERE status='pendingApproval'"),
   ).toEqual([{ count: 4 }]);
 });
+
+test("demo keeps an exhausted receipt failed and schedules a separate retry later today", async ({
+  db,
+}) => {
+  await seedDemo(options(db));
+  const failed = await db.rows(
+    "SELECT payment_id,attempts,next_attempt_at FROM outbox WHERE state='failed' ORDER BY attempts DESC",
+  );
+  expect(failed).toHaveLength(2);
+  expect(failed[0]).toMatchObject({ attempts: 12, next_attempt_at: null });
+  expect(failed[1]).toMatchObject({ attempts: 1 });
+  expect(new Date(String(failed[1]?.next_attempt_at)).getTime()).toBeGreaterThan(today.getTime());
+  expect(
+    await db.store.runOutbox(() => Promise.resolve({ state: "sent" }), {
+      at: new Date(today.getTime() + 300000),
+    }),
+  ).toEqual([]);
+  expect(await db.rows("SELECT count(*)::int AS count FROM outbox WHERE state='failed'")).toEqual([
+    { count: 2 },
+  ]);
+});

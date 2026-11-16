@@ -15,7 +15,7 @@ import { currentActor } from "./auth.ts";
 import { writeAudit } from "./audit.ts";
 import { AccessError } from "./errors.ts";
 import { InvariantError } from "./lead-row.ts";
-import { transact, type Db, type Tx } from "./tx.ts";
+import { transact, storeNow, type Db, type Tx } from "./tx.ts";
 
 export type ReceiptDelivery = (
   message: ReceiptMessage,
@@ -267,7 +267,7 @@ export async function requeueReceipt(
     const current = await currentActor(tx, actor);
     if (recordScope(current, "payment", "requeueReceipt").kind !== "all")
       throw new AccessError("accessDenied");
-    const at = new Date();
+    const at = storeNow(db);
     const row = await tx.outbox.findUnique({ where: { paymentId: id } });
     if (!row) throw new AccessError("accessDenied");
     if (row.attempts >= lifetimeAttemptLimit) throw new AccessError("receiptAttemptLimit");
