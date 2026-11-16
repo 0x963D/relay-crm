@@ -14,7 +14,11 @@ function handle(request: Request) {
         timeZone: app.env.timeZone,
         payments:
           app.payments && app.env.payments
-            ? { provider: app.payments.provider, firstCheckMs: app.env.payments.firstCheckMs }
+            ? {
+                provider: app.payments.provider,
+                firstCheckMs: app.env.payments.firstCheckMs,
+                intervalMs: app.env.payments.intervalMs,
+              }
             : null,
         principal: await resolvePrincipal(app, request.headers),
       }),

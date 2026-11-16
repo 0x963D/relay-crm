@@ -28,14 +28,24 @@ export interface RpcContext {
   readonly demo?: boolean;
   readonly requestId?: string;
   readonly store: Store;
-  readonly payments?: { readonly provider: PaymentProvider; readonly firstCheckMs: number } | null;
+  readonly payments?: {
+    readonly provider: PaymentProvider;
+    readonly firstCheckMs: number;
+    readonly intervalMs: number;
+  } | null;
   readonly principal: SessionPrincipal | null;
 }
 async function paymentResponse<T extends object | null>(
-  ctx: { readonly demo?: boolean | undefined },
+  ctx: { readonly demo?: boolean | undefined; readonly payments?: RpcContext["payments"] },
   result: Promise<T>,
 ) {
-  return { ...(await result), demo: ctx.demo ?? false };
+  return {
+    ...(await result),
+    demo: ctx.demo ?? false,
+    reconciliation: ctx.payments
+      ? { firstCheckMs: ctx.payments.firstCheckMs, intervalMs: ctx.payments.intervalMs }
+      : null,
+  };
 }
 const t = initTRPC.context<RpcContext>().create({
   transformer: superjson,

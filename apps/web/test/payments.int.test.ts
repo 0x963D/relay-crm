@@ -258,7 +258,7 @@ test("the typed payment API enforces scope and retries provider checkout creatio
   const caller = appRouter.createCaller({
     store: db.store,
     principal: { kind: "development", actor },
-    payments: { provider, firstCheckMs: 0 },
+    payments: { provider, firstCheckMs: 0, intervalMs: env.intervalMs },
   });
   const input = {
     key: "retry",
@@ -390,7 +390,7 @@ test("account editors close a waiting checkout with a reason and cancel the prov
   const caller = appRouter.createCaller({
     store: db.store,
     principal: { kind: "development", actor },
-    payments: { provider, firstCheckMs: 0 },
+    payments: { provider, firstCheckMs: 0, intervalMs: env.intervalMs },
   });
   const created = await caller.payments.createCheckout({
     key: "close",
@@ -460,7 +460,7 @@ test("payment readers cannot obtain or use the sandbox pay capability", async ({
   const caller = appRouter.createCaller({
     store: db.store,
     principal: { kind: "development", actor },
-    payments: { provider, firstCheckMs: 0 },
+    payments: { provider, firstCheckMs: 0, intervalMs: env.intervalMs },
   });
   const created = await caller.payments.createCheckout({
     key: "capability",
@@ -478,7 +478,7 @@ test("payment readers cannot obtain or use the sandbox pay capability", async ({
   const reader = appRouter.createCaller({
     store: db.store,
     principal: { kind: "development", actor: accountant },
-    payments: { provider, firstCheckMs: 0 },
+    payments: { provider, firstCheckMs: 0, intervalMs: env.intervalMs },
   });
   const view = await reader.payments.get({ id: created.paymentId });
   const page = sandboxCheckout(db.store, env, () => {
@@ -538,7 +538,11 @@ test("payment API responses identify a demo deployment", async ({ db }) => {
     store: db.store,
     principal: { kind: "development", actor },
     demo: true,
-    payments: { provider: sandboxProvider(db.store, env), firstCheckMs: 0 },
+    payments: {
+      provider: sandboxProvider(db.store, env),
+      firstCheckMs: 0,
+      intervalMs: env.intervalMs,
+    },
   });
   const accountId = await db.seedAccount();
   const created = await caller.payments.createCheckout({
@@ -660,7 +664,11 @@ test("closing an already paid checkout returns review and an explanation in the 
   const caller = appRouter.createCaller({
     store: db.store,
     principal: { kind: "development", actor },
-    payments: { provider: sandboxProvider(db.store, env), firstCheckMs: 0 },
+    payments: {
+      provider: sandboxProvider(db.store, env),
+      firstCheckMs: 0,
+      intervalMs: env.intervalMs,
+    },
   });
   const created = await caller.payments.createCheckout({
     key: "paid-close",
@@ -737,7 +745,10 @@ test("staff close a checkout while payments are disabled and reconciliation resu
   const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
   const provider = sandboxProvider(db.store, env);
   const context = { store: db.store, principal: { kind: "development" as const, actor } };
-  const enabled = appRouter.createCaller({ ...context, payments: { provider, firstCheckMs: 0 } });
+  const enabled = appRouter.createCaller({
+    ...context,
+    payments: { provider, firstCheckMs: 0, intervalMs: env.intervalMs },
+  });
   const disabled = appRouter.createCaller(context);
   const input = {
     key: "disabled-close",
@@ -786,7 +797,7 @@ test("an overlapping create retry cannot clear the active provider request", asy
   const caller = appRouter.createCaller({
     store: db.store,
     principal: { kind: "development", actor },
-    payments: { provider, firstCheckMs: 0 },
+    payments: { provider, firstCheckMs: 0, intervalMs: env.intervalMs },
   });
   const input = {
     key: "overlapping-create",
@@ -806,4 +817,28 @@ test("an overlapping create retry cannot clear the active provider request", asy
     await first;
   }
   expect(calls).toBe(1);
+});
+
+test("waiting payment reads expose the configured reconciliation schedule", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const provider = sandboxProvider(db.store, env);
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor },
+    payments: { provider, firstCheckMs: 0, ...{ intervalMs: 60000 } },
+  });
+  const created = await caller.payments.createCheckout({
+    key: "fake-timing",
+    accountId: await db.seedAccount(),
+    amount: "39500",
+    currency: "GBP",
+    kind: "first",
+    mode: "drop",
+  });
+  expect(await caller.payments.get({ id: created.paymentId })).toMatchObject({
+    reconciliation: { firstCheckMs: 0, intervalMs: 60000 },
+  });
+  expect(await caller.payments.list({ limit: 100 })).toMatchObject({
+    reconciliation: { firstCheckMs: 0, intervalMs: 60000 },
+  });
 });
