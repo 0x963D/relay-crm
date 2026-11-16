@@ -19,7 +19,7 @@ Open the app at <http://127.0.0.1:3107> and the inbox at <http://127.0.0.1:8127>
 These are the only published ports. Both bind to loopback, and the database has no published port.
 `docker compose config` prints the effective ports and service configuration.
 
-The three upstream images in `compose.yaml` pin a tag and its manifest digest.
+The upstream images in `compose.yaml` and `Dockerfile` pin a tag and its manifest digest.
 To update one, choose its new tag, run `docker buildx imagetools inspect <image>:<tag>`, and replace
 both the tag and the `sha256` digest with that manifest's values.
 Run `pnpm demo:check <evidence-directory>` before committing the update.
