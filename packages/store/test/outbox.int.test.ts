@@ -356,3 +356,18 @@ test("the configured lifetime cap survives audited requeues", async ({ db }) => 
     await store.close();
   }
 });
+
+test.for(["cycle", "lifetime"] as const)(
+  "leasing directly enforces the %s attempt limit",
+  async (kind, { db }) => {
+    const w = await receipt(db);
+    await db.rows(
+      "UPDATE outbox SET state='failed',cycle_attempts=$1,attempts=$2,next_attempt_at=$3 WHERE id=$4",
+      [kind === "cycle" ? 4 : 0, kind === "cycle" ? 4 : 12, at, w.outboxId],
+    );
+    expect(await db.store.leaseReceipt(w.outboxId, at, 60000)).toBeNull();
+    expect(await db.rows("SELECT lease_token FROM outbox WHERE id=$1", [w.outboxId])).toEqual([
+      { lease_token: null },
+    ]);
+  },
+);

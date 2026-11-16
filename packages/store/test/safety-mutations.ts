@@ -106,6 +106,22 @@ const definitions: {
     test: "the second approval rechecks the other approver role version in the application",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
+  {
+    name: "receipt-lease-cycle",
+    file: "packages/store/src/outbox.ts",
+    before: " AND cycle_attempts < ${RECEIPT_MAX_ATTEMPTS}",
+    after: "",
+    test: "leasing directly enforces the cycle attempt limit",
+    testFile: "packages/store/test/outbox.int.test.ts",
+  },
+  {
+    name: "receipt-lease-lifetime",
+    file: "packages/store/src/outbox.ts",
+    before: "AND attempts < ${lifetimeAttemptLimit}",
+    after: "",
+    test: "leasing directly enforces the lifetime attempt limit",
+    testFile: "packages/store/test/outbox.int.test.ts",
+  },
 ];
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));
