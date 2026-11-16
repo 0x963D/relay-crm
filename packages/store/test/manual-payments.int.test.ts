@@ -290,3 +290,19 @@ test("editing untouched terms invalidates stale approvals and a written rejectio
     ),
   ).resolves.toHaveProperty("id");
 });
+
+test("an eligible role change voids old approval but permits fresh approval", async ({ db }) => {
+  const w = await setup(db);
+  await db.store.approveManualPayment(w.a, w.input, requestId);
+  await db.rows("UPDATE users SET role='manager' WHERE id=$1", [w.a.userId]);
+  const view = await db.store.getPayment(w.a, w.id);
+  expect(view.approvals[0]?.voidedAt).not.toBeNull();
+  expect(view.actions).toMatchObject({ approve: true, roleVersion: 1 });
+  expect(view.cannotApprove.some((p) => p.user?.id === w.a.userId)).toBe(false);
+  await expect(db.store.approveManualPayment(w.a, w.input, requestId)).rejects.toMatchObject({
+    code: "roleChanged",
+  });
+  await db.store.approveManualPayment(w.a, { ...w.input, roleVersion: 1 }, requestId);
+  await db.store.approveManualPayment(w.b, w.input, requestId);
+  expect((await db.store.getPayment(w.b, w.id)).state.status).toBe("completed");
+});

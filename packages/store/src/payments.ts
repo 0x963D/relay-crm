@@ -923,7 +923,7 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
   });
   const users = await tx.user.findMany({
     where: { id: { in: approvals.map((a) => a.approverId) } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, role: true },
   });
   const history = approvals.map((a) => ({
     ...a,
@@ -955,11 +955,26 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
     approvals: history,
     cannotApprove: [
       { user: recordedBy, reason: "paymentRecorder" as const, at: row.createdAt },
-      ...history.map((a) => ({
-        user: a.approver ?? null,
-        reason: a.voidedAt ? ("roleChanged" as const) : ("alreadyApproved" as const),
-        at: a.voidedAt ?? a.at,
-      })),
+      ...history
+        .filter(
+          (a) =>
+            a.voidedAt === null ||
+            (a.approver !== undefined &&
+              recordScope(
+                {
+                  userId: required(UserId.parse(a.approver.id)),
+                  role: a.approver.role,
+                  team: null,
+                },
+                "payment",
+                "approve",
+              ).kind !== "all"),
+        )
+        .map((a) => ({
+          user: a.approver ?? null,
+          reason: a.voidedAt ? ("roleChanged" as const) : ("alreadyApproved" as const),
+          at: a.voidedAt ?? a.at,
+        })),
     ],
     actions: {
       editManual: Boolean(editable),
