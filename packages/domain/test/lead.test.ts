@@ -35,6 +35,7 @@ const MATRIX: Readonly<
     returnToPool: no,
     logContact: no,
     scheduleCallBack: no,
+    clearCallBack: no,
     logNoAnswer: no,
     win: no,
     lose: no,
@@ -46,6 +47,7 @@ const MATRIX: Readonly<
     returnToPool: "new",
     logContact: "working",
     scheduleCallBack: "working",
+    clearCallBack: no,
     logNoAnswer: "working",
     win: no,
     lose: no,
@@ -57,6 +59,7 @@ const MATRIX: Readonly<
     returnToPool: "new",
     logContact: "working",
     scheduleCallBack: "working",
+    clearCallBack: "working",
     logNoAnswer: "working",
     win: "won",
     lose: "lost",
@@ -68,6 +71,7 @@ const MATRIX: Readonly<
     returnToPool: no,
     logContact: no,
     scheduleCallBack: no,
+    clearCallBack: no,
     logNoAnswer: no,
     win: no,
     lose: no,
@@ -79,6 +83,7 @@ const MATRIX: Readonly<
     returnToPool: no,
     logContact: no,
     scheduleCallBack: no,
+    clearCallBack: no,
     logNoAnswer: no,
     win: no,
     lose: no,
@@ -90,6 +95,7 @@ const MATRIX: Readonly<
     returnToPool: no,
     logContact: no,
     scheduleCallBack: no,
+    clearCallBack: no,
     logNoAnswer: no,
     win: no,
     lose: no,
@@ -128,7 +134,13 @@ describe("transition matrix", () => {
     ({ state, event, target }) => {
       const result = transition(lifecycleOf(state), event, NOW);
       if (result.ok) {
-        expect(result.value.state.status).toBe(target);
+        expect(result.value.state.status).toBe(
+          event.type === "clearCallBack" &&
+            state.status === "working" &&
+            state.stage.kind === "callBack"
+            ? "assigned"
+            : target,
+        );
       } else {
         expect(result.error).toMatchObject({
           kind: "refused",

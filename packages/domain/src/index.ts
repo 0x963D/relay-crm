@@ -11,6 +11,16 @@ export {
   type Role,
   type TeamKind,
 } from "./access.ts";
+export {
+  ATTEMPT_CHANNELS,
+  ATTEMPT_OUTCOMES,
+  queueGroup,
+  type Attempt,
+  type CallbackChange,
+  type ClosingReason,
+  type LeadWork,
+  type QueueGroup,
+} from "./work.ts";
 export { normalizeName, normalizePhone } from "./contact.ts";
 export { isEmailAddress, parseEmail, type EmailAddress, type EmailProblem } from "./email.ts";
 export { AccountId, ActivityId, IntakeEventId, LeadId, TeamId, UserId, type Brand } from "./ids.ts";

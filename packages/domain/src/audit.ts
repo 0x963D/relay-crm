@@ -1,6 +1,7 @@
 import type { AccountId, LeadId, PaymentId, LedgerTransactionId } from "./ids.ts";
 
 export const AUDIT_ACTIONS = [
+  "leadWorked",
   "leadAssigned",
   "leadReopened",
   "checkoutCreated",

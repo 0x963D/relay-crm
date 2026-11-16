@@ -49,6 +49,7 @@ export const EVENT_EXAMPLES: { readonly [E in LeadEventType]: readonly EventOf<E
   logContact: [{ type: "logContact" }],
   scheduleCallBack: [{ type: "scheduleCallBack", at: LATER }],
   logNoAnswer: [{ type: "logNoAnswer" }],
+  clearCallBack: [{ type: "clearCallBack" }],
   win: [{ type: "win", accountId }],
   lose: [{ type: "lose", reason: "noBudget" }],
   markDead: [
@@ -90,6 +91,7 @@ export function describeEvent(event: LeadEvent): string {
     case "logContact":
     case "scheduleCallBack":
     case "logNoAnswer":
+    case "clearCallBack":
     case "win":
     case "reopen":
       return event.type;

@@ -220,5 +220,7 @@ export function leadFromRow(row: LeadRow): Lead {
     phone: row.phone,
     lifecycle: lifecycleFromRow(row),
     createdAt: row.createdAt,
+    contactedAt: row.contactedAt,
+    lostNote: row.lostNote,
   };
 }

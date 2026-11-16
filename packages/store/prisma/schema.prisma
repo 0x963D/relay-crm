@@ -85,6 +85,10 @@ enum IntakeOutcome {
 }
 
 enum ActivityKind {
+  attempt
+  note
+  callback
+  closure
   intake
   statusChange
   assignment
@@ -158,6 +162,9 @@ model Account {
 }
 
 model Lead {
+  workHistoryKnown Boolean @default(true) @map("work_history_known")
+  contactedAt DateTime? @map("contacted_at") @db.Timestamptz(3)
+  lostNote String? @map("lost_note")
   version         Int         @default(0)
   id              String      @id @default(uuid(7)) @db.Uuid
   email           String      @unique
@@ -220,6 +227,7 @@ model IntakeEvent {
 }
 
 model Activity {
+  sequence BigInt @unique @default(autoincrement())
   id            String       @id @default(uuid(7)) @db.Uuid
   kind          ActivityKind
   leadId        String?      @map("lead_id") @db.Uuid
@@ -329,6 +337,7 @@ enum SystemActor {
 }
 
 enum AuditAction {
+  leadWorked
   leadAssigned
   leadReopened
   checkoutCreated

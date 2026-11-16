@@ -51,6 +51,8 @@ export interface Lead {
   readonly phone: string | null;
   readonly lifecycle: LeadLifecycle;
   readonly createdAt: Date;
+  readonly contactedAt: Date | null;
+  readonly lostNote: string | null;
 }
 
 export interface InboundReopen {
@@ -65,6 +67,7 @@ export type LeadEvent =
   | { readonly type: "logContact" }
   | { readonly type: "scheduleCallBack"; readonly at: Date }
   | { readonly type: "logNoAnswer" }
+  | { readonly type: "clearCallBack" }
   | { readonly type: "win"; readonly accountId: AccountId }
   | { readonly type: "lose"; readonly reason: LostReason }
   | { readonly type: "markDead"; readonly reason: DeadReason }
@@ -120,6 +123,7 @@ const RULES: Rules = {
     returnToPool: illegal,
     logContact: illegal,
     scheduleCallBack: illegal,
+    clearCallBack: illegal,
     logNoAnswer: illegal,
     win: illegal,
     lose: illegal,
@@ -134,6 +138,7 @@ const RULES: Rules = {
     returnToPool: toPool,
     logContact: (from) => work(from.assignee, { kind: "contacted" }),
     scheduleCallBack: (from, event, at) => callBack(from.assignee, event.at, at),
+    clearCallBack: illegal,
     logNoAnswer: (from) => work(from.assignee, { kind: "noAnswer", count: 1 }),
     win: illegal,
     lose: illegal,
@@ -146,6 +151,10 @@ const RULES: Rules = {
     returnToPool: toPool,
     logContact: (from) => work(from.assignee, { kind: "contacted" }),
     scheduleCallBack: (from, event, at) => callBack(from.assignee, event.at, at),
+    clearCallBack: (from) =>
+      from.stage.kind === "callBack"
+        ? ok({ status: "assigned", assignee: from.assignee })
+        : ok(from),
     logNoAnswer: (from) =>
       work(from.assignee, {
         kind: "noAnswer",
@@ -163,6 +172,7 @@ const RULES: Rules = {
     returnToPool: illegal,
     logContact: illegal,
     scheduleCallBack: illegal,
+    clearCallBack: illegal,
     logNoAnswer: illegal,
     win: illegal,
     lose: illegal,
@@ -174,6 +184,7 @@ const RULES: Rules = {
     returnToPool: illegal,
     logContact: illegal,
     scheduleCallBack: illegal,
+    clearCallBack: illegal,
     logNoAnswer: illegal,
     win: illegal,
     lose: illegal,
@@ -185,6 +196,7 @@ const RULES: Rules = {
     returnToPool: illegal,
     logContact: illegal,
     scheduleCallBack: illegal,
+    clearCallBack: illegal,
     logNoAnswer: illegal,
     win: illegal,
     lose: illegal,

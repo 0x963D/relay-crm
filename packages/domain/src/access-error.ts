@@ -5,6 +5,10 @@ export class AccessError extends Error {
   readonly code: AccessFailure;
   constructor(code: AccessFailure) {
     const messages: Partial<Record<AccessFailure, string>> = {
+      accessDenied: "You do not have access to this record.",
+      leadClosed: "This lead is closed. Refresh to see its history.",
+      callbackInPast: "Choose a callback time in the future.",
+      invalidTransition: "Work this lead before closing it as won or lost.",
       pendingPayment: "This account already has a payment in progress.",
       receiptAttemptLimit: "This receipt has reached its lifetime attempt limit.",
       receiptUsed: "This receipt was already used for a payment.",

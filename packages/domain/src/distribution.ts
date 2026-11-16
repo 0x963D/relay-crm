@@ -30,6 +30,9 @@ export interface DistributionLead {
 }
 
 export const ACCESS_FAILURES = [
+  "leadClosed",
+  "callbackInPast",
+  "invalidTransition",
   "pendingPayment",
   "receiptUsed",
   "receiptAttemptLimit",
