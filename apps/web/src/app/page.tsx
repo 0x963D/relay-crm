@@ -1,65 +1,21 @@
-import type { LeadState } from "@relay/domain";
 import { connection } from "next/server";
 import { composition } from "@/server/composition.ts";
 import { requireActor } from "@/server/actor.ts";
+import { appRouter } from "@/server/rpc.ts";
+import { Workspace } from "@/components/workspace";
 
-const PAGE_SIZE = 100;
-
-const received = new Intl.DateTimeFormat("en", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "UTC",
-});
-
-function describeState(state: LeadState): string {
-  switch (state.status) {
-    case "new":
-    case "assigned":
-    case "won":
-      return state.status;
-    case "working":
-      return `working, ${state.stage.kind}`;
-    case "lost":
-    case "dead":
-      return `${state.status}, ${state.reason}`;
-  }
-}
-
-export default async function LeadsPage() {
+export default async function HomePage() {
   await connection();
-  const leads = await composition().store.listLeads(await requireActor(), { limit: PAGE_SIZE });
-
+  const actor = await requireActor();
+  const app = composition();
+  const caller = appRouter.createCaller({
+    store: app.store,
+    principal: { kind: "development", actor },
+  });
+  const profile = await caller.session.profile();
+  const agents =
+    profile.role === "accountant" ? [] : await caller.leads.agents({ offset: 0 }).catch(() => []);
   return (
-    <main>
-      <h1>Leads</h1>
-      {leads.length === 0 ? (
-        <p>No leads yet.</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Email</th>
-              <th scope="col">Name</th>
-              <th scope="col">Status</th>
-              <th scope="col">Source</th>
-              <th scope="col">Campaign</th>
-              <th scope="col">Received (UTC)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads.map((lead) => (
-              <tr key={lead.id}>
-                <td>{lead.email}</td>
-                <td>{lead.name}</td>
-                <td>{describeState(lead.lifecycle.state)}</td>
-                <td>{lead.origin?.source}</td>
-                <td>{lead.origin?.campaign}</td>
-                <td>{received.format(lead.createdAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </main>
+    <Workspace profile={profile} agents={agents} demo={app.env.demo} zone={app.env.timeZone} />
   );
 }
