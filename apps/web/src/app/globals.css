@@ -128,6 +128,43 @@ html[data-theme="dark"] {
   --s-won: #5fd08a;
   --shadow: 0 var(--size-10) var(--size-28) rgba(0, 0, 0, 0.5);
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --carbon: #0b0d29;
+    --carbon-2: #06071a;
+    --carbon-line: rgba(255, 255, 255, 0.1);
+    --carbon-hover: rgba(255, 255, 255, 0.07);
+    --on-carbon: #eceeff;
+    --on-carbon-2: #a9aedb;
+    --desk: #0b0d29;
+    --sheet: #151840;
+    --rule: #2a2e63;
+    --rule-2: #3d4284;
+    --text: #eceeff;
+    --text-2: #b7bbe0;
+    --text-3: #a3a8d2;
+    --ink: #98a3ff;
+    --ink-hover: #b2baff;
+    --ink-tint: #262c73;
+    --on-ink: #0b0d29;
+    --canary: #3b3205;
+    --canary-edge: #6e5e12;
+    --canary-text: #ffe682;
+    --pink: #4a152b;
+    --pink-edge: #8a2a4c;
+    --pink-text: #ffb6c7;
+    --green: #12381f;
+    --green-edge: #256b3c;
+    --green-text: #a4e6b7;
+    --mute: #1e2251;
+    --skeleton: #23275a;
+    --s-received: #3a4199;
+    --s-contacted: #98a3ff;
+    --s-won: #5fd08a;
+    --shadow: 0 var(--size-10) var(--size-28) rgba(0, 0, 0, 0.5);
+  }
+}
+
 body {
   font-family: var(--font-archivo), system-ui, sans-serif;
   font-size: var(--size-14);

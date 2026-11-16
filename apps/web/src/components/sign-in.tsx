@@ -89,9 +89,6 @@ export function SignIn({ demo }: { demo: boolean }) {
       <header className="sign-brand">
         <Brand />
       </header>
-      <aside className="sign-theme" aria-label="Appearance settings">
-        <ThemeSwitch />
-      </aside>
       <main className="sheet sign-sheet" id="main">
         {step === "code" && (
           <Button
@@ -224,6 +221,9 @@ export function SignIn({ demo }: { demo: boolean }) {
           </section>
         )}
       </main>
+      <aside className="sign-theme" aria-label="Appearance settings">
+        <ThemeSwitch />
+      </aside>
       <footer className="sign-footer">
         Sales and accounts staff only. Ask your manager if you need an account.
       </footer>

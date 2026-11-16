@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
-export function ThemeSwitch() {
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+const Theme = createContext({ preference: "system", setPreference: (_value: string) => {} });
+export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreference] = useState("system");
   useEffect(() => {
-    const stored = localStorage.getItem("relay-theme");
-    if (stored) setPreference(stored);
+    setPreference(localStorage.getItem("relay-theme") ?? "system");
   }, []);
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
@@ -18,6 +18,14 @@ export function ThemeSwitch() {
       media.removeEventListener("change", apply);
     };
   }, [preference]);
+  function choose(value: string) {
+    localStorage.setItem("relay-theme", value);
+    setPreference(value);
+  }
+  return <Theme.Provider value={{ preference, setPreference: choose }}>{children}</Theme.Provider>;
+}
+export function ThemeSwitch() {
+  const { preference, setPreference } = useContext(Theme);
   return (
     <select
       className="theme"
@@ -25,7 +33,6 @@ export function ThemeSwitch() {
       value={preference}
       onChange={(e) => {
         setPreference(e.target.value);
-        localStorage.setItem("relay-theme", e.target.value);
       }}
     >
       <option value="system">System</option>

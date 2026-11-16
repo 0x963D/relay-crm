@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import localFont from "next/font/local";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme-switch";
 
 const archivo = localFont({
   src: "./fonts/archivo.ttf",
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
           }}
         />
       </head>
-      <body className={archivo.variable}>{children}</body>
+      <body className={archivo.variable}>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }
