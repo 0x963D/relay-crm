@@ -750,6 +750,8 @@ The retry test checks the stored delay, then makes only its fixture row due to a
 
 ### Known limits
 
+Someone holding the app's database credentials can change a lead's email and aim a future receipt, but cannot change the recipient of an existing receipt. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts -t "aim a future receipt"` to check both with direct SQL as the app role.
+
 Someone holding the app's database credentials can complete a card payment directly in SQL with a valid posting, because the database checks the posting's shape and not the provider's evidence.
 
 A delivery adapter that ignores its abort signal can still be sending after its timeout, and a requeue can then start a second send. The shipped SMTP adapter closes its connection on abort.

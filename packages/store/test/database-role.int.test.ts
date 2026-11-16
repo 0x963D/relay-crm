@@ -1,6 +1,55 @@
 import { APP_TABLE_PRIVILEGES, APP_COLUMN_UPDATES } from "./app-privileges.ts";
 import { expect } from "vitest";
 import { test } from "../src/testing/index.ts";
+import { randomUUID } from "node:crypto";
+import type { Actor } from "@relay/domain";
+
+test("app credentials can aim a future receipt through a lead email but cannot change an existing recipient", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const agent = await db.seedUser("agent");
+  const team = await db.seedTeam("sales");
+  const accountId = await db.seedAccount();
+  const leadId = await db.seedLead({
+    email: "original@example.com",
+    lifecycle: {
+      state: { status: "won", assignee: { ownerId: agent, teamId: team }, accountId },
+      firstAssignedAt: new Date(),
+      previousOwnerId: null,
+    },
+  });
+  const complete = async () => {
+    const money = { minor: 39500n, currency: "GBP" } as const;
+    const { id } = await db.store.createPayment(
+      actor,
+      { key: randomUUID(), accountId, money, kind: "repeat", mode: "drop" },
+      0,
+      randomUUID(),
+    );
+    await db.store.receivePaymentWebhook({
+      paymentId: id,
+      eventId: randomUUID(),
+      payloadHash: "fake",
+      observed: { status: "completed", money },
+    });
+    return id;
+  };
+  const first = await complete();
+  expect(
+    await db.rows("UPDATE leads SET email='redirected@example.com' WHERE id=$1 RETURNING email", [
+      leadId,
+    ]),
+  ).toEqual([{ email: "redirected@example.com" }]);
+  const second = await complete();
+  expect(await db.rows("SELECT payment_id,recipient FROM outbox ORDER BY created_at,id")).toEqual([
+    { payment_id: first, recipient: "original@example.com" },
+    { payment_id: second, recipient: "redirected@example.com" },
+  ]);
+  await expect(
+    db.rows("UPDATE outbox SET recipient='redirected@example.com' WHERE payment_id=$1", [first]),
+  ).rejects.toMatchObject({ code: "42501" });
+});
 
 test("the app connection has no ownership or privileged role attributes", async ({ db }) => {
   expect(
