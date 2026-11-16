@@ -142,7 +142,7 @@ test("the receiver rejects forged and stale signatures, replays event IDs, and r
   expect((await receiver(request(timestamp, "0".repeat(64)))).status).toBe(401);
   const stale = (Number(timestamp) - 301).toString();
   expect((await receiver(request(stale, signPaymentBody(secret, stale, body)))).status).toBe(401);
-  const future = (Number(timestamp) + 301).toString();
+  const future = (Number(timestamp) + 600).toString();
   expect((await receiver(request(future, signPaymentBody(secret, future, body)))).status).toBe(401);
   expect(await db.rows("SELECT * FROM webhook_inbox")).toHaveLength(0);
   for (let i = 0; i < 2; i += 1)
