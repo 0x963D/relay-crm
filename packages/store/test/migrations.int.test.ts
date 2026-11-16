@@ -98,3 +98,30 @@ test("forward migration preserves a signed historical posting as credit and debi
   ]);
   await expect(db.ownerRows("UPDATE ledger_lines SET amount=101")).rejects.toThrow("append-only");
 });
+
+test("maker migration recovers the last editor and voids their waiting approval", async ({
+  db,
+}) => {
+  await db.ownerRows("CREATE SCHEMA maker_fixture; SET search_path TO maker_fixture");
+  const directory = new URL("../prisma/migrations/", import.meta.url);
+  const migrations = (await readdir(directory)).filter((name) => /^\d{4}_/.test(name)).sort();
+  for (const name of migrations.filter((name) => name < "0024"))
+    await db.ownerRows(await readFile(new URL(`${name}/migration.sql`, directory), "utf8"));
+  await db.ownerRows(`
+ INSERT INTO users(id,email,name,role) VALUES ('00000000-0000-4000-8000-000000000001','recorder@example.com','Recorder','manager'),('00000000-0000-4000-8000-000000000002','editor@example.com','Editor','manager');
+ INSERT INTO accounts(id,created_at) VALUES ('00000000-0000-4000-8000-000000000003',now());
+ INSERT INTO payments(id,account_id,amount,currency,method,kind,status,recorded_by_id,created_at,receipt_hash) VALUES ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000003',48000,'GBP','manual','first','pendingApproval','00000000-0000-4000-8000-000000000001',now(),repeat('a',64));
+ UPDATE payments SET amount=4800000,version=1;
+ INSERT INTO payment_events(payment_id,kind,at,detail) VALUES ('00000000-0000-4000-8000-000000000004','edited',now(),'{"actorId":"00000000-0000-4000-8000-000000000002"}');
+ INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),'00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000002',0,now(),gen_random_uuid());`);
+  for (const name of migrations.filter((name) => name >= "0024"))
+    await db.ownerRows(await readFile(new URL(`${name}/migration.sql`, directory), "utf8"));
+  expect(await db.ownerRows("SELECT terms_set_by_id FROM payments")).toEqual([
+    { terms_set_by_id: "00000000-0000-4000-8000-000000000002" },
+  ]);
+  expect(
+    await db.ownerRows(
+      "SELECT payment_version,voided_at IS NOT NULL AS voided FROM payment_approvals",
+    ),
+  ).toEqual([{ payment_version: 1, voided: true }]);
+});

@@ -1,12 +1,22 @@
 ALTER TABLE payments ADD COLUMN terms_set_by_id uuid REFERENCES users(id);
 ALTER TABLE payments DISABLE TRIGGER payments_guard;
-UPDATE payments SET terms_set_by_id=recorded_by_id WHERE method='manual';
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM payments p WHERE p.method='manual' AND p.version>0 AND NOT EXISTS (SELECT 1 FROM payment_events e WHERE e.payment_id=p.id AND e.kind='edited' AND e.detail->>'actorId' IS NOT NULL)) THEN
+    RAISE EXCEPTION 'Edited manual payments are missing their editor history. Resolve them before migrating.';
+  END IF;
+END $$;
+UPDATE payments p SET terms_set_by_id=coalesce((SELECT (e.detail->>'actorId')::uuid FROM payment_events e WHERE e.payment_id=p.id AND e.kind='edited' ORDER BY e.sequence DESC LIMIT 1),p.recorded_by_id) WHERE p.method='manual';
+SET CONSTRAINTS ALL IMMEDIATE;
 ALTER TABLE payments ENABLE TRIGGER payments_guard;
+SET CONSTRAINTS ALL DEFERRED;
 ALTER TABLE payments ADD CONSTRAINT payment_maker_shape CHECK ((method='manual')=(terms_set_by_id IS NOT NULL));
 ALTER TABLE payment_approvals ADD COLUMN payment_version integer NOT NULL DEFAULT 0 CHECK (payment_version>=0);
 ALTER TABLE payment_approvals DISABLE TRIGGER payment_approvals_guard;
 UPDATE payment_approvals a SET payment_version=p.version FROM payments p WHERE p.id=a.payment_id;
+UPDATE payment_approvals a SET voided_at=clock_timestamp() FROM payments p WHERE p.id=a.payment_id AND p.status='pendingApproval' AND a.voided_at IS NULL AND a.approver_id IN (p.recorded_by_id,p.terms_set_by_id);
+SET CONSTRAINTS ALL IMMEDIATE;
 ALTER TABLE payment_approvals ENABLE TRIGGER payment_approvals_guard;
+SET CONSTRAINTS ALL DEFERRED;
 CREATE FUNCTION initialize_payment_maker() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.method='manual' THEN NEW.terms_set_by_id := coalesce(NEW.terms_set_by_id,NEW.recorded_by_id); END IF;

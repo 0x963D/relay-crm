@@ -331,7 +331,7 @@ test("the last editor is a maker and editing voids existing approvals", async ({
   });
   await expect(
     db.rows(
-      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,1,now(),$3)",
       [w.id, w.b.userId, requestId],
     ),
   ).rejects.toMatchObject({ code: "23514" });
@@ -352,7 +352,7 @@ test("completion independently refuses an editor approval inserted without the i
   );
   await db.ownerRows("ALTER TABLE payment_approvals DISABLE TRIGGER payment_approvals_guard");
   await db.rows(
-    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$4),(gen_random_uuid(),$1,$3,0,now(),$4)",
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,payment_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,1,now(),$4),(gen_random_uuid(),$1,$3,0,1,now(),$4)",
     [w.id, w.b.userId, w.c.userId, requestId],
   );
   await db.ownerRows("ALTER TABLE payment_approvals ENABLE TRIGGER payment_approvals_guard");
