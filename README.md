@@ -406,7 +406,17 @@ and cannot read the ledger endpoint.
 The SERIALIZABLE settlement function re-reads the payment. Matching provider money can complete it.
 Mismatched amount or currency moves it to `needsReview` without a posting. `payments.closeReview`
 takes an ID and a written reason; accountants and management may close review as `failed`.
-The audit preserves the reported money. Review has no transition to completed.
+The audit preserves the reported money and the review reason, either `amount mismatch`,
+`currency mismatch` or `paid after close`. Review has no transition to completed.
+A paid report after `expired` or `failed` moves the payment to `needsReview` without credit.
+That is the only exit from either closed state. `completed` has no exit.
+
+`payments.closeCheckout` lets an account editor close a waiting checkout as `failed` with a written
+reason. It then cancels the provider checkout. If payment won that race, a later paid report enters
+review. Unknown provider checkouts fail with `the checkout was never created at the provider`.
+Checkouts expire after `RELAY_CHECKOUT_TTL_MS`, default 86400000 milliseconds.
+Run `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
+for expiry, missing checkouts and staff closure.
 
 PostgreSQL checks the payment state shape and transitions. Deferred constraint triggers require a
 completed payment to have a posting with balanced lines matching its account, currency and amount.

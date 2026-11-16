@@ -9,13 +9,17 @@ import { readBody } from "../http.ts";
 export function sandboxProvider(store: Store, env: PaymentEnv): PaymentProvider {
   return {
     createCheckout: async (input) => {
-      const row = await store.createSandboxCheckout(input);
+      const row = await store.createSandboxCheckout({
+        ...input,
+        expiresAt: new Date(Date.now() + env.checkoutTtlMs),
+      });
       return { id: row.id, url: `${env.baseUrl}/sandbox/checkout/${row.id}` };
     },
+    cancelCheckout: (id) => store.cancelSandboxCheckout(id),
     readPayment: async (id) => {
       const row = await store.getSandboxCheckout(id);
+      if (!row) return { status: "missing" };
       if (
-        !row ||
         !isCurrencyCode(row.currency) ||
         (row.status !== "pending" &&
           row.status !== "completed" &&

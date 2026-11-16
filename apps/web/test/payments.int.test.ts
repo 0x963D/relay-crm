@@ -15,6 +15,7 @@ const env = {
   firstCheckMs: 0,
   intervalMs: 300000,
   lateMs: 0,
+  checkoutTtlMs: 86400000,
 };
 
 test("the receiver rejects forged and stale signatures, replays event IDs, and records no event on failure", async ({
@@ -243,4 +244,67 @@ test("a failed inbox write rolls settlement back and the signed retry succeeds",
   expect((await receiver(request())).status).toBe(200);
   expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(1);
   expect(await db.rows("SELECT * FROM outbox")).toHaveLength(1);
+});
+
+test("an expired checkout cannot be paid and an unknown checkout fails reconciliation", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const adapter = sandboxProvider(db.store, { ...env, checkoutTtlMs: 1 });
+  const create = async (key: string) =>
+    db.store.createPayment(
+      actor,
+      {
+        key,
+        accountId: await db.seedAccount(),
+        money: { minor: 100n, currency: "GBP" },
+        kind: "first",
+        mode: "drop",
+      },
+      0,
+      randomUUID(),
+    );
+  const expired = await create("expires");
+  await adapter.createCheckout(await db.store.checkoutTerms(actor, expired.id));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(await db.store.paySandboxCheckout(expired.id)).toBeNull();
+  expect(await adapter.readPayment(expired.id)).toMatchObject({ status: "expired" });
+  const missing = await create("missing");
+  await reconcilePayments(db.store, adapter, env.intervalMs);
+  expect((await db.store.getPayment(actor, expired.id)).state.status).toBe("expired");
+  expect((await db.store.getPayment(actor, missing.id)).state).toMatchObject({
+    status: "failed",
+    reason: "the checkout was never created at the provider",
+  });
+});
+
+test("account editors close a waiting checkout with a reason and cancel the provider", async ({
+  db,
+}) => {
+  const userId = await db.seedUser("agent");
+  const accountId = await db.seedAccount();
+  await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
+  const actor: Actor = { userId, role: "agent", team: null };
+  const provider = sandboxProvider(db.store, env);
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor },
+    payments: { provider, firstCheckMs: 0 },
+  });
+  const created = await caller.payments.createCheckout({
+    key: "close",
+    accountId,
+    amount: "100",
+    currency: "GBP",
+    kind: "first",
+  });
+  await expect(
+    caller.payments.closeCheckout({ id: created.paymentId, reason: " " }),
+  ).rejects.toThrow();
+  await caller.payments.closeCheckout({ id: created.paymentId, reason: "Customer stopped" });
+  expect((await caller.payments.get({ id: created.paymentId })).state).toMatchObject({
+    status: "failed",
+    reason: "Customer stopped",
+  });
+  expect(await provider.readPayment(created.paymentId)).toMatchObject({ status: "failed" });
 });

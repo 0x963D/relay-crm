@@ -16,10 +16,12 @@ export type PaymentState =
   | { readonly status: "expired"; readonly at: Date };
 export type PaymentStatus = PaymentState["status"];
 export type ProviderStatus = "pending" | "completed" | "failed" | "expired";
-export interface ProviderPayment {
-  readonly status: ProviderStatus;
-  readonly money: Money;
-}
+export type ProviderPayment =
+  | { readonly status: "missing" }
+  | {
+      readonly status: ProviderStatus;
+      readonly money: Money;
+    };
 export type PaymentEvent =
   | {
       readonly type: "provider";
@@ -28,7 +30,7 @@ export type PaymentEvent =
     }
   | { readonly type: "approve"; readonly validApprovals: number }
   | { readonly type: "reject" | "cancel"; readonly reason: string }
-  | { readonly type: "closeReview"; readonly reason: string };
+  | { readonly type: "closeReview" | "closeCheckout"; readonly reason: string };
 
 type Rule = (state: PaymentState, event: PaymentEvent, expected: Money, at: Date) => PaymentState;
 const paidAfterClose: Rule = (state, event, _expected, at) =>
@@ -41,6 +43,8 @@ const RULES: Readonly<
   checkoutCreated: {
     provider: (state, event, expected, at) => {
       if (event.type !== "provider") return state;
+      if (event.result.status === "missing")
+        return { status: "failed", reason: "the checkout was never created at the provider", at };
       const { status, money } = event.result;
       if (money.minor !== expected.minor || money.currency !== expected.currency)
         return {
@@ -61,6 +65,10 @@ const RULES: Readonly<
       }
     },
     closeReview: null,
+    closeCheckout: (state, event, _expected, at) =>
+      event.type === "closeCheckout" && event.reason.trim()
+        ? { status: "failed", reason: event.reason.trim(), at }
+        : state,
   },
   needsReview: {
     provider: null,
@@ -109,4 +117,5 @@ export interface PaymentProvider {
     readonly mode: SandboxMode;
   }): Promise<{ readonly id: string; readonly url: string }>;
   readPayment(id: string): Promise<ProviderPayment>;
+  cancelCheckout(id: string): Promise<void>;
 }

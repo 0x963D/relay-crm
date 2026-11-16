@@ -322,8 +322,12 @@ function observationDetail(
 ): Prisma.InputJsonObject {
   return {
     providerStatus: observed.status,
-    reportedAmount: observed.money.minor.toString(),
-    reportedCurrency: observed.money.currency,
+    ...(observed.status === "missing"
+      ? {}
+      : {
+          reportedAmount: observed.money.minor.toString(),
+          reportedCurrency: observed.money.currency,
+        }),
     ...outcome,
   };
 }
@@ -443,30 +447,33 @@ async function scopedPayment(tx: Tx, actor: Actor, id: PaymentId) {
   if (!account) throw new AccessError("accessDenied");
   return row;
 }
-export async function closePaymentReview(
+export async function closePayment(
   db: Db,
   actor: Actor,
   id: PaymentId,
   reason: string,
   requestId: string,
+  type: "closeReview" | "closeCheckout",
 ) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
-    if (recordScope(current, "payment", "closeReview").kind !== "all")
+    if (type === "closeReview" && recordScope(current, "payment", "closeReview").kind !== "all")
       throw new AccessError("accessDenied");
     const row = await scopedPayment(tx, current, id);
+    if (
+      type === "closeCheckout" &&
+      !(await tx.account.findFirst({
+        where: { id: row.accountId, ...scopeWhere(recordScope(current, "account", "edit")) },
+      }))
+    )
+      throw new AccessError("accessDenied");
     const before = stateOf(row);
     const at = new Date();
-    const next = transitionPayment(
-      before,
-      { type: "closeReview", reason },
-      money(row.amount, row.currency),
-      at,
-    );
+    const next = transitionPayment(before, { type, reason }, money(row.amount, row.currency), at);
     if (next === before) throw new AccessError("conflict");
     const updated = await tx.payment.update({ where: { id }, data: columns(next) });
     await writeAudit(tx, current, {
-      action: "paymentReviewClosed",
+      action: type === "closeReview" ? "paymentReviewClosed" : "paymentStateChanged",
       subject: { type: "payment", id },
       before: snapshot(row),
       after: snapshot(updated),
@@ -476,7 +483,7 @@ export async function closePaymentReview(
     await tx.paymentEvent.create({
       data: {
         paymentId: id,
-        kind: "reviewClosed",
+        kind: type === "closeReview" ? "reviewClosed" : "checkoutClosed",
         at,
         detail: {
           reason: reason.trim(),

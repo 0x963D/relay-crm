@@ -172,6 +172,23 @@ export const appRouter = t.router({
           checkoutPath: result.method === "card" ? `/sandbox/checkout/${input.id}` : null,
         };
       }),
+    closeCheckout: authenticated
+      .input(
+        z
+          .object({ id: identifier(PaymentId), reason: z.string().trim().min(1).max(2000) })
+          .strict(),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.payments) throw new TRPCError({ code: "NOT_FOUND" });
+        const result = await ctx.store.closePaymentCheckout(
+          ctx.actor,
+          input.id,
+          input.reason,
+          ctx.requestId,
+        );
+        await ctx.payments.provider.cancelCheckout(input.id);
+        return result;
+      }),
     closeReview: authenticated
       .input(
         z

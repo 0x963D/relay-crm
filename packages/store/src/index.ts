@@ -48,7 +48,7 @@ import {
   duePayments,
   claimPaymentCheck,
   finishPaymentCheck,
-  closePaymentReview,
+  closePayment,
   getPayment,
   listPayments,
   accountLedger,
@@ -56,7 +56,12 @@ import {
   type ProviderEvent,
 } from "./payments.ts";
 import type { ProviderPayment, Money, SandboxMode } from "@relay/domain";
-import { createSandboxCheckout, getSandboxCheckout, paySandboxCheckout } from "./sandbox.ts";
+import {
+  createSandboxCheckout,
+  getSandboxCheckout,
+  paySandboxCheckout,
+  cancelSandboxCheckout,
+} from "./sandbox.ts";
 import { connect } from "./tx.ts";
 
 export type { LeadListItem };
@@ -95,7 +100,10 @@ export function openStore(config: { readonly connectionString: string }) {
     finishPaymentCheck: (id: string, token: string, observed: ProviderPayment | null) =>
       finishPaymentCheck(db, id, token, observed),
     closePaymentReview: (actor: Actor, id: PaymentId, reason: string, requestId: string) =>
-      closePaymentReview(db, actor, id, reason, requestId),
+      closePayment(db, actor, id, reason, requestId, "closeReview"),
+    closePaymentCheckout: (actor: Actor, id: PaymentId, reason: string, requestId: string) =>
+      closePayment(db, actor, id, reason, requestId, "closeCheckout"),
+    cancelSandboxCheckout: (id: string) => cancelSandboxCheckout(db, id),
     getPayment: (actor: Actor, id: PaymentId) => getPayment(db, actor, id),
     listPayments: (actor: Actor, limit: number) => listPayments(db, actor, limit),
     accountLedger: (actor: Actor, id: AccountId) => accountLedger(db, actor, id),
@@ -103,6 +111,7 @@ export function openStore(config: { readonly connectionString: string }) {
       readonly paymentId: string;
       readonly money: Money;
       readonly mode: SandboxMode;
+      readonly expiresAt?: Date;
     }) => createSandboxCheckout(db, input),
     getSandboxCheckout: (id: string) => getSandboxCheckout(db, id),
     paySandboxCheckout: (id: string) => paySandboxCheckout(db, id),

@@ -11,6 +11,7 @@ const Variables = z.object({
   RELAY_RECONCILE_SECRET: z.string().min(32).optional(),
   RELAY_RECONCILE_FIRST_MS: z.coerce.number().int().min(0).max(86400000).default(900000),
   RELAY_RECONCILE_INTERVAL_MS: z.coerce.number().int().min(1000).max(86400000).default(300000),
+  RELAY_CHECKOUT_TTL_MS: z.coerce.number().int().min(1).max(604800000).default(86400000),
   RELAY_SANDBOX_LATE_MS: z.coerce.number().int().min(0).max(60000).default(30000),
   AUTH_SECRET: z
     .string()
@@ -64,6 +65,7 @@ export interface PaymentEnv {
   readonly firstCheckMs: number;
   readonly intervalMs: number;
   readonly lateMs: number;
+  readonly checkoutTtlMs: number;
 }
 
 export interface Env {
@@ -213,5 +215,6 @@ function paymentEnv(v: z.infer<typeof Variables>): PaymentEnv | null {
     firstCheckMs: v.RELAY_RECONCILE_FIRST_MS,
     intervalMs: v.RELAY_RECONCILE_INTERVAL_MS,
     lateMs: v.RELAY_SANDBOX_LATE_MS,
+    checkoutTtlMs: v.RELAY_CHECKOUT_TTL_MS,
   };
 }
