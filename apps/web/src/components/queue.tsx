@@ -51,7 +51,13 @@ export function QueueSlip({
         kind={group === "dueToday" ? "canary" : "line"}
         icon={group === "dueToday" ? "clock" : "callback"}
       >
-        {shortDate(item.callbackAt, zone)}
+        {group === "dueToday" && item.callbackAt
+          ? new Intl.DateTimeFormat("en-GB", {
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: zone,
+            }).format(item.callbackAt)
+          : shortDate(item.callbackAt, zone)}
       </Slip>
     );
   if (group === "notYetCalled")
