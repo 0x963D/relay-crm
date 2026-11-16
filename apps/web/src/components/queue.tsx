@@ -3,7 +3,7 @@ import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
-import { useTRPC } from "@/lib/trpc/client";
+import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
 import { usePagedQuery } from "@/lib/trpc/use-paged-query";
 import type { Outputs } from "@/lib/api";
 import { failureMessage } from "@/lib/failures";
@@ -147,8 +147,20 @@ export function QueueScreen({
       leadLinks.current.get(previousLead.current)?.focus();
     previousLead.current = params.leadId;
   }, [params.leadId]);
+  const api = useTRPCClient();
   const [limit, setLimit] = useState(20);
-  const pageQuery = usePagedQuery(trpc.leads.queue.queryOptions({ agentId, limit }), agentId);
+  const pageQuery = usePagedQuery(trpc.leads.queue.queryOptions({ agentId, limit }), agentId, {
+    limit,
+    read: (page, signal) => api.leads.queue.query({ ...page, agentId }, { signal }),
+    merge: (a, b) => ({
+      ...b,
+      overdueCallbacks: [...a.overdueCallbacks, ...b.overdueCallbacks],
+      dueToday: [...a.dueToday, ...b.dueToday],
+      notYetCalled: [...a.notYetCalled, ...b.notYetCalled],
+      later: [...a.later, ...b.later],
+      noCallbackSet: [...a.noCallbackSet, ...b.noCallbackSet],
+    }),
+  });
   const queue = pageQuery.data;
   const people = useQuery(
     trpc.leads.agents.queryOptions({ offset: 0 }, { enabled: profile.role !== "agent" }),
@@ -175,8 +187,7 @@ export function QueueScreen({
     return <Loading label="Loading queue" />;
   }
   const total = Object.values(queue.counts).reduce((sum, count) => sum + count, 0);
-  const hasMore =
-    limit < 100 && groups.some((group) => queue[group.key].length < queue.counts[group.key]);
+  const hasMore = groups.some((group) => queue[group.key].length < queue.counts[group.key]);
   return (
     <>
       <PageHeader
@@ -308,7 +319,7 @@ export function QueueScreen({
               busy={pageQuery.isFetching}
               aria-disabled={!hasMore || pageQuery.isFetching}
               onClick={() => {
-                if (hasMore) setLimit((value) => Math.min(value + 20, 100));
+                if (hasMore) setLimit((value) => value + 20);
               }}
             >
               {hasMore ? "Show more leads" : "All leads shown"}

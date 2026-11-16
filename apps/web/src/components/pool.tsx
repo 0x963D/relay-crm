@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useTRPC } from "@/lib/trpc/client";
+import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
 import { usePagedQuery } from "@/lib/trpc/use-paged-query";
 import { failureCode, failureMessage } from "@/lib/failures";
 import { callbackDate, campaignLabel, sourceLabel } from "@/lib/display";
@@ -19,9 +19,14 @@ import { assignmentKey, type Plan } from "@/lib/assignment";
 import { AssignmentPreview, StaleAssignment } from "./assignment-preview";
 export function PoolScreen({ zone }: { zone: string }) {
   const trpc = useTRPC();
+  const api = useTRPCClient();
   const client = useQueryClient();
   const [limit, setLimit] = useState(14);
-  const pageQuery = usePagedQuery(trpc.leads.pool.queryOptions({ limit, offset: 0 }), "pool");
+  const pageQuery = usePagedQuery(trpc.leads.pool.queryOptions({ limit, offset: 0 }), "pool", {
+    limit,
+    read: (page, signal) => api.leads.pool.query(page, { signal }),
+    merge: (a, b) => ({ ...b, rows: [...a.rows, ...b.rows] }),
+  });
   const pool = pageQuery.data;
   const { data: agents } = useSuspenseQuery(trpc.leads.agents.queryOptions({ offset: 0 }));
   const [selected, setSelected] = useState<string[]>([]);
@@ -172,7 +177,7 @@ export function PoolScreen({ zone }: { zone: string }) {
       );
     return <Loading label="Loading pool" />;
   }
-  const hasMore = pool.rows.length < pool.total && limit < 100;
+  const hasMore = pool.rows.length < pool.total;
   return (
     <>
       <PageHeader title="Lead pool">
@@ -339,7 +344,7 @@ export function PoolScreen({ zone }: { zone: string }) {
                 busy={pageQuery.isFetching}
                 aria-disabled={!hasMore || pageQuery.isFetching}
                 onClick={() => {
-                  if (hasMore) setLimit((value) => Math.min(value + 14, 100));
+                  if (hasMore) setLimit((value) => value + 14);
                 }}
               >
                 {hasMore ? "Show more leads" : "All leads shown"}

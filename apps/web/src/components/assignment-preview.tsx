@@ -98,7 +98,6 @@ export function AssignmentPreview({
                   {items.length} {items.length === 1 ? "lead" : "leads"}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">{agent.team}</p>
               <p className="text-caption text-secondary-foreground">
                 {items
                   .map(

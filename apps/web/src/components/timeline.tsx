@@ -15,7 +15,7 @@ export function TimelineEntry({
   children: ReactNode;
 }) {
   return (
-    <li className="relative flex gap-3 pb-5 before:absolute before:start-3.5 before:top-7 before:bottom-0 before:border-s last:pb-0 last:before:hidden">
+    <li className="relative flex gap-3 pb-5 before:absolute before:start-3.5 before:top-7 before:bottom-0 before:border-s before:border-border last:pb-0 last:before:hidden">
       <span
         className={cn(
           "relative grid size-7 shrink-0 place-items-center rounded-full text-secondary-foreground",
