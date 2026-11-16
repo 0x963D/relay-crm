@@ -156,6 +156,7 @@ export async function createPayment(
           where: { id: input.accountId, ...scopeWhere(recordScope(current, "payment", "edit")) },
         });
         if (!account) throw new AccessError("accessDenied");
+        await availablePayment(tx, account.id);
         const at = new Date();
         const row = await tx.payment.create({
           data: {
@@ -689,13 +690,20 @@ export interface ManualDecision {
   readonly id: PaymentId;
   readonly version: number;
 }
-async function availableManualTerms(tx: Tx, accountId: string, hash: string, except?: string) {
+async function availablePayment(tx: Tx, accountId: string, except?: string) {
   if (
     await tx.payment.findFirst({
-      where: { accountId, status: "pendingApproval", ...(except ? { id: { not: except } } : {}) },
+      where: {
+        accountId,
+        status: { in: ["pendingApproval", "checkoutCreated"] },
+        ...(except ? { id: { not: except } } : {}),
+      },
     })
   )
     throw new AccessError("pendingPayment");
+}
+async function availableManualTerms(tx: Tx, accountId: string, hash: string, except?: string) {
+  await availablePayment(tx, accountId, except);
   if (
     await tx.payment.findFirst({
       where: {

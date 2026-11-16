@@ -5,7 +5,7 @@ export class AccessError extends Error {
   readonly code: AccessFailure;
   constructor(code: AccessFailure) {
     const messages: Partial<Record<AccessFailure, string>> = {
-      pendingPayment: "This account already has a payment waiting for approval.",
+      pendingPayment: "This account already has a payment in progress.",
       receiptUsed: "This receipt was already used for a payment.",
       paymentMaker: "You last edited this payment and cannot approve it.",
       paymentRecorder: "You recorded this payment and cannot approve it.",

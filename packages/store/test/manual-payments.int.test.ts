@@ -242,7 +242,7 @@ test("partial unique indexes also refuse direct SQL duplicates", async ({ db }) 
       "INSERT INTO payments(id,account_id,amount,currency,method,kind,status,recorded_by_id,created_at,receipt_hash) SELECT gen_random_uuid(),account_id,amount,currency,method,kind,status,recorded_by_id,created_at,$2 FROM payments WHERE id=$1",
       [w.id, "b".repeat(64)],
     ),
-  ).rejects.toMatchObject({ code: "23505", constraint: "payments_pending_account_key" });
+  ).rejects.toMatchObject({ code: "23505", constraint: "payments_in_progress_account_key" });
   const other = await db.seedAccount();
   await expect(
     db.rows(
@@ -402,4 +402,52 @@ test("makers may not reject and only the recorder may cancel", async ({ db }) =>
     { ...input, decision: "cancel", reason: "Wrong" },
     requestId,
   );
+});
+
+test.for(["manual-card", "card-manual", "card-card"] as const)(
+  "one payment in progress refuses %s",
+  async (order, { db }) => {
+    const w = await setup(db);
+    await db.store.decideManualPayment(
+      w.recorder,
+      { ...w.input, decision: "cancel", reason: "Reset" },
+      requestId,
+    );
+    const card = () =>
+      db.store.createPayment(
+        w.recorder,
+        { key: randomUUID(), accountId: w.accountId, money, kind: "first", mode: "drop" },
+        0,
+        requestId,
+      );
+    const manual = () =>
+      db.store.recordManualPayment(w.recorder, { ...w.terms, key: randomUUID() }, requestId);
+    await (order.startsWith("manual") ? manual() : card());
+    await expect(order.endsWith("manual") ? manual() : card()).rejects.toMatchObject({
+      code: "pendingPayment",
+      message: "This account already has a payment in progress.",
+    });
+  },
+);
+
+test("card and manual creation racing leave one waiting payment", async ({ db }) => {
+  const w = await setup(db);
+  const accountId = await db.seedAccount();
+  const result = await collision(db, () => [
+    db.store.recordManualPayment(
+      w.recorder,
+      { ...w.terms, accountId, key: randomUUID(), receiptHash: "c".repeat(64) },
+      requestId,
+    ),
+    db.store.createPayment(
+      w.recorder,
+      { accountId, key: randomUUID(), money, kind: "first", mode: "drop" },
+      0,
+      requestId,
+    ),
+  ]);
+  expect(result.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  expect(result.find((r) => r.status === "rejected")).toMatchObject({
+    reason: { code: "pendingPayment" },
+  });
 });

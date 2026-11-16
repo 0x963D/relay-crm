@@ -29,7 +29,7 @@ const UNIQUE_VIOLATION = "23505";
  * decision for every unique index.
  */
 export const RACE_CONSTRAINTS: Readonly<Record<string, "retry" | "reject">> = {
-  payments_pending_account_key: "retry",
+  payments_in_progress_account_key: "retry",
   payments_live_receipt_key: "retry",
   payment_approvals_pkey: "reject",
   payment_approvals_active_key: "retry",
