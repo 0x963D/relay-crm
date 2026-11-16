@@ -254,7 +254,11 @@ function attemptSummary(activities: readonly Activity[]) {
 function queueItem(
   row: Lead & { activities: Activity[]; intakeEvents: { campaign: string | null }[] },
 ) {
-  const summary = attemptSummary(row.activities);
+  const assignment = row.activities.find((activity) => activity.kind === "assignment");
+  const currentActivities = row.activities.filter(
+    (activity) => assignment === undefined || activity.sequence > assignment.sequence,
+  );
+  const summary = attemptSummary(currentActivities);
   const last = row.activities.find(
     (activity) => activity.kind === "note" || activity.kind === "attempt",
   );
@@ -262,14 +266,9 @@ function queueItem(
     ...leadFromRow(row),
     campaign: row.intakeEvents[0]?.campaign ?? null,
     callbackAt: row.callBackAt,
-    noAnswerCount: row.workHistoryKnown ? summary.noAnswerCount : null,
+    noAnswerCount: row.workHistoryKnown ? attemptSummary(row.activities).noAnswerCount : null,
     lastNoteOrOutcome: last ? activitySummary(last) : null,
-    hasAttempt:
-      summary.hasAttempt || row.stage === "noAnswer" || row.stage === "contacted"
-        ? true
-        : row.workHistoryKnown
-          ? false
-          : null,
+    hasAttempt: summary.hasAttempt,
   };
 }
 
@@ -303,13 +302,15 @@ export async function workQueue(
     const groups: Record<QueueGroup, ReturnType<typeof queueItem>[]> = {
       overdueCallbacks: [],
       dueToday: [],
+      noCallbackSet: [],
+      later: [],
       notYetCalled: [],
     };
     let nextCallbackAt: Date | null = null;
     for (const row of rows) {
       const item = queueItem(row);
       const group = queueGroup(item, input.at, input.timeZone);
-      if (group !== null) groups[group].push(item);
+      groups[group].push(item);
       if (
         item.callbackAt !== null &&
         item.callbackAt > input.at &&
@@ -317,12 +318,29 @@ export async function workQueue(
       )
         nextCallbackAt = item.callbackAt;
     }
+    groups.notYetCalled.sort((a, b) => {
+      const assignmentAt = (item: typeof a) =>
+        rows
+          .find((row) => row.id === item.id)
+          ?.activities.find((activity) => activity.kind === "assignment");
+      const left = assignmentAt(a);
+      const right = assignmentAt(b);
+      return (
+        (right?.at.getTime() ?? b.lifecycle.firstAssignedAt?.getTime() ?? 0) -
+          (left?.at.getTime() ?? a.lifecycle.firstAssignedAt?.getTime() ?? 0) ||
+        (left && right ? Number(right.sequence - left.sequence) : b.id.localeCompare(a.id))
+      );
+    });
     return {
+      noCallbackSet: groups.noCallbackSet.slice(0, input.limit),
+      later: groups.later.slice(0, input.limit),
       overdueCallbacks: groups.overdueCallbacks.slice(0, input.limit),
       dueToday: groups.dueToday.slice(0, input.limit),
       notYetCalled: groups.notYetCalled.slice(0, input.limit),
       counts: {
         overdueCallbacks: groups.overdueCallbacks.length,
+        noCallbackSet: groups.noCallbackSet.length,
+        later: groups.later.length,
         dueToday: groups.dueToday.length,
         notYetCalled: groups.notYetCalled.length,
       },

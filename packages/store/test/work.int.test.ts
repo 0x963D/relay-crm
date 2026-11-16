@@ -258,6 +258,8 @@ test.for([
     expect(queue.overdueCallbacks.map((lead) => lead.id)).toEqual([ids[0]]);
     expect(queue.dueToday.map((lead) => lead.id)).toEqual([ids[1]]);
     expect(queue.notYetCalled.map((lead) => lead.id)).toEqual([ids[3]]);
+    expect(queue.later.map((lead) => lead.id)).toEqual([ids[2]]);
+    expect(queue.counts.later).toBe(1);
     expect(queue.notYetCalled[0]).toMatchObject({
       campaign: "Evening course",
       noAnswerCount: 0,
@@ -432,7 +434,7 @@ test("the funnel counts original leads once and keeps missing contact history un
     timeZone: "UTC",
     limit: 100,
   });
-  expect(queue.notYetCalled.map((lead) => lead.id)).not.toContain(historical);
+  expect(queue.notYetCalled.map((lead) => lead.id)).toContain(historical);
 });
 
 test("account lists share ledger balances and withhold them from lead workers", async ({ db }) => {
@@ -500,4 +502,36 @@ test("an intake attachment keeps a pool distribution preview valid", async ({ db
       randomUUID(),
     ),
   ).resolves.toMatchObject({ changed: true });
+});
+
+test("worked, reassigned and reopened leads each stay in one queue group", async ({ db }) => {
+  const w = await world(db);
+  const worked = await w.makeLead();
+  const moved = await w.makeLead();
+  const reopened = await w.makeLead(w.agent, "reopened@example.com");
+  for (const id of [worked, moved, reopened]) await w.work(w.agent, id, noAnswer);
+  await db.store.reassignLead(
+    w.manager,
+    moved,
+    { ownerId: w.other.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  await w.work(w.agent, reopened, lost);
+  await db.store.intake(submissionExample({ email: "reopened@example.com", externalId: "reopen" }));
+  await db.store.assignPool(
+    w.manager,
+    [reopened],
+    { ownerId: w.other.userId, teamId: w.otherTeam },
+    randomUUID(),
+  );
+  const queue = (actor: Actor) =>
+    db.store.workQueue(actor, { agentId: actor.userId, at: AT, timeZone: "UTC", limit: 100 });
+  expect(await queue(w.agent)).toMatchObject({
+    noCallbackSet: [{ id: worked }],
+    counts: { noCallbackSet: 1 },
+  });
+  expect((await queue(w.other)).notYetCalled.map((lead) => lead.id)).toEqual([reopened, moved]);
+  expect((await queue(w.other)).notYetCalled.find((lead) => lead.id === moved)?.noAnswerCount).toBe(
+    1,
+  );
 });

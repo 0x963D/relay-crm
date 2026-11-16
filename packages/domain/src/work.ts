@@ -24,7 +24,8 @@ export type LeadWork =
   | { readonly kind: "callback"; readonly change: CallbackChange }
   | { readonly kind: "close"; readonly closing: ClosingReason };
 
-export type QueueGroup = "overdueCallbacks" | "dueToday" | "notYetCalled";
+export type QueueGroup =
+  "overdueCallbacks" | "dueToday" | "noCallbackSet" | "notYetCalled" | "later";
 
 function localDay(at: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -39,11 +40,11 @@ export function queueGroup(
   lead: { readonly callbackAt: Date | null; readonly hasAttempt: boolean | null },
   at: Date,
   timeZone: string,
-): QueueGroup | null {
+): QueueGroup {
   if (lead.callbackAt !== null) {
     if (lead.callbackAt < at) return "overdueCallbacks";
     if (localDay(lead.callbackAt, timeZone) === localDay(at, timeZone)) return "dueToday";
-    return null;
+    return "later";
   }
-  return lead.hasAttempt === false ? "notYetCalled" : null;
+  return lead.hasAttempt === false ? "notYetCalled" : "noCallbackSet";
 }
