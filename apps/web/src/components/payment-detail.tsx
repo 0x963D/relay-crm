@@ -238,7 +238,7 @@ export function PaymentDetail({
             name={payment.recordedBy?.name ?? "Staff member"}
             time={callbackDate(payment.createdAt, zone)}
           />
-          {manualWaiting ? (
+          {manualWaiting || (completed && payment.method === "manual") ? (
             <>
               <Signoff
                 caption="First approval"
@@ -250,6 +250,7 @@ export function PaymentDetail({
                 caption="Second approval · a different person"
                 emptyLabel="Waiting for a second approver"
                 name={approvals[1]?.approver?.name ?? null}
+                time={approvals[1] ? callbackDate(approvals[1].at, zone) : undefined}
               />
             </>
           ) : (
@@ -306,7 +307,9 @@ export function PaymentDetail({
                   ? state.reason === "paid after close"
                     ? "The provider reported payment after this checkout had closed."
                     : `The provider reported ${formatMoney(state.reported)} ${state.reported.currency}. This payment is for ${formatMoney(payment.money)} ${payment.money.currency}.`
-                  : "The payment is complete. Later deliveries do not credit the account again."}
+                  : payment.method === "manual"
+                    ? "Two approvers approved this payment. One ledger posting credited the account."
+                    : "The payment is complete. Later deliveries do not credit the account again."}
               </p>
             </div>
             {payment.method !== "manual" && (
@@ -530,7 +533,13 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
                       : event.kind === "approved"
                         ? "Approval recorded"
                         : event.kind === "edited"
-                          ? "Payment edited · previous approvals voided"
+                          ? payment.approvals.some(
+                              (approval) =>
+                                approval.paymentVersion + 1 === detail.version &&
+                                approval.voidedAt !== null,
+                            )
+                            ? "Payment edited · previous approvals voided"
+                            : "Payment edited"
                           : event.kind === "reviewClosed" || event.kind === "checkoutClosed"
                             ? "Payment closed as failed"
                             : event.kind === "cancelled"

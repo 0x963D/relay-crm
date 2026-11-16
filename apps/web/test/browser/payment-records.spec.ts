@@ -2,6 +2,40 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("completed manual payments name their approvers and edits do not invent voided approvals", async ({
+  page,
+}) => {
+  await signIn(page, "accountant");
+  const api = rpc(page);
+  const accounts = await api.accounts.list.query({ limit: 100 });
+  const account = accounts.items.find((account) => account.person?.name === "Jonas Weber")!;
+  const ledger = await api.accounts.ledger.query({ id: account.id });
+  const entry = ledger.balances
+    .flatMap((balance) => balance.entries)
+    .find((entry) => entry.method === "manual")!;
+  const payment = await api.payments.get.query({ id: entry.paymentId });
+  await page.goto(`${browserState().url}/payments/${payment.id}`);
+  for (const [index, label] of [
+    "First approval",
+    "Second approval · a different person",
+  ].entries()) {
+    await expect(page.getByText(label, { exact: true }).locator("..")).toContainText(
+      payment.approvals[index]!.approver!.name,
+    );
+  }
+  await expect(page.getByRole("region", { name: "Payment outcome" })).not.toContainText(
+    "Later deliveries",
+  );
+  const pending = await api.payments.list.query({ limit: 100 });
+  const edited = pending.waitingForApproval.find((row) => row.account?.name === "Yusuf Demir")!;
+  await page.goto(`${browserState().url}/payments/${edited.id}`);
+  await expect(
+    page
+      .getByRole("list", { name: "Payment events" })
+      .getByRole("heading", { name: "Payment edited", exact: true }),
+  ).toBeVisible();
+});
+
 test("the approval panel names the missing approver and keeps decisions together", async ({
   page,
 }) => {
