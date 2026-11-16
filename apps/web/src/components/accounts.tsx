@@ -224,9 +224,13 @@ function AccountLedger({ id, zone }: { id: string; zone: string }) {
         </Empty>
       )}
       {data.balances.map((balance) => (
-        <Table key={balance.currency} aria-label={`${balance.currency} ledger`}>
+        <Table
+          className="max-md:block"
+          key={balance.currency}
+          aria-label={`${balance.currency} ledger`}
+        >
           <caption className="sr-only">{balance.currency} ledger</caption>
-          <TableHeader>
+          <TableHeader className="max-md:hidden">
             <TableRow>
               {[
                 "When",
@@ -239,11 +243,14 @@ function AccountLedger({ id, zone }: { id: string; zone: string }) {
               ))}
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-md:block">
             {balance.entries.map((entry) => (
-              <TableRow key={entry.paymentId}>
-                <TableCell>{shortDate(entry.at, zone)}</TableCell>
-                <TableCell>
+              <TableRow
+                key={entry.paymentId}
+                className="max-md:grid max-md:grid-cols-2 max-md:gap-1 max-md:py-3"
+              >
+                <TableCell className="max-md:col-span-2">{shortDate(entry.at, zone)}</TableCell>
+                <TableCell className="whitespace-normal max-md:col-span-2">
                   <Link href={`/payments/${entry.paymentId}`} className="text-primary underline">
                     {entry.kind === "first" ? "First" : "Repeat"} payment ·{" "}
                     {entry.method === "manual" ? "manual" : "card"}
@@ -254,13 +261,16 @@ function AccountLedger({ id, zone }: { id: string; zone: string }) {
                       : `Completed by ${completedBy(entry.completion.by).toLowerCase()}`}
                   </p>
                 </TableCell>
-                <TableCell className="text-end font-semibold">
+                <TableCell className="whitespace-normal text-end font-semibold">
+                  <p className="text-xs font-normal text-muted-foreground md:hidden">
+                    This account
+                  </p>
                   {formatMoney({ minor: entry.amount, currency: balance.currency })}
                   <p className="text-xs font-normal text-muted-foreground">
                     {entry.side === "credit" ? "Credit" : "Debit"}
                   </p>
                 </TableCell>
-                <TableCell className="text-end">
+                <TableCell className="whitespace-normal text-end">
                   {entry.posting?.lines
                     .filter((line) => line.side !== entry.side)
                     .map((line) => (
@@ -272,16 +282,19 @@ function AccountLedger({ id, zone }: { id: string; zone: string }) {
                       </div>
                     ))}
                 </TableCell>
-                <TableCell className="text-end font-semibold">
+                <TableCell className="whitespace-normal text-end font-semibold max-md:col-span-2">
+                  <p className="text-xs font-normal text-muted-foreground md:hidden">Balance</p>
                   {formatMoney({ minor: entry.balance, currency: balance.currency })}
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
-          <TableFooter>
-            <TableRow>
-              <TableCell colSpan={4}>Balance · credits minus debits</TableCell>
-              <TableCell className="text-end">
+          <TableFooter className="max-md:block">
+            <TableRow className="max-md:grid max-md:grid-cols-2">
+              <TableCell className="whitespace-normal" colSpan={4}>
+                Balance · credits minus debits
+              </TableCell>
+              <TableCell className="whitespace-normal text-end">
                 {formatMoney({ minor: balance.balance, currency: balance.currency })}
               </TableCell>
             </TableRow>

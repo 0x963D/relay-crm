@@ -2,6 +2,39 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("payment rows and ledger amounts fit at phone width", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, "accountant");
+  const payments = await rpc(page).payments.list.query({ limit: 100 });
+  async function noOverflow() {
+    expect(
+      await page
+        .locator("[data-slot=table-container]")
+        .evaluateAll(
+          (elements) =>
+            elements.filter(
+              (element) =>
+                element.getBoundingClientRect().width > 0 &&
+                element.scrollWidth > element.clientWidth + 1,
+            ).length,
+        ),
+    ).toBe(0);
+  }
+  await noOverflow();
+  await expect(
+    page.getByRole("region", { name: "Payments", exact: true }).getByRole("link").first(),
+  ).toContainText(/mismatch|paid after close/i);
+  const accounts = await rpc(page).accounts.list.query({ limit: 100 });
+  const funded = accounts.items.find((account) => account.balances?.length);
+  expect(funded).toBeDefined();
+  await page.goto(`${browserState().url}/accounts/${funded!.id}/ledger`);
+  await noOverflow();
+  const ledger = page.getByRole("region", { name: "Account ledger", exact: true });
+  await expect(ledger).toContainText("Credit");
+  await expect(ledger).toContainText("Balance");
+  expect(payments.needsReview.length).toBeGreaterThan(0);
+});
+
 test("opening a payment moves focus without outlining its amount", async ({ page }) => {
   await signIn(page, "accountant");
   const payments = await rpc(page).payments.list.query({ limit: 100 });

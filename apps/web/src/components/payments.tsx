@@ -20,7 +20,7 @@ export function PaymentsScreen({
   form = false,
 }: {
   zone: string;
-  selected?: string;
+  selected?: string | undefined;
   children?: ReactNode;
   form?: boolean;
 }) {
@@ -94,7 +94,7 @@ export function PaymentsScreen({
                   Opened payment
                 </h2>
                 <ul>
-                  <CompactPayment payment={opened.data} selected={selected} />
+                  <CompactPayment payment={opened.data} selected={selected} zone={zone} />
                 </ul>
               </section>
             )}
@@ -106,78 +106,86 @@ export function PaymentsScreen({
                     {label}
                     <span>{data.counts[key]}</span>
                   </h2>
-                  {compact ? (
-                    <ul>
-                      {data[key].map((payment) => (
-                        <CompactPayment key={payment.id} payment={payment} selected={selected} />
-                      ))}
-                    </ul>
-                  ) : (
-                    <Table aria-label={label}>
-                      <TableHeader>
-                        <TableRow>
-                          {[
-                            "Account",
-                            "Amount",
-                            "Method",
-                            "Kind",
-                            "Recorded by",
-                            "Status",
-                            key === "waitingForProvider"
-                              ? "Next check"
-                              : key === "waitingForApproval"
-                                ? "Your part"
-                                : "When",
-                          ].map((name) => (
-                            <TableHead key={name}>{name}</TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data[key].map((payment) => (
-                          <TableRow
-                            key={payment.id}
-                            data-state={payment.id === selected ? "selected" : undefined}
-                          >
-                            <TableCell>
-                              <Link
-                                href={`/payments/${payment.id}`}
-                                className="font-semibold text-primary underline-offset-4 hover:underline"
-                              >
-                                {payment.account?.name ?? payment.account?.email ?? "Account"}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="font-semibold">
-                              {formatMoney(payment.money)}
-                            </TableCell>
-                            <TableCell>{payment.method === "manual" ? "Manual" : "Card"}</TableCell>
-                            <TableCell>{payment.kind === "first" ? "First" : "Repeat"}</TableCell>
-                            <TableCell>{payment.recordedBy?.name ?? "Staff member"}</TableCell>
-                            <TableCell>
-                              <PaymentStatus payment={payment} compact={compact} />
-                            </TableCell>
-                            <TableCell>
-                              {key === "waitingForApproval"
-                                ? payment.actions.approve
-                                  ? "You can approve"
-                                  : payment.actions.cancel
-                                    ? "You can cancel it"
-                                    : payment.actions.approvalRefusal === "alreadyApproved"
-                                      ? "You approved it"
-                                      : "You cannot approve"
-                                : callbackDate(
-                                    key === "waitingForProvider"
-                                      ? payment.nextCheckAt
-                                      : "at" in payment.state
-                                        ? payment.state.at
-                                        : payment.createdAt,
-                                    zone,
-                                  )}
-                            </TableCell>
+                  <ul className={compact ? undefined : "md:hidden"}>
+                    {data[key].map((payment) => (
+                      <CompactPayment
+                        key={payment.id}
+                        payment={payment}
+                        selected={selected}
+                        zone={zone}
+                      />
+                    ))}
+                  </ul>
+                  {!compact && (
+                    <div className="hidden md:block">
+                      <Table aria-label={label}>
+                        <TableHeader>
+                          <TableRow>
+                            {[
+                              "Account",
+                              "Amount",
+                              "Method",
+                              "Kind",
+                              "Recorded by",
+                              "Status",
+                              key === "waitingForProvider"
+                                ? "Next check"
+                                : key === "waitingForApproval"
+                                  ? "Your part"
+                                  : "When",
+                            ].map((name) => (
+                              <TableHead key={name}>{name}</TableHead>
+                            ))}
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {data[key].map((payment) => (
+                            <TableRow
+                              key={payment.id}
+                              data-state={payment.id === selected ? "selected" : undefined}
+                            >
+                              <TableCell>
+                                <Link
+                                  href={`/payments/${payment.id}`}
+                                  className="font-semibold text-primary underline-offset-4 hover:underline"
+                                >
+                                  {payment.account?.name ?? payment.account?.email ?? "Account"}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="font-semibold">
+                                {formatMoney(payment.money)}
+                              </TableCell>
+                              <TableCell>
+                                {payment.method === "manual" ? "Manual" : "Card"}
+                              </TableCell>
+                              <TableCell>{payment.kind === "first" ? "First" : "Repeat"}</TableCell>
+                              <TableCell>{payment.recordedBy?.name ?? "Staff member"}</TableCell>
+                              <TableCell>
+                                <PaymentStatus payment={payment} compact={compact} />
+                              </TableCell>
+                              <TableCell>
+                                {key === "waitingForApproval"
+                                  ? payment.actions.approve
+                                    ? "You can approve"
+                                    : payment.actions.cancel
+                                      ? "You can cancel it"
+                                      : payment.actions.approvalRefusal === "alreadyApproved"
+                                        ? "You approved it"
+                                        : "You cannot approve"
+                                  : callbackDate(
+                                      key === "waitingForProvider"
+                                        ? payment.nextCheckAt
+                                        : "at" in payment.state
+                                          ? payment.state.at
+                                          : payment.createdAt,
+                                      zone,
+                                    )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )}
                 </section>
               ),
@@ -220,9 +228,14 @@ export function PaymentsScreen({
 function CompactPayment({
   payment,
   selected,
+  zone,
 }: {
-  payment: Pick<PaymentRow, "id" | "account" | "state" | "approvals" | "money" | "method" | "kind">;
-  selected?: string;
+  payment: Pick<
+    PaymentRow,
+    "id" | "account" | "state" | "approvals" | "money" | "method" | "kind" | "createdAt"
+  >;
+  selected?: string | undefined;
+  zone: string;
 }) {
   return (
     <li>
@@ -241,6 +254,10 @@ function CompactPayment({
           <strong className="text-foreground">{formatMoney(payment.money)}</strong> ·{" "}
           {payment.method === "manual" ? "Manual" : "Card"} ·{" "}
           {payment.kind === "first" ? "First" : "Repeat"}
+          {" · "}
+          {payment.state.status === "needsReview"
+            ? payment.state.reason
+            : callbackDate("at" in payment.state ? payment.state.at : payment.createdAt, zone)}
         </p>
       </Link>
     </li>
