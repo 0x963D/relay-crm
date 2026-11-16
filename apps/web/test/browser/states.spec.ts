@@ -94,6 +94,13 @@ test("the shell fits the supported desktop and phone viewports", async ({ page }
         true,
       );
     await expect(page.getByRole("heading", { name: "My queue", exact: true })).toBeVisible();
+    if (width === 390) {
+      await expect(page.locator('.q-select[aria-current="true"]')).toHaveCount(0);
+      await expect(page.locator('.qrow[data-auto-selected="true"]')).toHaveCSS(
+        "background-color",
+        "rgba(0, 0, 0, 0)",
+      );
+    }
   }
   const queue = await rpc(page).leads.queue.query({});
   await expect(page.locator(".ph-sub")).toContainText(

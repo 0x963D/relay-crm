@@ -254,7 +254,9 @@ export function QueueScreen({
                         <button
                           type="button"
                           className="q-select max-phone:block max-phone:flex-1 max-phone:min-w-0 max-phone:bg-transparent max-phone:[color:inherit] max-phone:border-0 max-phone:text-start flex items-center gap-group flex-1 min-w-0 border-0 bg-transparent [color:inherit] text-start p-0 [cursor:pointer]"
-                          aria-current={item.id === selectedId ? "true" : undefined}
+                          aria-current={
+                            item.id === selectedId && params.has("lead") ? "true" : undefined
+                          }
                           onClick={() => {
                             choose(item.id);
                           }}
