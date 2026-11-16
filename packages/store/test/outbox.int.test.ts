@@ -29,7 +29,7 @@ async function receipt(db: TestDatabase, suffix = "one") {
   });
   const detail = await db.store.getPayment(actor, id);
   if (!detail.receipt) throw new Error("No outbox row");
-  await db.rows("UPDATE outbox SET recipient=$1 WHERE id=$2", [
+  await db.ownerRows("UPDATE outbox SET recipient=$1 WHERE id=$2", [
     `${suffix}@example.com`,
     detail.receipt.id,
   ]);
@@ -200,7 +200,7 @@ test("suppressed addresses send nothing and keep the completed payment", async (
 
 test("a receipt without an address is suppressed without sending or retrying", async ({ db }) => {
   const w = await receipt(db);
-  await db.rows("UPDATE outbox SET recipient=NULL WHERE id=$1", [w.outboxId]);
+  await db.ownerRows("UPDATE outbox SET recipient=NULL WHERE id=$1", [w.outboxId]);
   let calls = 0;
   const send = () => {
     calls++;
@@ -328,7 +328,7 @@ test("a completed payment cannot lose its receipt by moving it", async ({ db }) 
   );
   await expect(
     db.rows("UPDATE outbox SET payment_id=$1 WHERE id=$2", [other.id, w.outboxId]),
-  ).rejects.toMatchObject({ code: "23001" });
+  ).rejects.toMatchObject({ code: "42501" });
 });
 
 test("the configured lifetime cap survives audited requeues", async ({ db }) => {
@@ -364,7 +364,7 @@ test.for(["cycle", "lifetime"] as const)(
   "leasing directly enforces the %s attempt limit",
   async (kind, { db }) => {
     const w = await receipt(db);
-    await db.rows(
+    await db.ownerRows(
       "UPDATE outbox SET state='failed',cycle_attempts=$1,attempts=$2,next_attempt_at=$3 WHERE id=$4",
       [kind === "cycle" ? 4 : 0, kind === "cycle" ? 4 : 12, at, w.outboxId],
     );
@@ -471,4 +471,36 @@ test("preparation beyond the send deadline leaves an unsent unknown receipt for 
   const detail = await db.store.getPayment(w.actor, w.id);
   expect(detail.receipt?.nextAttemptAt).toBeNull();
   expect(detail.actions.requeueReceipt).toBe(true);
+});
+
+test("the app role cannot retarget a receipt or reset its lifetime count", async ({ db }) => {
+  const w = await receipt(db);
+  await db.store.runOutbox(() => Promise.resolve({ state: "sent" }), { at });
+  const before = await db.rows("SELECT recipient,attempts FROM outbox WHERE id=$1", [w.outboxId]);
+  await expect(
+    db.rows("UPDATE outbox SET recipient='other@example.com' WHERE id=$1", [w.outboxId]),
+  ).rejects.toMatchObject({ code: "42501" });
+  await expect(
+    db.rows("UPDATE outbox SET attempts=0 WHERE id=$1", [w.outboxId]),
+  ).rejects.toMatchObject({ code: "42501" });
+  await expect(
+    db.rows("UPDATE receipt_attempts SET number=0 WHERE outbox_id=$1", [w.outboxId]),
+  ).rejects.toMatchObject({ code: "42501" });
+  expect(await db.rows("SELECT recipient,attempts FROM outbox WHERE id=$1", [w.outboxId])).toEqual(
+    before,
+  );
+});
+
+test("the app cannot assign a lifetime attempt count directly", async ({ db }) => {
+  const w = await receipt(db);
+  await expect(
+    db.rows("UPDATE outbox SET attempts=1 WHERE id=$1", [w.outboxId]),
+  ).rejects.toMatchObject({ code: "42501" });
+  expect(await db.rows("SELECT attempts FROM outbox WHERE id=$1", [w.outboxId])).toEqual([
+    { attempts: 0 },
+  ]);
+  await db.store.runOutbox(() => Promise.resolve({ state: "sent" }), { at });
+  expect(await db.rows("SELECT attempts FROM outbox WHERE id=$1", [w.outboxId])).toEqual([
+    { attempts: 1 },
+  ]);
 });

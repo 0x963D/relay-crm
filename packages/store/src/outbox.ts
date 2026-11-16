@@ -67,7 +67,7 @@ async function beginDelivery(db: Db, id: string, token: string, at: Date) {
         nextAttemptAt: null,
         ...(suppression
           ? { leaseToken: null, leaseUntil: null }
-          : { attempts: number, cycleAttempts: { increment: 1 } }),
+          : { cycleAttempts: { increment: 1 } }),
       },
     });
     const attempt = await tx.receiptAttempt.create({

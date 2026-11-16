@@ -554,7 +554,7 @@ test("a worker deadline before the SMTP greeting records a retryable failure", a
     payloadHash: "fake",
     observed: { status: "completed", money },
   });
-  await db.rows("UPDATE outbox SET recipient='receipt@example.com' WHERE payment_id=$1", [id]);
+  await db.ownerRows("UPDATE outbox SET recipient='receipt@example.com' WHERE payment_id=$1", [id]);
   const inbox = await openSmtpInbox(() => "sent", "greeting");
   try {
     const send = createReceiptMailer({ kind: "smtp", url: inbox.url, from: "sender@example.com" });

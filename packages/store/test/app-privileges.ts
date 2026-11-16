@@ -15,7 +15,7 @@ export const APP_TABLE_PRIVILEGES: Readonly<Record<string, readonly string[]>> =
   ledger_lines: ["INSERT", "SELECT"],
   ledger_transactions: ["INSERT", "SELECT"],
   memberships: ["SELECT"],
-  outbox: ["INSERT", "SELECT", "UPDATE"],
+  outbox: ["INSERT", "SELECT"],
   payment_approvals: ["INSERT", "SELECT"],
   payment_events: ["INSERT", "SELECT"],
   payment_makers: ["INSERT", "SELECT"],
@@ -27,6 +27,11 @@ export const APP_TABLE_PRIVILEGES: Readonly<Record<string, readonly string[]>> =
   webhook_inbox: ["INSERT", "SELECT"],
 };
 export const APP_COLUMN_UPDATES = [
+  "outbox.cycle_attempts",
+  "outbox.lease_token",
+  "outbox.lease_until",
+  "outbox.next_attempt_at",
+  "outbox.state",
   "payment_approvals.voided_at",
   "receipt_attempts.finished_at",
   "receipt_attempts.reason",
