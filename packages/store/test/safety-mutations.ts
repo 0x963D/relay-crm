@@ -122,6 +122,123 @@ const definitions: {
     test: "leasing directly enforces the lifetime attempt limit",
     testFile: "packages/store/test/outbox.int.test.ts",
   },
+  {
+    name: "truncate-intake_events",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER intake_events_no_truncate BEFORE TRUNCATE ON intake_events FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses intake_events",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-activities",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER activities_no_truncate BEFORE TRUNCATE ON activities FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses activities",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-audit_log",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses audit_log",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-distribution_previews",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER distribution_previews_no_truncate BEFORE TRUNCATE ON distribution_previews FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses distribution_previews",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-idempotency_records",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER idempotency_records_no_truncate BEFORE TRUNCATE ON idempotency_records FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses idempotency_records",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-ledger_accounts",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER ledger_accounts_no_truncate BEFORE TRUNCATE ON ledger_accounts FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses ledger_accounts",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-ledger_transactions",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER ledger_transactions_no_truncate BEFORE TRUNCATE ON ledger_transactions FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses ledger_transactions",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-ledger_lines",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER ledger_lines_no_truncate BEFORE TRUNCATE ON ledger_lines FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses ledger_lines",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-payment_events",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER payment_events_no_truncate BEFORE TRUNCATE ON payment_events FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses payment_events",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-webhook_inbox",
+    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    before:
+      "CREATE TRIGGER webhook_inbox_no_truncate BEFORE TRUNCATE ON webhook_inbox FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses webhook_inbox",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-payment_approvals",
+    file: "packages/store/prisma/migrations/0016_manual_payments/migration.sql",
+    before:
+      "CREATE TRIGGER payment_approvals_no_truncate BEFORE TRUNCATE ON payment_approvals FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses payment_approvals",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-receipt_attempts",
+    file: "packages/store/prisma/migrations/0017_receipt_delivery/migration.sql",
+    before:
+      "CREATE TRIGGER receipt_attempts_no_truncate BEFORE TRUNCATE ON receipt_attempts FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses receipt_attempts",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "truncate-outbox",
+    file: "packages/store/prisma/migrations/0028_required_payment_receipt/migration.sql",
+    before:
+      "CREATE TRIGGER outbox_no_truncate BEFORE TRUNCATE ON outbox FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+    after: "",
+    test: "standalone truncate refuses outbox",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
 ];
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));

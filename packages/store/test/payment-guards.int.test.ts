@@ -95,3 +95,34 @@ test("the second approval rechecks the other approver role version in the applic
   }
   expect((await db.store.getPayment(w.b, w.id)).state.status).toBe("pendingApproval");
 });
+
+test.for([
+  "intake_events",
+  "activities",
+  "audit_log",
+  "distribution_previews",
+  "idempotency_records",
+  "ledger_accounts",
+  "ledger_transactions",
+  "ledger_lines",
+  "payment_events",
+  "webhook_inbox",
+  "payment_approvals",
+  "receipt_attempts",
+  "outbox",
+] as const)("standalone truncate refuses %s", async (table, { db }) => {
+  await db.ownerRows("BEGIN");
+  try {
+    const references = await db.ownerRows(
+      "SELECT format('ALTER TABLE %I.%I DROP CONSTRAINT %I',n.nspname,c.relname,f.conname) AS statement FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE f.contype='f' AND f.confrelid=$1::regclass",
+      [`public.${table}`],
+    );
+    for (const row of references) await db.ownerRows(String(row.statement));
+    await expect(db.ownerRows(`TRUNCATE ${table}`)).rejects.toMatchObject({
+      code: "23001",
+      message: `${table} is append-only`,
+    });
+  } finally {
+    await db.ownerRows("ROLLBACK");
+  }
+});
