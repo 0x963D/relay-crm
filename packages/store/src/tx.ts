@@ -71,6 +71,7 @@ export const RACE_CONSTRAINTS: Readonly<Record<string, "retry" | "reject">> = {
   leads_pkey: "reject",
   memberships_pkey: "reject",
   teams_pkey: "reject",
+  users_email_lower_key: "reject",
   users_email_key: "reject",
   users_pkey: "reject",
 };

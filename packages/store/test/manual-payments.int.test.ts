@@ -451,3 +451,20 @@ test("card and manual creation racing leave one waiting payment", async ({ db })
     reason: { code: "pendingPayment" },
   });
 });
+
+test("user email identity is case insensitive on insert and update", async ({ db }) => {
+  const a = await db.seedUser("manager"),
+    b = await db.seedUser("accountant");
+  const [row] = await db.rows("SELECT email FROM users WHERE id=$1", [a]);
+  const email = String(row?.email).toUpperCase();
+  await expect(
+    db.rows(
+      "INSERT INTO users(id,email,name,role) VALUES (gen_random_uuid(),$1,'Fake duplicate','manager')",
+      [email],
+    ),
+  ).rejects.toMatchObject({ code: "23505", constraint: "users_email_lower_key" });
+  await expect(db.rows("UPDATE users SET email=$1 WHERE id=$2", [email, b])).rejects.toMatchObject({
+    code: "23505",
+    constraint: "users_email_lower_key",
+  });
+});
