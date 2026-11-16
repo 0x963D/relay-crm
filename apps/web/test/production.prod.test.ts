@@ -736,7 +736,8 @@ databaseTest(
       const requestId = /"requestId":"([^"]+)"/.exec(internalBody)?.[1];
       if (!requestId) throw new Error("Internal error returned no request ID");
       expect(server.output()).toContain(requestId);
-      expect(server.output()).toContain("database password leaked in this message");
+      expect(server.output()).toContain('"class":"PrismaClientKnownRequestError"');
+      expect(server.output()).not.toContain("database password leaked in this message");
       await db.ownerRows(
         "CREATE TRIGGER force_limit_failure BEFORE INSERT OR UPDATE ON auth_request_limits FOR EACH ROW EXECUTE FUNCTION force_internal_failure()",
       );

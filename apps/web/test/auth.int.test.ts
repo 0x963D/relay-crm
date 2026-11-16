@@ -401,6 +401,33 @@ test("auth hides a store exception and logs it with the response request ID", as
   }
 });
 
+test("auth library database errors never log an email carried by the failing row", async ({
+  db,
+}) => {
+  await db.seedUser("agent");
+  await db.ownerRows(`CREATE FUNCTION fail_auth_verification() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'cannot insert %', NEW.identifier; END $$;
+    CREATE TRIGGER fail_auth_verification BEFORE INSERT ON auth_verifications
+    FOR EACH ROW EXECUTE FUNCTION fail_auth_verification()`);
+  const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    const { post } = setup(db.store);
+    const { response } = await post("/email-otp/send-verification-otp", {
+      email: "user-1@team.example",
+      type: "sign-in",
+    });
+    expect(response.status).toBe(500);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("user-1@team.example");
+    const body = await response.text();
+    const requestId = /"requestId":"([^"]+)"/.exec(body)?.[1];
+    if (!requestId) throw new Error("No request ID");
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining(requestId));
+    expect(body).not.toContain("user-1@team.example");
+  } finally {
+    logged.mockRestore();
+  }
+});
+
 test("auth rejects an oversized JSON body before parsing it", async ({ db }) => {
   const { auth } = setup(db.store);
   const response = await auth.handle(

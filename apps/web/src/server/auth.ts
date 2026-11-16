@@ -41,6 +41,8 @@ export function createAuthentication(
     appName: "Relay",
     baseURL: env.baseUrl,
     secret: env.secret,
+    logger: { disabled: true },
+    onAPIError: { throw: true },
     database: store.authenticationDatabase,
     databaseHooks: {
       session: {
