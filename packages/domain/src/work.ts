@@ -36,7 +36,7 @@ function localDay(at: Date, timeZone: string): string {
 }
 
 export function queueGroup(
-  lead: { readonly callbackAt: Date | null; readonly hasAttempt: boolean },
+  lead: { readonly callbackAt: Date | null; readonly hasAttempt: boolean | null },
   at: Date,
   timeZone: string,
 ): QueueGroup | null {
@@ -45,5 +45,5 @@ export function queueGroup(
     if (localDay(lead.callbackAt, timeZone) === localDay(at, timeZone)) return "dueToday";
     return null;
   }
-  return lead.hasAttempt ? null : "notYetCalled";
+  return lead.hasAttempt === false ? "notYetCalled" : null;
 }

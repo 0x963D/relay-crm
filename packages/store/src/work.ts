@@ -241,9 +241,14 @@ function queueItem(
     ...leadFromRow(row),
     campaign: row.intakeEvents[0]?.campaign ?? null,
     callbackAt: row.callBackAt,
-    noAnswerCount: summary.noAnswerCount,
+    noAnswerCount: row.workHistoryKnown ? summary.noAnswerCount : null,
     lastNoteOrOutcome: last ? activityDetail(last) : null,
-    hasAttempt: summary.hasAttempt || row.stage === "noAnswer" || row.stage === "contacted",
+    hasAttempt:
+      summary.hasAttempt || row.stage === "noAnswer" || row.stage === "contacted"
+        ? true
+        : row.workHistoryKnown
+          ? false
+          : null,
   };
 }
 
@@ -341,7 +346,7 @@ export async function leadDetail(db: Db, actor: Actor, id: LeadId) {
       contactedAt: row.workHistoryKnown ? row.contactedAt : null,
       lostNote: row.lostNote,
       workHistoryKnown: row.workHistoryKnown,
-      noAnswerCount: attemptSummary(activities).noAnswerCount,
+      noAnswerCount: row.workHistoryKnown ? attemptSummary(activities).noAnswerCount : null,
       custody: {
         receivedFrom: origin ? { source: origin.source, at: origin.receivedAt } : null,
         assignedBy: assignedBy ? { ...assignedBy, at: assignment?.at ?? null } : null,
