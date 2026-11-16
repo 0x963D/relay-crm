@@ -349,6 +349,8 @@ databaseTest(
     const userId = await db.seedUser("agent");
     await db.seedUser("accountant");
     await db.seedUser("manager");
+    await db.seedUser("manager");
+    await db.seedUser("owner");
     const teamId = await db.seedTeam("sales");
     const accountId = await db.seedAccount();
     await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
@@ -378,6 +380,7 @@ databaseTest(
         RELAY_PAYMENT_WEBHOOK_SECRET: "fake-production-webhook-secret-for-tests",
         RELAY_RECONCILE_SECRET: reconcileSecret,
         RELAY_OUTBOX_SECRET: outboxSecret,
+        RELAY_RECEIPT_LIFETIME_ATTEMPTS: "2",
         RELAY_RECONCILE_FIRST_MS: "0",
         RELAY_RECONCILE_INTERVAL_MS: "1000",
         RELAY_SANDBOX_LATE_MS: "2500",
@@ -413,6 +416,8 @@ databaseTest(
       const agent = await signIn("user-1@team.example");
       const accountant = await signIn("user-2@team.example");
       const manager = await signIn("user-3@team.example");
+      const editor = await signIn("user-4@team.example");
+      const owner = await signIn("user-5@team.example");
       const rpc = async (
         path: string,
         input: unknown,
@@ -666,7 +671,7 @@ databaseTest(
         process.stdout.write(
           `LIVE_MANUAL ${label} ${JSON.stringify(value, (_key, item: unknown) => (typeof item === "bigint" ? item.toString() : item))}\n`,
         );
-      const record = async (key: string, hash: string, amount = "100") =>
+      const record = async (key: string, hash: string, amount = "100", recordedBy = agent) =>
         z.object({ id: z.string() }).parse(
           await rpc(
             "payments.recordManual",
@@ -679,7 +684,7 @@ databaseTest(
               receiptHash: hash.repeat(64),
               reference: "Local transfer",
             },
-            agent,
+            recordedBy,
             true,
           ),
         ).id;
@@ -704,7 +709,7 @@ databaseTest(
       expect((await fetch(server.url("/api/payments/outbox"), { method: "POST" })).status).toBe(
         401,
       );
-      const manualId = await record("manual-first", "a", "48000");
+      const manualId = await record("manual-first", "a", "48000", manager);
       const refused = await post(
         "/api/trpc/payments.recordManual",
         {
@@ -731,21 +736,70 @@ databaseTest(
         agent,
       );
       expect(agentApproval.status).toBe(403);
+      const blockedCard = await post(
+        "/api/trpc/payments.createCheckout",
+        {
+          json: {
+            key: "card-while-manual",
+            accountId,
+            amount: "48000",
+            currency: "GBP",
+            kind: "repeat",
+            mode: "drop",
+          },
+        },
+        agent,
+      );
+      expect(blockedCard.status).toBe(409);
+      const blockedCardBody: unknown = await blockedCard.json();
+      expect(blockedCardBody).toMatchObject({
+        error: {
+          json: {
+            message: "This account already has a payment in progress.",
+            data: { accessFailure: "pendingPayment" },
+          },
+        },
+      });
+      log("card-refused-while-manual-waits", blockedCardBody);
+      await rpc(
+        "payments.editManual",
+        {
+          id: manualId,
+          version: 0,
+          amount: "4800000",
+          currency: "GBP",
+          receiptHash: "a".repeat(64),
+          reference: "Corrected transfer",
+        },
+        editor,
+        true,
+      );
+      const editorApproval = await post(
+        "/api/trpc/payments.approve",
+        { json: { id: manualId, version: 1, roleVersion: 0 } },
+        editor,
+      );
+      expect(editorApproval.status).toBe(400);
+      const editorRefusal: unknown = await editorApproval.json();
+      expect(editorRefusal).toMatchObject({
+        error: { json: { data: { accessFailure: "paymentMaker" } } },
+      });
+      log("editor-approval-refused", editorRefusal);
       await approve(manualId, accountant);
       const waiting = Manual.parse(await rpc("payments.get", { id: manualId }, accountant));
       expect(waiting.state.status).toBe("pendingApproval");
       expect(waiting.posting).toBeNull();
-      await approve(manualId, manager);
+      await approve(manualId, owner);
       const completed = Manual.parse(await rpc("payments.get", { id: manualId }, accountant));
       expect(completed.state.status).toBe("completed");
       expect(completed.approvals).toHaveLength(2);
-      expect(completed.posting?.lines.map((l) => l.amount)).toEqual([48000n, 48000n]);
+      expect(completed.posting?.lines.map((l) => l.amount)).toEqual([4800000n, 4800000n]);
       expect(completed.posting?.lines.map((l) => l.account.kind)).toContain("bankTransfersCash");
       const manualLedger = Ledger.parse(
         await rpc("accounts.ledger", { id: accountId }, accountant),
       );
       expect(manualLedger.balances).toEqual([
-        { currency: "GBP", balance: expectedBalance + 48000n },
+        { currency: "GBP", balance: expectedBalance + 4800000n },
       ]);
       log("completed", { payment: completed, ledger: manualLedger });
       const cli = await promisify(exec)("pnpm outbox", {
@@ -766,7 +820,7 @@ databaseTest(
       expect(cli.stdout).toContain('"state":"sent"');
       log("pnpm-outbox", cli.stdout);
       const received = inbox.messages.find((message) => message.includes(`Payment ${manualId}`));
-      expect(received).toContain("Received GBP 480.00.");
+      expect(received).toContain("Received GBP 48000.00.");
       log("smtp-receipt", received);
       expect(
         Manual.parse(await rpc("payments.get", { id: manualId }, accountant)).receipt,
@@ -775,8 +829,12 @@ databaseTest(
       const failedId = await record("manual-failed", "b");
       await approve(failedId, accountant);
       await approve(failedId, manager);
-      receiptOutcome = "failed";
-      await work();
+      await inbox.close();
+      try {
+        await work();
+      } finally {
+        await inbox.reopen();
+      }
       const failed = Manual.parse(await rpc("payments.get", { id: failedId }, accountant));
       expect(failed.receipt).toMatchObject({ state: "failed", attempts: 1 });
       const last = failed.receipt?.history[0];
@@ -786,13 +844,14 @@ databaseTest(
       const beforeRetry = inbox.messages.length;
       await work();
       expect(inbox.messages).toHaveLength(beforeRetry);
-      log("failed-scheduled", failed.receipt);
+      expect(last?.reason).toBe("Could not connect to the mail server.");
+      log("connection-refused-scheduled", failed.receipt);
       await db.rows("UPDATE outbox SET next_attempt_at=now() WHERE payment_id=$1", [failedId]);
       receiptOutcome = "sent";
       await work();
       const retried = Manual.parse(await rpc("payments.get", { id: failedId }, accountant));
       expect(retried.receipt).toMatchObject({ state: "sent", attempts: 2 });
-      log("failed-retried-after-test-made-row-due", retried.receipt);
+      log("connection-refused-delivered-after-receiver-reopened", retried.receipt);
 
       const suppressedId = await record("manual-suppressed", "c");
       await approve(suppressedId, accountant);
@@ -826,6 +885,31 @@ databaseTest(
       expect(
         Manual.parse(await rpc("payments.get", { id: unknownId }, accountant)).receipt,
       ).toMatchObject({ state: "sent", attempts: 2 });
+      const cappedId = await record("manual-cap", "e");
+      await approve(cappedId, accountant);
+      await approve(cappedId, manager);
+      receiptOutcome = "failed";
+      await work();
+      await rpc("payments.requeueReceipt", { id: cappedId }, accountant, true);
+      await work();
+      const capped = await post(
+        "/api/trpc/payments.requeueReceipt",
+        { json: { id: cappedId } },
+        accountant,
+      );
+      expect(capped.status).toBe(409);
+      const cappedBody: unknown = await capped.json();
+      expect(cappedBody).toMatchObject({
+        error: { json: { data: { accessFailure: "receiptAttemptLimit" } } },
+      });
+      const capDetail = Manual.parse(await rpc("payments.get", { id: cappedId }, accountant));
+      expect(capDetail.receipt).toMatchObject({
+        state: "failed",
+        attempts: 2,
+        nextAttemptAt: null,
+      });
+      expect(capDetail.actions.requeueReceipt).toBe(false);
+      log("lifetime-cap-refused", { refusal: cappedBody, receipt: capDetail.receipt });
     } finally {
       await server.stop();
       await inbox.close();

@@ -157,7 +157,8 @@ test("scope hides other accounts and all ledger lines from agents", async ({ db 
 });
 
 test("checkout request receipts replay and refuse changed input", async ({ db }) => {
-  const { actor, accountId } = await setup(db);
+  const { actor, accountId, event } = await setup(db);
+  await db.store.receivePaymentWebhook(event);
   const input = { key: "checkout", accountId, money, kind: "first", mode: "normal" } as const;
   const first = await db.store.createPayment(
     actor,
@@ -219,6 +220,10 @@ test("the database refuses second postings, unbalanced postings and ledger mutat
       "INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,side,amount) SELECT gen_random_uuid(),$1,id,CASE WHEN kind='customer' THEN 'credit' ELSE 'debit' END,CASE WHEN kind='customer' THEN 39500 ELSE 39499 END FROM ledger_accounts",
       [transaction],
     );
+    await db.rows(
+      "INSERT INTO outbox(id,payment_id,topic,payload,next_attempt_at,created_at) VALUES (gen_random_uuid(),$1,'paymentCompleted','{}',now(),now())",
+      [second],
+    );
     await expect(db.rows("COMMIT")).rejects.toMatchObject({
       code: "23514",
       constraint: "ledger_posting_balanced",
@@ -226,12 +231,17 @@ test("the database refuses second postings, unbalanced postings and ledger mutat
   } finally {
     await db.rows("ROLLBACK");
   }
-  await expect(
-    db.rows(
-      "UPDATE payments SET status='completed',completed_by='reconciler',decided_at=now() WHERE id=$1",
-      [second],
-    ),
-  ).rejects.toMatchObject({ code: "23514", constraint: "payment_posting_required" });
+  await db.rows("BEGIN; SET CONSTRAINTS payment_posting_required IMMEDIATE");
+  try {
+    await expect(
+      db.rows(
+        "UPDATE payments SET status='completed',completed_by='reconciler',decided_at=now() WHERE id=$1",
+        [second],
+      ),
+    ).rejects.toMatchObject({ code: "23514", constraint: "payment_posting_required" });
+  } finally {
+    await db.rows("ROLLBACK");
+  }
   expect(await counts(db)).toEqual([{ postings: 1, lines: 2, total: "0", outbox: 1 }]);
 });
 

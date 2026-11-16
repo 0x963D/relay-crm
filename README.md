@@ -346,7 +346,7 @@ The planned journeys are:
 
 Other work not built:
 
-- The email connector beyond sign-in code delivery.
+- A general email connector beyond sign-in codes and payment receipts.
 - The audit viewer.
 - Quota distribution.
 - Whitelabel theming.
@@ -416,7 +416,7 @@ repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-
 A payment credits its account exactly once. Webhooks, reconciliation and the final manual approval
 call one settle function. It writes the payment, balanced ledger posting, audit and completion
 outbox row in the same transaction. The [card race](packages/store/test/payments.int.test.ts) and
-[manual approval race](packages/store/test/manual-payments.int.test.ts) prove this on PostgreSQL.
+[manual approval race](packages/store/test/manual-payments.int.test.ts) exercise this on PostgreSQL.
 Run them with `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
 
 ### Card payments
@@ -470,7 +470,8 @@ Run `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments
 for expiry, missing checkouts and staff closure.
 
 PostgreSQL checks the payment state shape and transitions. Deferred constraint triggers require a
-completed payment to have a posting with balanced lines matching its account, currency and amount.
+completed payment to have a posting with balanced lines matching its account, currency and amount,
+and exactly one outbox row. Outbox rows cannot be deleted, truncated or moved to another payment.
 The unique payment index refuses another posting. Triggers refuse updates, deletes and truncation on ledger
 accounts, postings and lines. Settlement writes the state, posting, audit and `paymentCompleted`
 outbox row in the same transaction. The worker delivers the receipt after commit.
@@ -479,7 +480,7 @@ A replay writes no new state, posting, audit or outbox row; delivery/check histo
 Run `pnpm reconcile` using the repository environment. A scheduler can instead send
 `POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`.
 The reconcile HTTP route returns only `checked` and `changed` counts. The outbox HTTP route returns
-only `processed`, `sent`, `failed`, `suppressed` and `unknown` counts. Neither returns record IDs.
+only `processed`, `sent`, `failed`, `suppressed`, `unknown`, `superseded` and `recordingFailed` counts. Neither returns record IDs.
 `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts` verifies that.
 Both reconcile entry points scan candidates outside settlement, then claim each due payment with a conditional update.
 A competing job that loses the claim skips the provider call. The claim moves `nextCheckAt` forward,
@@ -500,35 +501,54 @@ through the production API. Its `LIVE_PAYMENT` output records each event log, po
 ### Manual payments
 
 `payments.recordManual` takes `accountId`, an idempotency `key`, positive minor-unit `amount`,
-`currency`, `kind`, a lowercase SHA-256 `receiptHash` and an optional `reference`. It stores the
-hash, not the receipt file. The owning agent or another person with account edit access may record
-it. The payment starts in `pendingApproval`. Partial unique indexes allow one waiting manual
-payment per account and one live payment per receipt hash. Rejected and cancelled payments release
-the receipt hash. Reusing the original request key replays its stored result.
+`currency`, `kind`, a `receiptHash` of 64 lowercase hexadecimal characters and an optional
+`reference`. The caller supplies the hash. The app compares it as a string to prevent the same
+receipt being entered twice by mistake. It stores no receipt file, does not check that a file
+exists, and does not prove that a transfer happened. Two independent approvers checking the
+payment are the control. Two approvers acting together can approve a fabricated receipt.
 
-`payments.approve` takes `id`, the displayed terms `version` and the signed-in person's `roleVersion`
-from `payments.get`. Two different accountants, managers, admins or owners must approve. The
-recorder cannot approve. The second approval calls settlement inside its approval transaction.
-Manual settlement debits "Bank transfers and cash" and credits the customer. There is no posting
-before the second approval. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts`
-for the approval count, recorder refusal, role invalidation, duplicate account and receipt races,
-edit collision, direct SQL refusal and agent scope checks.
+The owning agent or another person with account edit access may record a payment. It starts in
+`pendingApproval`. One partial unique index allows one payment in progress per account across
+`pendingApproval` and `checkoutCreated`. A second manual payment or card checkout returns
+`pendingPayment` with "This account already has a payment in progress."
+Another index allows one live manual payment per receipt hash. Rejected and cancelled payments
+release the hash. A person who already holds a receipt hash and can submit a payment can learn
+whether a live payment uses it, because `receiptUsed` must explain the duplicate refusal.
+Reusing the original request key replays its stored result.
 
-Each approval records its approver, role version and time. A role-change trigger increments the
-user's role version and voids that person's approvals on waiting payments. Completed payments keep
-their historical approvals. The approving transaction reloads roles and versions. A database
-constraint independently requires two valid approvals at completion.
+`payments.approve` takes `id`, the displayed terms `version` and the signed-in person's
+`roleVersion` from `payments.get`. Two different accountants, managers, admins or owners must
+approve. Neither the recorder nor the person who last edited the terms may approve. The second
+approval calls settlement inside its approval transaction. Manual settlement debits
+"Bank transfers and cash" and credits the customer. There is no posting before the second approval.
 
-`payments.get` and `payments.list` include the recorder, approval history, reasons a person cannot
-approve and the signed-in person's actions. Typed errors distinguish `pendingPayment`, `receiptUsed`,
-`paymentRecorder`, `alreadyApproved`, `roleChanged` and `refreshConflict`. The last tells the caller
-to refresh. `payments.editManual` accepts new money, receipt hash and reference only while the
-payment waits without valid approvals. It checks the displayed terms version. Editing and approving
-serialize on the payment, and the stale operation refuses the change.
+Each approval records its approver, role version, payment version and time. A role-change trigger
+increments the user's role version and voids that person's approvals on waiting payments.
+Completed payments keep their historical approvals. The approving transaction reloads both
+approvers' roles and versions. The database checks eligibility on approval insert and independently
+requires two current approvals from people other than the makers at completion. User emails are
+unique ignoring case. The email migration refuses existing case-insensitive duplicates.
 
+`payments.editManual` accepts money, receipt hash and reference while the payment waits. The
+account is immutable. The edit checks the displayed version, stores the last editor, increments
+the version and voids every active approval in the same transaction. Earlier approvals therefore
+cannot approve the new terms. Editing and approval serialize on the payment. A request whose
+terms version became stale must refresh. The maker migration recovers earlier editors from payment
+events and refuses edited records whose editor history is missing.
+
+`payments.get` and `payments.list` include the recorder, last editor ID, approval history and the
+signed-in person's actions. Typed errors include `pendingPayment`, `receiptUsed`, `paymentRecorder`,
+`paymentMaker`, `alreadyApproved`, `roleChanged` and `refreshConflict`.
 `payments.reject` and `payments.cancel` take `id`, `version` and a nonempty written `reason`.
-The recorder or a person with approval access may use them while the payment waits. Both are final
-states with no credit. The event log and audit retain the actor, reason and HTTP request ID.
+Only the recorder may cancel. Only someone with approval access who is neither maker may reject.
+Both decisions are final and credit nothing. Events and audits retain the actor, reason and request ID.
+
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts packages/store/test/payment-guards.int.test.ts`
+for approval races, maker refusals, role versions, term changes, account and receipt collisions,
+standalone truncate guards, direct SQL refusals and active-approval uniqueness.
+`pnpm test:mutations <output-directory> <name-prefix>` removes the selected guards, requires their
+named behavior tests to fail, restores the source and reruns the baseline. The optional prefix
+selects mutations such as `payment-`, `receipt-lease` or `truncate-`.
 
 ### Receipt delivery
 
@@ -538,34 +558,49 @@ The route is disabled without its secret or SMTP configuration. Sign-in codes ke
 mailer path.
 
 The worker claims due rows with `FOR UPDATE SKIP LOCKED` and stores a lease token and expiry.
-It sends outside the settlement transaction. A PostgreSQL session advisory lock also excludes
-another live sender while the first holds the connection, even after lease expiry. A worker lost
-after leasing leaves a pending row that becomes eligible again. Before calling SMTP, the worker
-records an unknown attempt. A worker lost during delivery therefore leaves an uncertain outcome
-that does not retry automatically. The mailer aborts when the lock connection fails.
+An unexpired lease prevents another lease or a requeue. Sending happens outside the transaction.
+The worker aborts each send within `RELAY_RECEIPT_SEND_TIMEOUT_MS`, default 30000 milliseconds,
+including time spent preparing its attempt. `RELAY_RECEIPT_LEASE_MS` defaults to 60000 milliseconds.
+Settings refuse a send timeout that is not shorter than the lease. The SMTP transport closes its
+connection on abort. This lease and timeout exclude simultaneous sends even if the worker's
+database session disappears. There is no session advisory lock.
 
-| Outcome      | What happens next                                                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------- |
-| `sent`       | SMTP confirmed acceptance. No retry. Acceptance does not prove inbox placement.                               |
-| `suppressed` | The address is in `email_suppressions`. No mail is sent. The stored reason is returned.                       |
-| `failed`     | A confirmed refusal or connection failure retries after 5, 10 and 20 minutes, then stops after four attempts. |
-| `unknown`    | The connection ended without confirmation. No automatic retry, because the receipt may have arrived.          |
+Delivery is at most once per attempt. A crash after leasing but before recording an attempt leaves
+a pending row that becomes eligible after lease expiry. A crash between recording the attempt and
+the send leaves the receipt unsent until a person requeues it. A crash after the send leaves a sent
+receipt marked `unknown`. Once the sent outcome commits, the worker will not retry it.
+A duplicate needs a person to requeue a receipt that had in fact arrived.
 
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/outbox.int.test.ts`
-for the retry schedule, maximum attempts, worker collisions, expired leases, suppression and manual
-requeue. `pnpm exec vitest run --project unit apps/web/test/mailer.test.ts` exercises real local SMTP
-acceptance, refusal and connection loss. Every retry sends the same `Message-ID`, derived from the
-outbox ID. Downstream deduplication depends on the mail server; SMTP does not provide exactly-once
-delivery.
+| State        | Behavior                                                                                                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sent`       | SMTP confirmed acceptance. No retry. Acceptance does not prove inbox placement.                                                                                                                         |
+| `suppressed` | The address is suppressed, or no address exists. No send or retry. A missing address records "no address".                                                                                              |
+| `failed`     | A failure before DATA, including connection refusal, DNS failure and greeting timeout, or a clear SMTP refusal. Retries after 5, 10 and 20 minutes, up to four attempts per cycle and the lifetime cap. |
+| `unknown`    | DATA was sent without a clear answer, or the worker stopped before recording the outcome. No automatic retry.                                                                                           |
 
-The payment read API returns receipt state, recipient, attempt history and next retry time.
-Accountants, managers, admins and owners may call `payments.requeueReceipt` with the payment `id`
-for a failed or unknown receipt. It records an audit and event, starts another bounded retry cycle,
-and preserves total attempts and the message identity. It refuses an active lease or a sender that still holds its session lock.
+The SMTP adapter observes whether message data started. A connection error's command can still be
+`CONN` after DATA, so its code alone cannot establish that retrying is safe. If recording one
+outcome fails, the worker leaves the attempt unknown, records a `receiptRecordingFailed` event and
+continues the batch. If the database also refuses that event, the worker result says the failure
+could not be recorded. A lost lease token produces `superseded`, not a claim that the send was recorded.
+
+`RELAY_RECEIPT_LIFETIME_ATTEMPTS` defaults to 12. Automatic retries and manual requeues share this
+limit. The payment API returns receipt state, recipient, attempts, history and the next retry time.
+Accountants, managers, admins and owners may call `payments.requeueReceipt` with a payment `id`
+for a failed or unknown receipt whose lease has ended. Every accepted requeue records an audit and
+event, starts a new retry cycle and preserves the lifetime attempt count. At the cap, it returns
+`receiptAttemptLimit` with "This receipt has reached its lifetime attempt limit."
 Receipt delivery never changes payment completion or the ledger.
 
-`pnpm test:prod` signs in through a local SMTP receiver, records a manual payment, refuses another
-waiting payment for its account, approves as different people and reads the posting and balance.
-Its `LIVE_MANUAL` output includes the received plain-text receipt, failure schedule, suppressed
-address and unknown outcome. The test checks the real retry delay, then makes only its fixture row
-due to exercise delivery again without waiting. It also verifies authorized requeue over HTTP.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/outbox.int.test.ts`
+for retry timing, attempt limits, worker collisions, database-session loss, suppression, failed
+outcome recording and audited requeue. `pnpm exec vitest run --project unit apps/web/test/mailer.test.ts`
+uses local SMTP and DNS servers for acceptance, refusal, timeouts and connection loss. Every attempt
+uses the same Message-ID derived from the outbox ID. A mail server may deduplicate it, but SMTP
+does not guarantee exactly-once delivery.
+
+`pnpm test:prod` signs people in through a local SMTP receiver and exercises the production HTTP
+API in demo mode. Its `LIVE_MANUAL` output records an editor's refused approval, completion by two
+other people, a card checkout refused while a manual payment waits, a refused SMTP connection,
+delivery after the receiver restarts, suppression, unknown delivery and a lifetime-cap refusal.
+The retry test checks the stored delay, then makes only its fixture row due to avoid waiting.

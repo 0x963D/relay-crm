@@ -97,7 +97,6 @@ test("two reconcilers scanning the same candidates read each provider payment on
   db,
 }) => {
   const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
-  const accountId = await db.seedAccount();
   const adapter = sandboxProvider(db.store, env);
   const ids = [];
   for (let i = 0; i < 3; i += 1) {
@@ -105,7 +104,7 @@ test("two reconcilers scanning the same candidates read each provider payment on
       actor,
       {
         key: String(i),
-        accountId,
+        accountId: await db.seedAccount(),
         money: { minor: 100n, currency: "GBP" },
         kind: "repeat",
         mode: "drop",

@@ -54,6 +54,10 @@ export async function openSmtpInbox(
     url: `smtp://127.0.0.1:${String(address.port)}`,
     messages,
     activeConnections: () => sockets.size,
+    reopen: async () => {
+      server.listen(address.port, "127.0.0.1");
+      await once(server, "listening");
+    },
     close: async () => {
       for (const socket of sockets) socket.destroy();
       const closed = once(server, "close");

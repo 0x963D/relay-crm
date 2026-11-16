@@ -158,7 +158,7 @@ test.for(["account", "receipt"] as const)(
     });
   },
 );
-test("editing races approval and the stale operation must refresh", async ({ db }) => {
+test("editing races approval and leaves no active approval on changed terms", async ({ db }) => {
   const w = await setup(db);
   const results = await collision(db, () => [
     db.store.editManualPayment(
