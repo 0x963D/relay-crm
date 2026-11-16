@@ -18,7 +18,8 @@ export function transactionConnection(db: Db, tx: Tx): Db {
         return () => {
           throw new Error("A bound seed connection cannot open a transaction. Use transact.");
         };
-      return Reflect.get(tx, key, tx);
+      const value: unknown = Reflect.get(tx, key, tx);
+      return value;
     },
   });
   boundTransactions.set(bound, tx);
