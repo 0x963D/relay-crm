@@ -58,6 +58,10 @@ export async function accessibility(page: Page, label: string) {
   await mkdir(browserDirectory, { recursive: true });
   await writeFile(join(browserDirectory, `axe-${label}.json`), JSON.stringify(results, null, 2));
   expect(results.violations, `${label} accessibility violations`).toEqual([]);
+  expect(
+    results.incomplete.filter((rule) => rule.id !== "color-contrast"),
+    `${label} unresolved accessibility structure`,
+  ).toEqual([]);
 }
 export async function latestCode() {
   const { inbox } = browserState();

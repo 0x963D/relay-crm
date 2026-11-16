@@ -433,7 +433,7 @@ export function LeadDetail({
                   value={tabValue}
                   aria-labelledby={undefined}
                   aria-label="Lead work"
-                  role={mode === "attempt" || mode === "close" ? "tabpanel" : undefined}
+                  role={mode === "attempt" || mode === "close" ? "tabpanel" : "region"}
                 >
                   {mode === "attempt" && (
                     <>

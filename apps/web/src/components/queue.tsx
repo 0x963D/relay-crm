@@ -192,7 +192,7 @@ export function QueueScreen({
         )}
       </header>
       <div className="md workspace-queue" data-detail={params.has("lead")}>
-        <div className="pane queue-list" aria-label="Work queue">
+        <section className="pane queue-list" aria-label="Work queue">
           {remote.status === "loading" ? (
             <Loading />
           ) : remote.status === "error" ? (
@@ -297,7 +297,7 @@ export function QueueScreen({
             </Button>
           )}
           {moreError && <Refusal>{moreError}</Refusal>}
-        </div>
+        </section>
         <section className="pane pane--side scroll" aria-label="Lead detail" tabIndex={0}>
           {selectedId ? (
             <LeadDetail
