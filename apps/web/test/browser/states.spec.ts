@@ -23,7 +23,9 @@ test("WhatsApp attempts, lost reasons and wrong-number refusals use the real com
   await page.getByRole("button", { name: "Assign 2 leads to Dele Akinwale", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "2 leads were assigned" })).toBeVisible();
   await page.getByRole("link", { name: "Agent queues", exact: true }).click();
-  await page.getByLabel("View agent queue").selectOption({ label: "Dele Akinwale · Sales" });
+  await page
+    .getByRole("combobox", { name: "View agent queue", exact: true })
+    .selectOption({ label: "Dele Akinwale · Sales" });
   await expect(
     page.getByRole("heading", { name: "Dele Akinwale's queue", exact: true }),
   ).toBeVisible();
@@ -43,9 +45,13 @@ test("WhatsApp attempts, lost reasons and wrong-number refusals use the real com
   await expect(
     page.getByRole("status").filter({ hasText: "No-answer attempt saved" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Lead detail")).toContainText("WhatsApp attempt");
+  await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
+    "WhatsApp attempt",
+  );
   await page.getByRole("button", { name: "Close lead", exact: true }).click();
-  await page.getByLabel("Why was it lost?", { exact: true }).fill("Chose a school closer to home.");
+  await page
+    .getByRole("textbox", { name: "Why was it lost?", exact: true })
+    .fill("Chose a school closer to home.");
   await page.getByRole("button", { name: "Close as lost", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Lead closed as lost" })).toBeVisible();
   await page.getByRole("link", { name: `Open Dead Journey`, exact: true }).click();
@@ -202,7 +208,9 @@ test("a failed paged read keeps the pool and names the failed read", async ({ pa
     .count();
   await page.route(/\/api\/trpc\/.*leads\.pool/, (route) => route.abort("connectionrefused"));
   await page.getByRole("button", { name: "Show more leads", exact: true }).click();
-  await expect(page.getByText("More leads could not be loaded", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "More leads could not be loaded" }),
+  ).toBeVisible();
   await expect(
     page
       .getByRole("table", { name: "Unassigned leads" })
@@ -228,14 +236,14 @@ test("a failed refresh reports the read failure after a successful save", async 
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Note added" })).toBeVisible();
   await expect(
-    page.getByText("The latest lead could not be loaded", { exact: true }),
+    page.getByRole("alert").filter({ hasText: "The latest lead could not be loaded" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
   await page.unrouteAll();
   await page.getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(
-    page.getByText("Saved while the refresh is unavailable.", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
+    "Saved while the refresh is unavailable.",
+  );
 });
 
 test("empty and failed workspaces tell the viewer what happened", async ({ page }) => {
@@ -282,9 +290,13 @@ test("empty and failed workspaces tell the viewer what happened", async ({ page 
   await expect(
     page.getByRole("heading", { name: "Dele Akinwale has no open leads", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("You have no open leads", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "You have no open leads", exact: true }),
+  ).toHaveCount(0);
   await page.goto(`${browserState().url}/agents/00000000-0000-7000-8000-000000000101`);
-  await expect(page.getByText("You cannot open this queue", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "You cannot open this queue", exact: true }).first(),
+  ).toBeVisible();
   const deniedRole = await page.request.post(`${browserState().url}/api/auth/demo`, {
     headers: { origin: browserState().url },
     data: { role: "accountant" },

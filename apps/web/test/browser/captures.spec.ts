@@ -22,12 +22,14 @@ async function frameCapture(page: Page) {
 test("@capture every lead-work screen in both themes", async ({ page }) => {
   const capture = await frameCapture(page);
   await page.goto(browserState().signInUrl);
-  await page.getByLabel("Work email").fill("priya.raman@tidewell.example");
+  await page
+    .getByRole("textbox", { name: "Work email", exact: true })
+    .fill("priya.raman@tidewell.example");
   await capture("01-email");
   await page.getByRole("button", { name: "Send me a code", exact: true }).click();
-  await page.getByLabel("6-digit code").fill("417");
+  await page.getByRole("textbox", { name: "6-digit code", exact: true }).fill("417");
   await capture("02-code");
-  await page.getByLabel("6-digit code").fill("000000");
+  await page.getByRole("textbox", { name: "6-digit code", exact: true }).fill("000000");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "You could not sign in" })).toBeVisible();
   await capture("15-code-refused");
@@ -56,7 +58,9 @@ test("@capture every lead-work screen in both themes", async ({ page }) => {
     await page.getByRole("checkbox", { name: `Select ${name}`, exact: true }).check();
   await page.getByRole("tab", { name: "Round-robin", exact: true }).click();
   await page.getByRole("button", { name: "Preview 12 leads", exact: true }).click();
-  await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toContainText(
+    "Not assigned yet",
+  );
   await capture("04-preview");
   const agents = await rpc(page).leads.agents.query({});
   const pool = await rpc(page).leads.pool.query({ limit: 100 });
@@ -151,12 +155,16 @@ test("@capture empty and refused workspaces in both themes", async ({ page }) =>
   const inaccessible = pool.rows[0];
   if (!dele || !receiving || !inaccessible) throw new Error("Missing fixture");
   await page.goto(`${browserState().url}/agents/00000000-0000-7000-8000-000000000101`);
-  await expect(page.getByText("You cannot open this queue", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "You cannot open this queue", exact: true }).first(),
+  ).toBeVisible();
   await capture("15-queue-failed");
   await page.getByRole("radio", { name: "Agent", exact: true }).click();
   await expect(page.getByRole("heading", { name: "My queue", exact: true })).toBeVisible();
   await page.goto(`${browserState().url}/queue/leads/${inaccessible.id}`);
-  await expect(page.getByText("You cannot open this lead", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "You cannot open this lead", exact: true }),
+  ).toBeVisible();
   await capture("15-lead-refused");
   await page.goto(`${browserState().url}/queue`);
   await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
@@ -214,7 +222,7 @@ test("@capture empty and refused workspaces in both themes", async ({ page }) =>
   expect(role.status()).toBe(200);
   await page.goto(`${browserState().url}/pool`);
   await expect(
-    page.getByText("Accountant screens are not built yet", { exact: true }),
+    page.getByRole("heading", { name: "Accountant screens are not built yet", exact: true }),
   ).toBeVisible();
   await capture("15-pool-failed");
 });

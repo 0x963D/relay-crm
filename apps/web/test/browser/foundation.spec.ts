@@ -44,7 +44,7 @@ test("keyboard assignment and attempt preserve focus and drafts", async ({ page 
   await enquiry(page, "Keyboard Journey");
   await page.goto(browserState().url);
   await page.keyboard.press("Tab");
-  await expect(page.getByLabel("Work email")).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Work email", exact: true })).toBeFocused();
   await tabTo(page, page.getByRole("button", { name: "Priya Raman Manager", exact: true }));
   await page.keyboard.press("Enter");
   const select = page.getByRole("checkbox", { name: "Select Keyboard Journey", exact: true });
@@ -96,6 +96,29 @@ test("keyboard assignment and attempt preserve focus and drafts", async ({ page 
     page.getByRole("status").filter({ hasText: "No-answer attempt saved" }),
   ).toBeFocused();
   await announcement(page, "status", "No-answer attempt saved", "attempt");
+  await tabTo(page, page.getByRole("button", { name: "Set callback", exact: true }));
+  await page.keyboard.press("Enter");
+  const day = page.getByLabel("Day", { exact: true });
+  await tabTo(page, day);
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  await page.keyboard.type(
+    `${tomorrow.slice(5, 7)}${tomorrow.slice(8, 10)}${tomorrow.slice(0, 4)}`,
+  );
+  await expect(day).toHaveValue(tomorrow);
+  const time = page.getByLabel("Time", { exact: true });
+  await tabTo(page, time);
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.type("0930");
+  await page.keyboard.press("a");
+  await expect(time).toHaveValue("09:30");
+  await tabTo(page, page.getByRole("button", { name: "Save callback", exact: true }));
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("status").filter({ hasText: "Callback saved" })).toBeFocused();
 });
 
 test("attempts move between queue groups and only a conversation marks contacted", async ({
@@ -135,7 +158,7 @@ test("attempts move between queue groups and only a conversation marks contacted
   await page.getByRole("button", { name: "Log an attempt", exact: true }).click();
   await page.getByRole("radio", { name: /^Spoke to them/ }).check();
   await page.getByRole("textbox", { name: "Note", exact: true }).fill("Discussed the course.");
-  await page.getByLabel("Call back", { exact: true }).check();
+  await page.getByRole("checkbox", { name: "Call back", exact: true }).check();
   await page
     .getByLabel("Day", { exact: true })
     .fill(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
@@ -160,7 +183,9 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   for (const name of ["Round First", "Round Second"])
     await page.getByRole("checkbox", { name: `Select ${name}`, exact: true }).check();
   await page.getByRole("button", { name: "Preview 2 leads", exact: true }).click();
-  await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toContainText(
+    "Not assigned yet",
+  );
   const api = rpc(page);
   const rows = (await api.leads.pool.query({ limit: 100 })).rows.filter((row) =>
     ["Round First", "Round Second"].includes(row.name ?? ""),
@@ -195,7 +220,9 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   await page.getByRole("checkbox", { name: "Select Round Stale", exact: true }).check();
   await page.getByRole("checkbox", { name: "Select Round Remaining", exact: true }).check();
   await page.getByRole("button", { name: "Preview 2 leads", exact: true }).click();
-  await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toContainText(
+    "Not assigned yet",
+  );
   const stale = (await api.leads.pool.query({ limit: 100 })).rows.find(
     (row) => row.name === "Round Stale",
   );
@@ -209,7 +236,9 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   const repreview = page.getByRole("button", { name: "Preview the remaining 1 lead", exact: true });
   await expect(repreview).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toContainText(
+    "Not assigned yet",
+  );
   const remaining = (await api.leads.pool.query({ limit: 100 })).rows.find(
     (row) => row.name === "Round Remaining",
   );
@@ -238,7 +267,7 @@ test("system dark works without JavaScript", async ({ browser }) => {
   await page.goto(browserState().signInUrl);
   await expect(page.getByRole("main")).toHaveCSS("background-color", "rgb(21, 24, 64)");
   await page.keyboard.press("Tab");
-  await expect(page.getByLabel("Work email")).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Work email", exact: true })).toBeFocused();
   await page.screenshot({ path: join(browserDirectory, "nojs-dark.png") });
   await context.close();
 });

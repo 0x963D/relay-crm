@@ -45,8 +45,12 @@ export function localCallback(value: string, timeZone: string): Date | null {
   });
   let candidate = target;
   for (let n = 0; n < 3; n++) {
-    const rendered = formatter.format(candidate).replace(" ", "T");
+    const parts = formatter.formatToParts(candidate);
+    const part = (type: Intl.DateTimeFormatPartTypes, width = 2) =>
+      (parts.find((item) => item.type === type)?.value ?? "").padStart(width, "0");
+    const rendered = `${part("year", 4)}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
     const difference = target.getTime() - new Date(`${rendered}Z`).getTime();
+    if (!Number.isFinite(difference)) return null;
     if (difference === 0) return candidate;
     candidate = new Date(candidate.getTime() + difference);
   }

@@ -41,7 +41,9 @@ test.describe.serial("lead work journeys", () => {
     const beforeTotal = Object.values(beforeQueue.counts).reduce((a, b) => a + b, 0);
     await page.getByRole("link", { name: `Open ${leadName}`, exact: true }).click();
     await saveAttempt(page, "No answer", "Rang out. Will try tomorrow.");
-    await expect(page.getByLabel("Lead detail")).toContainText("Not contacted");
+    await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
+      "Not contacted",
+    );
     await page.getByRole("button", { name: "Set callback", exact: true }).click();
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
     await page.getByLabel("Day", { exact: true }).fill(tomorrow);
@@ -85,19 +87,23 @@ test.describe.serial("lead work journeys", () => {
 test("emailed-code sign-in and a refused reused code", async ({ page }) => {
   await page.goto(browserState().url);
   await accessibility(page, "sign-in-email");
-  await page.getByLabel("Work email").fill("priya.raman@tidewell.example");
+  await page
+    .getByRole("textbox", { name: "Work email", exact: true })
+    .fill("priya.raman@tidewell.example");
   await page.getByRole("button", { name: "Send me a code", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Enter your code" })).toBeVisible();
   await accessibility(page, "sign-in-code");
   await expect.poll(latestCode).toMatch(/^\d{6}$/);
   const code = await latestCode();
-  await page.getByLabel("6-digit code").fill(code);
+  await page.getByRole("textbox", { name: "6-digit code", exact: true }).fill(code);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Lead pool", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).first().click();
-  await page.getByLabel("Work email").fill("priya.raman@tidewell.example");
+  await page
+    .getByRole("textbox", { name: "Work email", exact: true })
+    .fill("priya.raman@tidewell.example");
   await page.getByRole("button", { name: "Send me a code", exact: true }).click();
-  await page.getByLabel("6-digit code").fill(code);
+  await page.getByRole("textbox", { name: "6-digit code", exact: true }).fill(code);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText(
     "That code did not work",

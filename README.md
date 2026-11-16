@@ -1008,7 +1008,7 @@ Links use normal browser navigation, including modified clicks. Queue layouts st
 the lead changes. Each route segment has loading and error boundaries.
 
 The server resolves the session once per render, starts independent reads through tRPC's query
-options, and streams their dehydrated promises through Suspense. The browser keeps one QueryClient.
+options, and streams results through Suspense into the hydrated cache. The browser keeps one QueryClient.
 Components use the same router-generated options and mutation hooks. A completed save invalidates
 the affected record, queue, pool and agent counts. A business refusal also refreshes those reads.
 A transport failure preserves the draft and its request key for a retry.

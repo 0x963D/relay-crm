@@ -6,17 +6,21 @@ import { settleFrame } from "./support.ts";
 
 test("visible code-entry text meets the board contrast rule", async ({ page }) => {
   await page.goto(browserState().signInUrl);
-  await page.getByLabel("Work email").fill("priya.raman@tidewell.example");
+  await page
+    .getByRole("textbox", { name: "Work email", exact: true })
+    .fill("priya.raman@tidewell.example");
   await page.getByRole("button", { name: "Send me a code", exact: true }).click();
   const measurements = [];
   for (const theme of ["light", "dark"]) {
-    await page.getByLabel("Appearance", { exact: true }).selectOption(theme);
+    await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption(theme);
     for (const state of ["sign-in-code", "code-refused", "code-refused-capture"]) {
-      await page.getByLabel("6-digit code").fill(state === "sign-in-code" ? "417" : "000000");
+      await page
+        .getByRole("textbox", { name: "6-digit code", exact: true })
+        .fill(state === "sign-in-code" ? "417" : "000000");
       if (state !== "sign-in-code") {
         await page.getByRole("button", { name: "Sign in", exact: true }).click();
         await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
-        await page.getByLabel("6-digit code").fill("417");
+        await page.getByRole("textbox", { name: "6-digit code", exact: true }).fill("417");
       }
       await settleFrame(page);
       const pairs = await page.getByRole("main").evaluate((main) =>
