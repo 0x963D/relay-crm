@@ -17,6 +17,7 @@ export function browserState() {
       inbox: z.string(),
       today: z.string(),
       webhookSecret: z.string().optional(),
+      preloadedPaging: z.boolean().optional(),
       reconcileSecret: z.string().optional(),
     })
     .parse(JSON.parse(readFileSync(stateFile, "utf8")));

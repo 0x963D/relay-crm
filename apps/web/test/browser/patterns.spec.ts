@@ -197,7 +197,7 @@ test("an offline save fails immediately, keeps the draft and never replays on re
 });
 
 test("paging keeps the queue, draft and focus through loading and failure", async ({ page }) => {
-  for (let index = 0; index < 25; index++) {
+  for (let index = 0; !browserState().preloadedPaging && index < 25; index++) {
     const response = await page.request.post(`${browserState().url}/api/intake/form`, {
       headers: { "x-forwarded-for": `192.0.2.${String(index + 1)}` },
       data: {

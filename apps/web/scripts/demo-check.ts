@@ -412,6 +412,30 @@ async function check() {
     ledgerBalanceMinor: "118500",
   });
   if (process.argv.includes("--browser")) {
+    const fixture = await docker([
+      ...composeArgs,
+      "exec",
+      "-T",
+      "resetter",
+      "node",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      `import { applyDemoConfiguration } from './apps/web/src/server/env-file.ts';
+       import { composition } from './apps/web/src/server/composition.ts';
+       import { importCsv } from './apps/web/src/server/intake/csv.ts';
+       await applyDemoConfiguration('/run/relay-secrets/reset/config.json');
+       const {store} = composition();
+       try {
+         const csv = ['email,name', ...Array.from({length:25}, (_,i) => 'paging.' + i + '@example.com,Paging ' + i)].join('\\n');
+         const report = await importCsv({intake:store.intake, now:()=>new Date()}, csv);
+         if (report.failures.length) throw new Error(JSON.stringify(report.failures));
+         process.stdout.write(JSON.stringify(report));
+       } finally { await store.close(); }`,
+    ]);
+    record("BROWSER_PAGING_FIXTURE", JSON.parse(fixture.stdout));
+
     const raw: unknown = JSON.parse(
       (
         await docker([
@@ -438,6 +462,7 @@ async function check() {
         inbox,
         today: new Date().toISOString(),
         webhookSecret: keys.RELAY_PAYMENT_WEBHOOK_SECRET,
+        preloadedPaging: true,
         reconcileSecret: keys.RELAY_RECONCILE_SECRET,
       }),
     );
