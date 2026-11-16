@@ -3,6 +3,34 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("saving a note refreshes its record and queue without refreshing agent counts", async ({
+  page,
+}) => {
+  await signIn(page, "manager");
+  const agent = (await rpc(page).leads.agents.query({})).find(
+    (row) => row.name === "Dele Akinwale",
+  );
+  if (!agent) throw new Error("Missing agent");
+  await page.goto(`${browserState().url}/agents/${agent.ownerId}`);
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+  await page.getByRole("button", { name: "Add note", exact: true }).click();
+  await page.getByRole("textbox", { name: "Note", exact: true }).fill("Only this lead changed.");
+  const reads: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "GET" && request.url().includes("/api/trpc/"))
+      reads.push(request.url());
+  });
+  await page.getByRole("button", { name: "Save note", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Note added to the timeline" }),
+  ).toBeFocused();
+  expect(reads.some((url) => url.includes("leads.get"))).toBe(true);
+  expect(reads.some((url) => url.includes("leads.queue"))).toBe(true);
+  expect(reads.some((url) => url.includes("leads.agents") || url.includes("leads.pool"))).toBe(
+    false,
+  );
+});
+
 test("dial and WhatsApp links record attempts without claiming contact", async ({ page }) => {
   await signIn(page, "agent");
   await page.getByRole("link", { name: "Open Bashir Karimi", exact: true }).click();

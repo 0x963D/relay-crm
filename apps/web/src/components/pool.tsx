@@ -51,8 +51,14 @@ export function PoolScreen({ zone }: { zone: string }) {
     await Promise.all([
       client.invalidateQueries({ queryKey: trpc.leads.pool.queryKey() }),
       client.invalidateQueries({ queryKey: trpc.leads.agents.queryKey() }),
-      client.invalidateQueries({ queryKey: trpc.leads.queue.queryKey() }),
-      client.invalidateQueries({ queryKey: trpc.leads.get.queryKey() }),
+      ...recipients.map((agent) =>
+        client.invalidateQueries({
+          queryKey: trpc.leads.queue.queryKey({ agentId: agent.ownerId }),
+        }),
+      ),
+      ...selected.map((id) =>
+        client.invalidateQueries({ queryKey: trpc.leads.get.queryKey({ id }) }),
+      ),
     ]);
   }
   async function failed(error: unknown) {

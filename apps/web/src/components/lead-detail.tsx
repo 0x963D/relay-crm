@@ -47,20 +47,28 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
     if (message?.kind === "error") refusal.current?.focus();
     if (message?.kind === "success") feedback.current?.focus();
   }, [message]);
-  async function refresh() {
+  async function refresh(closed = false) {
     await Promise.all([
       client.invalidateQueries({ queryKey: trpc.leads.get.queryKey({ id }) }),
-      client.invalidateQueries({ queryKey: trpc.leads.queue.queryKey() }),
-      client.invalidateQueries({ queryKey: trpc.leads.pool.queryKey() }),
-      client.invalidateQueries({ queryKey: trpc.leads.agents.queryKey() }),
+      ...(lead.custody.heldBy
+        ? [
+            client.invalidateQueries({
+              queryKey: trpc.leads.queue.queryKey({ agentId: lead.custody.heldBy.id }),
+            }),
+          ]
+        : []),
+      ...(closed ? [client.invalidateQueries({ queryKey: trpc.leads.agents.queryKey() })] : []),
+      ...(closed && state.status === "new"
+        ? [client.invalidateQueries({ queryKey: trpc.leads.pool.queryKey() })]
+        : []),
     ]);
   }
   async function failed(error: unknown) {
     setMessage({ kind: "error", text: failureMessage(error) });
     if (failureCode(error)) await refresh();
   }
-  async function saved(text: string) {
-    await refresh();
+  async function saved(text: string, closed = false) {
+    await refresh(closed);
     setMode(null);
     setRevision((value) => value + 1);
     setMessage({ kind: "success", text });
@@ -108,12 +116,16 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
   const close = useMutation(
     trpc.leads.close.mutationOptions({
       onError: failed,
-      onSuccess: (data, input) =>
-        saved(
+      onSuccess: async (data, input) => {
+        if (data.accountId)
+          await client.invalidateQueries({ queryKey: trpc.accounts.list.queryKey() });
+        await saved(
           data.accountId
             ? "Lead won. An account was opened and keeps this history."
             : `Lead closed as ${input.closing.kind}. It has left the open queue.`,
-        ),
+          true,
+        );
+      },
     }),
   );
   const busy =
