@@ -7,6 +7,51 @@ import { readAccountLedger } from "../src/payments.ts";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
+
+test("account detail returns scoped customer metadata and the payment in progress", async ({
+  db,
+}) => {
+  const agent = await person(db, "agent");
+  const manager = await person(db, "manager");
+  const stranger = await person(db, "agent");
+  const accountId = await account(db, agent);
+  const teamId = await db.seedTeam("sales");
+  const leadId = await db.seedLead({
+    email: "account-detail@example.com",
+    lifecycle: {
+      state: { status: "won", assignee: { ownerId: agent.userId, teamId }, accountId },
+      firstAssignedAt: new Date(),
+      previousOwnerId: null,
+    },
+  });
+  await db.rows("UPDATE leads SET name='Account Customer' WHERE id=$1", [leadId]);
+  const pending = await db.store.recordManualPayment(
+    manager,
+    {
+      accountId,
+      key: randomUUID(),
+      money,
+      kind: "first",
+      receiptHash: "d".repeat(64),
+      reference: "Bank transfer",
+    },
+    randomUUID(),
+  );
+  const view = await db.store.getAccount(agent, accountId);
+  expect(view).toMatchObject({
+    person: { name: "Account Customer", email: "account-detail@example.com" },
+    mayEdit: true,
+    balances: null,
+    pendingPayment: { id: pending.id, money, method: "manual", recordedBy: { id: manager.userId } },
+  });
+  expect(await db.store.getAccount(manager, accountId)).toMatchObject({
+    balances: [],
+    paymentCount: 1,
+  });
+  await expect(db.store.getAccount(stranger, accountId)).rejects.toMatchObject({
+    code: "accessDenied",
+  });
+});
 async function person(db: TestDatabase, role: Role): Promise<Actor> {
   return { userId: await db.seedUser(role), role, team: null };
 }
