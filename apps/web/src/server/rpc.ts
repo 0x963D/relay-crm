@@ -165,13 +165,7 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ctx.store.listPayments(ctx.actor, input.limit)),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
-      .query(async ({ ctx, input }) => {
-        const result = await ctx.store.getPayment(ctx.actor, input.id);
-        return {
-          ...result,
-          checkoutPath: result.method === "card" ? `/sandbox/checkout/${input.id}` : null,
-        };
-      }),
+      .query(({ ctx, input }) => ctx.store.getPayment(ctx.actor, input.id)),
     closeCheckout: authenticated
       .input(
         z

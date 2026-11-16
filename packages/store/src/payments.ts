@@ -199,8 +199,13 @@ export async function checkoutTerms(db: Db, actor: Actor, id: PaymentId) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const row = required(await tx.payment.findUnique({ where: { id } }));
-    // A replay may finish provider creation after account ownership changed, but only for its recorder.
-    if (row.recordedById !== current.userId) throw new AccessError("accessDenied");
+    if (
+      row.recordedById !== current.userId ||
+      !(await tx.account.findFirst({
+        where: { id: row.accountId, ...scopeWhere(recordScope(current, "account", "edit")) },
+      }))
+    )
+      throw new AccessError("accessDenied");
     const mode = row.sandboxMode;
     if (
       mode !== "normal" &&

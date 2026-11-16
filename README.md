@@ -398,7 +398,13 @@ in minor units, `currency`, `kind` of `first` or `repeat`, and an optional sandb
 Modes are `normal`, `drop`, `twice`, `late` and `differentAmount`. The last reports an amount greater
 than the requested amount. The returned checkout URL has a plain pay form. The account's existing
 edit scope decides who may create it. The request receipt is immutable; a replay can retry provider
-checkout creation after an interrupted request. The provider uses the payment ID as its checkout key.
+checkout creation after an interrupted request. The provider gives each checkout its own random ID.
+The pay URL contains a random bearer token. Only its SHA-256 hash is stored. Only the authorized
+creation response returns the URL. Later reads and creation replays return no token or pay URL.
+If that response is lost after provider creation, close the waiting payment and create another.
+The migration invalidates old payment-ID links. Creation replays recheck current account edit access.
+`pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts` checks
+that an accountant cannot pay with a disclosed payment ID, and that tokens use 32 random bytes.
 `recordedById` and `soldById` are fixed at creation.
 
 `payments.list` groups scoped results as `waitingForApproval`, `waitingForProvider`, `needsReview`

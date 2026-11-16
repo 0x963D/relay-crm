@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { PaymentId, isCurrencyCode, type PaymentProvider } from "@relay/domain";
+import { isCurrencyCode, type PaymentProvider } from "@relay/domain";
 import type { Store } from "@relay/store";
 import type { PaymentEnv } from "../env.ts";
 import { signPaymentBody } from "./webhook.ts";
@@ -13,7 +13,7 @@ export function sandboxProvider(store: Store, env: PaymentEnv): PaymentProvider 
         ...input,
         expiresAt: new Date(Date.now() + env.checkoutTtlMs),
       });
-      return { id: row.id, url: `${env.baseUrl}/sandbox/checkout/${row.id}` };
+      return { id: row.id, url: row.token ? `${env.baseUrl}/sandbox/checkout/${row.token}` : null };
     },
     cancelCheckout: (id) => store.cancelSandboxCheckout(id),
     readPayment: async (id) => {
@@ -37,8 +37,7 @@ export function sandboxCheckout(
   defer: (task: () => Promise<void>) => void,
 ) {
   return async (request: Request, id: string): Promise<Response> => {
-    if (!PaymentId.is(id)) return new Response(null, { status: 404 });
-    const row = await store.getSandboxCheckout(id);
+    const row = await store.getSandboxCheckoutByToken(id);
     if (!row) return new Response(null, { status: 404 });
     if (request.method === "GET") {
       return new Response(
@@ -62,7 +61,7 @@ export function sandboxCheckout(
         const body = new TextEncoder().encode(
           JSON.stringify({
             eventId: paid.eventId,
-            paymentId: paid.id,
+            paymentId: paid.paymentId,
             status: paid.status,
             amount: paid.amount.toString(),
             currency: paid.currency,

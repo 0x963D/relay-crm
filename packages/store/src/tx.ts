@@ -47,6 +47,8 @@ export const RACE_CONSTRAINTS: Readonly<Record<string, "retry" | "reject">> = {
   webhook_inbox_pkey: "retry",
   outbox_pkey: "reject",
   outbox_payment_id_key: "retry",
+  sandbox_checkouts_payment_id_key: "retry",
+  sandbox_checkouts_token_hash_key: "reject",
   sandbox_checkouts_pkey: "retry",
   sandbox_checkouts_event_id_key: "reject",
   _prisma_migrations_pkey: "reject",

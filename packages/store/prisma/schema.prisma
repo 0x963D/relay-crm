@@ -458,7 +458,9 @@ model Outbox {
 
 model SandboxCheckout {
   expiresAt DateTime @default(dbgenerated("(CURRENT_TIMESTAMP + interval '24 hours')")) @map("expires_at") @db.Timestamptz(3)
-  id String @id @db.Uuid
+  id String @id @default(uuid(7)) @db.Uuid
+  paymentId String @unique @map("payment_id") @db.Uuid
+  tokenHash String? @unique @map("token_hash")
   amount BigInt
   currency String
   mode String

@@ -115,7 +115,7 @@ export interface PaymentProvider {
     readonly paymentId: string;
     readonly money: Money;
     readonly mode: SandboxMode;
-  }): Promise<{ readonly id: string; readonly url: string }>;
+  }): Promise<{ readonly id: string; readonly url: string | null }>;
   readPayment(id: string): Promise<ProviderPayment>;
   cancelCheckout(id: string): Promise<void>;
 }

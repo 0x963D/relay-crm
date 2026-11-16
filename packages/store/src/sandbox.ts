@@ -1,6 +1,16 @@
+import { createHash, randomBytes } from "node:crypto";
 import type { Money, SandboxMode } from "@relay/domain";
+import type { SandboxCheckout } from "./generated/client.ts";
 import { transact, type Db } from "./tx.ts";
 
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+function current(row: SandboxCheckout | null) {
+  return row?.status === "pending" && row.expiresAt <= new Date()
+    ? { ...row, status: "expired" }
+    : row;
+}
 export function createSandboxCheckout(
   db: Db,
   input: {
@@ -11,36 +21,46 @@ export function createSandboxCheckout(
   },
 ) {
   return transact(db, async (tx) => {
-    const prior = await tx.sandboxCheckout.findUnique({ where: { id: input.paymentId } });
-    if (prior) return prior;
-    return tx.sandboxCheckout.create({
+    const prior = await tx.sandboxCheckout.findUnique({ where: { paymentId: input.paymentId } });
+    if (prior) return { id: prior.id, token: null };
+    const token = randomBytes(32).toString("base64url");
+    const row = await tx.sandboxCheckout.create({
       data: {
-        id: input.paymentId,
+        paymentId: input.paymentId,
+        tokenHash: tokenHash(token),
         amount: input.money.minor,
         currency: input.money.currency,
         mode: input.mode,
         expiresAt: input.expiresAt ?? new Date(Date.now() + 86400000),
       },
     });
+    return { id: row.id, token };
   });
 }
-export async function getSandboxCheckout(db: Db, id: string) {
-  const row = await db.sandboxCheckout.findUnique({ where: { id } });
-  return row?.status === "pending" && row.expiresAt <= new Date()
-    ? { ...row, status: "expired" }
-    : row;
+export async function getSandboxCheckout(db: Db, paymentId: string) {
+  return current(await db.sandboxCheckout.findUnique({ where: { paymentId } }));
 }
-export async function cancelSandboxCheckout(db: Db, id: string) {
+export async function getSandboxCheckoutByToken(db: Db, token: string) {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  return current(await db.sandboxCheckout.findUnique({ where: { tokenHash: tokenHash(token) } }));
+}
+export async function cancelSandboxCheckout(db: Db, paymentId: string) {
   await transact(db, (tx) =>
-    tx.sandboxCheckout.updateMany({ where: { id, status: "pending" }, data: { status: "failed" } }),
+    tx.sandboxCheckout.updateMany({
+      where: { paymentId, status: "pending" },
+      data: { status: "failed" },
+    }),
   );
 }
-export function paySandboxCheckout(db: Db, id: string) {
+export function paySandboxCheckout(db: Db, token: string) {
   return transact(db, async (tx) => {
-    const row = await tx.sandboxCheckout.findUnique({ where: { id } });
-    if (row?.status !== "pending" || row.expiresAt <= new Date()) return null;
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    const row = current(
+      await tx.sandboxCheckout.findUnique({ where: { tokenHash: tokenHash(token) } }),
+    );
+    if (row?.status !== "pending") return null;
     return tx.sandboxCheckout.update({
-      where: { id },
+      where: { id: row.id },
       data: {
         status: "completed",
         amount: row.mode === "differentAmount" ? row.amount + 1n : row.amount,

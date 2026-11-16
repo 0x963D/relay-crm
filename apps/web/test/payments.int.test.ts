@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import { test } from "@relay/store/testing";
 import { type Actor, type PaymentProvider } from "@relay/domain";
 import { paymentWebhook, signPaymentBody } from "../src/server/payments/webhook.ts";
 import { reconcilePayments } from "../src/server/payments/reconcile.ts";
-import { sandboxProvider } from "../src/server/payments/sandbox.ts";
+import { sandboxCheckout, sandboxProvider } from "../src/server/payments/sandbox.ts";
 import { appRouter } from "../src/server/rpc.ts";
 
 const secret = "fake-sandbox-webhook-secret-for-tests-only";
@@ -111,8 +111,10 @@ test("two reconcilers scanning the same candidates read each provider payment on
       0,
       "00000000-0000-4000-8000-000000000001",
     );
-    await adapter.createCheckout(await db.store.checkoutTerms(actor, id));
-    await db.store.paySandboxCheckout(id);
+    const checkout = await adapter.createCheckout(await db.store.checkoutTerms(actor, id));
+    const token = checkout.url?.split("/").at(-1);
+    if (!token) throw new Error("Missing token");
+    await db.store.paySandboxCheckout(token);
     ids.push(id);
   }
   const { promise: gate, resolve: release } = Promise.withResolvers<boolean>();
@@ -181,7 +183,10 @@ test("the typed payment API enforces scope and retries provider checkout creatio
   };
   await expect(caller.payments.createCheckout(input)).rejects.toThrow("Provider unavailable");
   const created = await caller.payments.createCheckout(input);
-  expect(await caller.payments.createCheckout(input)).toEqual(created);
+  expect(await caller.payments.createCheckout(input)).toEqual({
+    paymentId: created.paymentId,
+    checkout: { id: created.checkout.id, url: null },
+  });
   expect(await db.rows("SELECT * FROM payments")).toHaveLength(1);
   expect(await db.rows("SELECT * FROM sandbox_checkouts")).toHaveLength(1);
   const other = appRouter.createCaller({
@@ -270,9 +275,11 @@ test("an expired checkout cannot be paid and an unknown checkout fails reconcili
       randomUUID(),
     );
   const expired = await create("expires");
-  await adapter.createCheckout(await db.store.checkoutTerms(actor, expired.id));
+  const expiring = await adapter.createCheckout(await db.store.checkoutTerms(actor, expired.id));
+  const token = expiring.url?.split("/").at(-1);
+  if (!token) throw new Error("Missing token");
   await new Promise((resolve) => setTimeout(resolve, 5));
-  expect(await db.store.paySandboxCheckout(expired.id)).toBeNull();
+  expect(await db.store.paySandboxCheckout(token)).toBeNull();
   expect(await adapter.readPayment(expired.id)).toMatchObject({ status: "expired" });
   const missing = await create("missing");
   await reconcilePayments(db.store, adapter, env.intervalMs);
@@ -354,4 +361,83 @@ test("signed malformed JSON is refused as input", async ({ db }) => {
     }),
   );
   expect(response.status).toBe(400);
+});
+
+test("payment readers cannot obtain or use the sandbox pay capability", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const accountId = await db.seedAccount();
+  const provider = sandboxProvider(db.store, env);
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor },
+    payments: { provider, firstCheckMs: 0 },
+  });
+  const created = await caller.payments.createCheckout({
+    key: "capability",
+    accountId,
+    amount: "100",
+    currency: "GBP",
+    kind: "first",
+    mode: "drop",
+  });
+  const accountant: Actor = {
+    userId: await db.seedUser("accountant"),
+    role: "accountant",
+    team: null,
+  };
+  const reader = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor: accountant },
+    payments: { provider, firstCheckMs: 0 },
+  });
+  const view = await reader.payments.get({ id: created.paymentId });
+  const page = sandboxCheckout(db.store, env, () => {
+    throw new Error("Drop mode delivers nothing");
+  });
+  expect(
+    (
+      await page(
+        new Request(`${env.baseUrl}/sandbox/checkout/${view.id}`, {
+          method: "POST",
+          headers: { origin: env.baseUrl },
+        }),
+        view.id,
+      )
+    ).status,
+  ).toBe(404);
+  expect(view).not.toHaveProperty("checkoutPath");
+  if (!created.checkout.url) throw new Error("Missing new pay link");
+  const token = new URL(created.checkout.url).pathname.split("/").at(-1);
+  if (!token) throw new Error("Missing token");
+  expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(created.checkout.id).not.toBe(created.paymentId);
+  expect(
+    await db.rows("SELECT token_hash FROM sandbox_checkouts WHERE payment_id=$1", [
+      created.paymentId,
+    ]),
+  ).toEqual([{ token_hash: createHash("sha256").update(token).digest("hex") }]);
+  const text = JSON.stringify(view, (_key, value: unknown) =>
+    typeof value === "bigint" ? value.toString() : value,
+  );
+  expect(text).not.toContain(token);
+  expect(text).not.toContain("tokenHash");
+  expect(
+    (
+      await page(
+        new Request(created.checkout.url, { method: "POST", headers: { origin: env.baseUrl } }),
+        token,
+      )
+    ).status,
+  ).toBe(303);
+  await reconcilePayments(db.store, provider, env.intervalMs);
+  expect((await reader.payments.get({ id: created.paymentId })).state.status).toBe("completed");
+  await expect(
+    reader.payments.createCheckout({
+      key: "denied",
+      accountId,
+      amount: "100",
+      currency: "GBP",
+      kind: "first",
+    }),
+  ).rejects.toMatchObject({ code: "FORBIDDEN" });
 });

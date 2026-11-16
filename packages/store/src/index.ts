@@ -59,6 +59,7 @@ import type { ProviderPayment, Money, SandboxMode } from "@relay/domain";
 import {
   createSandboxCheckout,
   getSandboxCheckout,
+  getSandboxCheckoutByToken,
   paySandboxCheckout,
   cancelSandboxCheckout,
 } from "./sandbox.ts";
@@ -114,6 +115,7 @@ export function openStore(config: { readonly connectionString: string }) {
       readonly expiresAt?: Date;
     }) => createSandboxCheckout(db, input),
     getSandboxCheckout: (id: string) => getSandboxCheckout(db, id),
+    getSandboxCheckoutByToken: (token: string) => getSandboxCheckoutByToken(db, token),
     paySandboxCheckout: (id: string) => paySandboxCheckout(db, id),
     intake: intakeWith(db) satisfies Intake,
     authenticationDatabase: authenticationDatabase(db),
