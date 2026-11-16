@@ -119,7 +119,7 @@ test.for([
     "00000000-0000-4000-8000-000000000001",
   );
   await db.store.receivePaymentWebhook({ ...event, eventId: randomUUID() });
-  expect((await db.store.getPayment(manager, id)).state.status).toBe("failed");
+  expect((await db.store.getPayment(manager, id)).state.status).toBe("needsReview");
   expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
   const audits = await db.rows("SELECT before FROM audit_log WHERE action='paymentReviewClosed'");
   expect(audits[0]?.before).toMatchObject({
@@ -255,5 +255,25 @@ test.for(["failed", "expired"] as const)(
     await db.store.receivePaymentWebhook({ ...event, observed: { status, money } });
     expect((await db.store.getPayment(manager, id)).state.status).toBe(status);
     expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+  },
+);
+
+test.for(["failed", "expired"] as const)(
+  "a paid report after %s is reviewed without credit",
+  async (status, { db }) => {
+    const { id, event, manager } = await setup(db);
+    await db.store.receivePaymentWebhook({ ...event, observed: { status, money } });
+    await db.store.receivePaymentWebhook({ ...event, eventId: randomUUID() });
+    expect((await db.store.getPayment(manager, id)).state).toMatchObject({
+      status: "needsReview",
+      reason: "paid after close",
+      reported: money,
+    });
+    expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
+    await db.store.closePaymentReview(manager, id, "Returned outside the app", randomUUID());
+    expect((await db.store.getPayment(manager, id)).state).toMatchObject({
+      status: "failed",
+      reason: "Returned outside the app",
+    });
   },
 );

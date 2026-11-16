@@ -14,7 +14,12 @@ it("completes only a matching provider observation and never completes review", 
     at,
     by: "reconciler",
   });
-  const review: PaymentState = { status: "needsReview", reported: { ...money, minor: 1n }, at };
+  const review: PaymentState = {
+    status: "needsReview",
+    reason: "amount mismatch",
+    reported: { ...money, minor: 1n },
+    at,
+  };
   expect(transitionPayment(review, provider, money, at)).toBe(review);
   expect(transitionPayment(review, { type: "closeReview", reason: " " }, money, at)).toBe(review);
   expect(
@@ -37,7 +42,12 @@ it.each([
       money,
       at,
     ),
-  ).toEqual({ status: "needsReview", reported, at });
+  ).toEqual({
+    status: "needsReview",
+    reason: reported.currency !== money.currency ? "currency mismatch" : "amount mismatch",
+    reported,
+    at,
+  });
 });
 it("grants only the payment jobs their narrow system access", () => {
   for (const name of ["intake", "providerWebhook", "reconciler"] as const) {
@@ -83,3 +93,19 @@ it("manual completion needs two approvals and cannot use a provider event", () =
     );
   }
 });
+
+it.each(["failed", "expired"] as const)(
+  "a paid report after %s needs a reasoned review",
+  (status) => {
+    const before: PaymentState =
+      status === "failed" ? { status, reason: "closed", at } : { status, at };
+    expect(
+      transitionPayment(
+        before,
+        { type: "provider", by: "reconciler", result: { status: "completed", money } },
+        money,
+        at,
+      ),
+    ).toEqual({ status: "needsReview", reason: "paid after close", reported: money, at });
+  },
+);

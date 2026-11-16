@@ -48,7 +48,14 @@ function stateOf(row: Payment): PaymentState {
       return { status: row.status, by: row.completedBy, at: required(row.decidedAt) };
     }
     case "needsReview":
+      if (
+        row.reason !== "amount mismatch" &&
+        row.reason !== "currency mismatch" &&
+        row.reason !== "paid after close"
+      )
+        throw new InvariantError("Invalid review reason");
       return {
+        reason: row.reason,
         status: row.status,
         reported: money(required(row.reportedAmount), required(row.reportedCurrency)),
         at: required(row.decidedAt),

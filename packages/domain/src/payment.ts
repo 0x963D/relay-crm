@@ -6,7 +6,12 @@ export type PaymentState =
   | { readonly status: "pendingApproval" }
   | { readonly status: "rejected" | "cancelled"; readonly reason: string; readonly at: Date }
   | { readonly status: "completed"; readonly by: SettlementCaller; readonly at: Date }
-  | { readonly status: "needsReview"; readonly reported: Money; readonly at: Date }
+  | {
+      readonly status: "needsReview";
+      readonly reported: Money;
+      readonly reason: "amount mismatch" | "currency mismatch" | "paid after close";
+      readonly at: Date;
+    }
   | { readonly status: "failed"; readonly reason: string; readonly at: Date }
   | { readonly status: "expired"; readonly at: Date };
 export type PaymentStatus = PaymentState["status"];
@@ -26,6 +31,10 @@ export type PaymentEvent =
   | { readonly type: "closeReview"; readonly reason: string };
 
 type Rule = (state: PaymentState, event: PaymentEvent, expected: Money, at: Date) => PaymentState;
+const paidAfterClose: Rule = (state, event, _expected, at) =>
+  event.type === "provider" && event.result.status === "completed"
+    ? { status: "needsReview", reason: "paid after close", reported: event.result.money, at }
+    : state;
 const RULES: Readonly<
   Record<PaymentStatus, Readonly<Partial<Record<PaymentEvent["type"], Rule | null>>>>
 > = {
@@ -34,7 +43,12 @@ const RULES: Readonly<
       if (event.type !== "provider") return state;
       const { status, money } = event.result;
       if (money.minor !== expected.minor || money.currency !== expected.currency)
-        return { status: "needsReview", reported: money, at };
+        return {
+          status: "needsReview",
+          reason: money.currency !== expected.currency ? "currency mismatch" : "amount mismatch",
+          reported: money,
+          at,
+        };
       switch (status) {
         case "pending":
           return state;
@@ -72,8 +86,8 @@ const RULES: Readonly<
   rejected: {},
   cancelled: {},
   completed: { provider: null, closeReview: null },
-  failed: { provider: null, closeReview: null },
-  expired: { provider: null, closeReview: null },
+  failed: { provider: paidAfterClose, closeReview: null },
+  expired: { provider: paidAfterClose, closeReview: null },
 };
 
 export function transitionPayment(
