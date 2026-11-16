@@ -1,3 +1,4 @@
+import { auditActor } from "./audit.ts";
 import { createHash } from "node:crypto";
 import {
   LeadId,
@@ -88,7 +89,7 @@ async function applyAssignment(
   });
   await tx.auditLog.create({
     data: {
-      actorId: actor.userId,
+      ...auditActor(actor),
       action: "leadAssigned",
       subjectId: item.leadId,
       before: { lifecycle: JSON.stringify(before) },

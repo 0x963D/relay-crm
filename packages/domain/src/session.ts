@@ -11,3 +11,11 @@ export interface Session {
 export type SessionPrincipal =
   | { readonly kind: "session"; readonly session: Session; readonly actor: Actor }
   | { readonly kind: "development"; readonly actor: Actor };
+
+export const SYSTEM_ACTORS = ["intake", "providerWebhook", "reconciler"] as const;
+export type SystemActor = (typeof SYSTEM_ACTORS)[number];
+export interface SystemPrincipal {
+  readonly kind: "system";
+  readonly name: SystemActor;
+}
+export type Principal = SessionPrincipal | SystemPrincipal;

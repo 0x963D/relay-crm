@@ -1,3 +1,4 @@
+import type { SystemPrincipal } from "./session.ts";
 import { AccessError } from "./access-error.ts";
 import type { TeamId, UserId } from "./ids.ts";
 import { assigneeOf, type LeadState } from "./lead.ts";
@@ -30,7 +31,9 @@ export type LeadScope = RecordScope;
 export type LeadAccess = RecordAccess;
 
 type Rule = "all" | "own" | "none" | "team";
-type Rules = Readonly<Record<RecordKind, Readonly<Record<RecordAccess, Rule>>>>;
+type Rules = Readonly<
+  Record<RecordKind, Readonly<Record<Exclude<RecordAccess, "identity" | "reopen">, Rule>>>
+>;
 const management: Rules = {
   lead: { read: "all", edit: "all", assign: "all" },
   account: { read: "all", edit: "all", assign: "all" },
@@ -53,7 +56,22 @@ const RULES: Readonly<Record<Role, Rules>> = {
   },
 };
 
-export function recordScope(actor: Actor, record: RecordKind, access: RecordAccess): RecordScope {
+export function recordScope(
+  actor: Actor | SystemPrincipal,
+  record: RecordKind,
+  access: RecordAccess,
+): RecordScope {
+  if ("kind" in actor) {
+    return {
+      kind:
+        actor.name === "intake" &&
+        record === "lead" &&
+        (access === "identity" || access === "reopen")
+          ? "all"
+          : "none",
+    };
+  }
+  if (access === "identity" || access === "reopen") return { kind: "none" };
   const scope: RecordScope = (() => {
     const rule = RULES[actor.role][record][access];
     if (rule === "all" || rule === "none") return { kind: rule };

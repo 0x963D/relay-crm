@@ -316,9 +316,18 @@ model Distribution {
   @@map("distributions")
 }
 
+enum SystemActor {
+  intake
+  providerWebhook
+  reconciler
+
+  @@map("system_actor")
+}
+
 model AuditLog {
+  systemActor SystemActor? @map("system_actor")
   id        String   @id @default(uuid(7)) @db.Uuid
-  actorId   String   @map("actor_id") @db.Uuid
+  actorId   String?   @map("actor_id") @db.Uuid
   action    String
   subjectId String   @map("subject_id") @db.Uuid
   before    Json

@@ -7,6 +7,8 @@ import {
   type IntakeSource,
   type Lead,
   type LeadLifecycle,
+  type SystemPrincipal,
+  type RecordAccess,
 } from "@relay/domain";
 import { currentActor } from "./auth.ts";
 import { scopeWhere } from "./scope.ts";
@@ -49,15 +51,14 @@ function leadId(value: string): LeadId {
   return id;
 }
 
-/**
- * Intake's view of the lead that holds an email. It is the one read that ignores scope, because
- * identity must see every lead. It returns the ID and the lifecycle, never the record.
- */
 export async function findLeadIdentity(
   tx: Tx,
+  principal: SystemPrincipal,
   email: EmailAddress,
 ): Promise<{ readonly id: LeadId; readonly lifecycle: LeadLifecycle } | null> {
-  const row = await tx.lead.findUnique({ where: { email } });
+  const row = await tx.lead.findFirst({
+    where: { email, AND: scopeWhere(recordScope(principal, "lead", "identity")) },
+  });
   return row === null ? null : { id: leadId(row.id), lifecycle: lifecycleFromRow(row) };
 }
 
@@ -89,9 +90,9 @@ export async function updateLifecycle(tx: Tx, id: LeadId, lifecycle: LeadLifecyc
 
 export async function scopedLead(
   tx: Tx,
-  actor: Actor,
+  actor: Actor | SystemPrincipal,
   id: LeadId,
-  access: "read" | "edit" | "assign",
+  access: RecordAccess,
 ) {
   const row = await tx.lead.findUnique({ where: { id } });
   if (!row || !scopeAdmits(recordScope(actor, "lead", access), lifecycleFromRow(row).state)) {

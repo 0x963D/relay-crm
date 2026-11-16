@@ -82,3 +82,10 @@ export { planDistribution } from "./distribution-plan.ts";
 export { ACCESS_FAILURES } from "./distribution.ts";
 
 export { AccessError } from "./access-error.ts";
+
+export {
+  SYSTEM_ACTORS,
+  type SystemActor,
+  type SystemPrincipal,
+  type Principal,
+} from "./session.ts";
