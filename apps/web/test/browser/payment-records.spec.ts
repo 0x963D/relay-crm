@@ -2,6 +2,25 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("both money forms belong to Payments in the address, header and navigation", async ({
+  page,
+}) => {
+  await signIn(page, "manager");
+  const accounts = await rpc(page).accounts.list.query({ limit: 100 });
+  const id = accounts.items[0]!.id;
+  for (const label of ["Create card checkout", "Record manual payment"]) {
+    await page.goto(`${browserState().url}/accounts/${id}`);
+    await page.getByRole("link", { name: label, exact: true }).click();
+    await expect(page).toHaveURL(/\/payments\//);
+    await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: "Main" })
+        .getByRole("link", { name: "Payments", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+  }
+});
+
 test("completed manual payments name their approvers and edits do not invent voided approvals", async ({
   page,
 }) => {

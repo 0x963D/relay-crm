@@ -167,7 +167,7 @@ test("manual payment needs two other approvers and appears in the ledger; a seco
       roleVersion: payment.actions.roleVersion,
     }),
   ).rejects.toMatchObject({ data: { accessFailure: "paymentRecorder" } });
-  await page.goto(`${browserState().url}/accounts/${payment.accountId}/checkout`);
+  await page.goto(`${browserState().url}/payments/new/${payment.accountId}/card`);
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("10.00");
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   await expect(

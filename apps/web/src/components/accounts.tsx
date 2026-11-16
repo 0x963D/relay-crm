@@ -176,10 +176,10 @@ export function AccountDetail({
           {account.mayEdit && (
             <>
               <Button asChild>
-                <Link href={`/accounts/${id}/checkout`}>Create card checkout</Link>
+                <Link href={`/payments/new/${id}/card`}>Create card checkout</Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href={`/accounts/${id}/manual`}>Record manual payment</Link>
+                <Link href={`/payments/new/${id}/manual`}>Record manual payment</Link>
               </Button>
             </>
           )}

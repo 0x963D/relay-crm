@@ -249,6 +249,9 @@ export function PaymentForm({
             ? "Create a card checkout"
             : "Record a manual payment"}
       </h2>
+      <p className="text-caption text-secondary-foreground">
+        For {account.person?.name ?? account.person?.email ?? "this account"}
+      </p>
       <div ref={result} tabIndex={-1}>
         {(validation || save.error) && (
           <Refusal
