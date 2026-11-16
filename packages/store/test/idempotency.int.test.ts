@@ -179,3 +179,11 @@ test("first result and replay both decode the stored JSON value", async ({ db })
     await client.$disconnect();
   }
 });
+
+test("idempotency request hashes cannot be null", async ({ db }) => {
+  await expect(
+    db.rows(
+      "INSERT INTO idempotency_records(id,scope,key,operation,result) VALUES (gen_random_uuid(),'system:reconciler','missing','test','{}')",
+    ),
+  ).rejects.toMatchObject({ code: "23502" });
+});

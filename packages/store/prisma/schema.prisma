@@ -309,7 +309,7 @@ model IdempotencyRecord {
   scope       String
   key         String
   operation   String
-  requestHash String?  @map("request_hash")
+  requestHash String   @map("request_hash")
   result      Json
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
@@ -454,3 +454,4 @@ model SandboxCheckout {
   eventId String @unique @default(uuid(7)) @map("event_id") @db.Uuid
   @@map("sandbox_checkouts")
 }
+

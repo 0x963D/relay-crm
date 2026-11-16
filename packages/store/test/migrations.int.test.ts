@@ -31,18 +31,28 @@ test("forward migrations preserve historical receipts and decode audit snapshots
     "INSERT INTO distributions(id,actor_id,key,request_hash,result) VALUES ($1,$2,'key',$3,$4)",
     [receiptId, actorId, hash, JSON.stringify(result)],
   );
+  const legacyId = crypto.randomUUID();
+  await db.rows("INSERT INTO distributions(id,actor_id,key,result) VALUES ($1,$2,'legacy','[]')", [
+    legacyId,
+    actorId,
+  ]);
   for (const name of migrations.filter((name) => name >= "0008")) await apply(name);
-  expect(await db.rows("SELECT id,scope,key,request_hash,result FROM idempotency_records")).toEqual(
-    [
-      {
-        id: receiptId,
-        scope: `user:${actorId}`,
-        key: "key",
-        request_hash: hash,
-        result: { items: result, changed: true },
-      },
-    ],
-  );
+  expect(
+    await db.rows("SELECT request_hash FROM idempotency_records WHERE id=$1", [legacyId]),
+  ).toEqual([{ request_hash: `unrecoverable:${legacyId}` }]);
+  expect(
+    await db.rows(
+      "SELECT id,scope,key,request_hash,result FROM idempotency_records WHERE key='key'",
+    ),
+  ).toEqual([
+    {
+      id: receiptId,
+      scope: `user:${actorId}`,
+      key: "key",
+      request_hash: hash,
+      result: { items: result, changed: true },
+    },
+  ]);
   expect(
     await db.rows(
       "SELECT id,actor_id,subject_type,subject_id,before,after,request_id,idempotency_id FROM audit_log",
