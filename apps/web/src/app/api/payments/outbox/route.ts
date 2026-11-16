@@ -9,6 +9,13 @@ export function POST(request: Request) {
     if (!equalSecret(request.headers.get("authorization") ?? "", `Bearer ${app.env.outboxSecret}`))
       return new Response(null, { status: 401 });
     if ((await readBody(request)) === null) return new Response(null, { status: 413 });
-    return Response.json(await app.store.runOutbox(app.receiptMailer));
+    const results = await app.store.runOutbox(app.receiptMailer);
+    return Response.json({
+      processed: results.length,
+      sent: results.filter((r) => r.state === "sent").length,
+      failed: results.filter((r) => r.state === "failed").length,
+      suppressed: results.filter((r) => r.state === "suppressed").length,
+      unknown: results.filter((r) => r.state === "unknown").length,
+    });
   });
 }

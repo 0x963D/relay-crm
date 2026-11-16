@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 import { test } from "@relay/store/testing";
 import { type Actor, type PaymentProvider } from "@relay/domain";
 import { paymentWebhook, signPaymentBody } from "../src/server/payments/webhook.ts";
@@ -466,4 +466,65 @@ test("payment API responses identify a demo deployment", async ({ db }) => {
     await caller.payments.closeCheckout({ id: created.paymentId, reason: "Demo close" }),
   ).toMatchObject({ demo: true });
   expect(await caller.accounts.ledger({ id: accountId })).toMatchObject({ demo: true });
+});
+
+test("worker HTTP responses contain counts without record identifiers", async ({ db }) => {
+  const values = {
+    DATABASE_URL: db.connectionString,
+    NODE_ENV: "production",
+    RELAY_DEMO: "1",
+    RELAY_SANDBOX: "1",
+    RELAY_SANDBOX_URL: env.baseUrl,
+    RELAY_PAYMENT_WEBHOOK_SECRET: env.webhookSecret,
+    RELAY_RECONCILE_SECRET: env.reconcileSecret,
+    RELAY_OUTBOX_SECRET: "fake-outbox-secret-for-local-tests-only",
+    AUTH_SECRET: "fake-authentication-secret-for-local-tests-only",
+    AUTH_URL: env.baseUrl,
+    SMTP_URL: "smtp://127.0.0.1:9",
+    SMTP_FROM: "test@sender.example",
+  };
+  for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const create = async (key: string) =>
+    db.store.createPayment(
+      actor,
+      {
+        key,
+        accountId: await db.seedAccount(),
+        money: { minor: 100n, currency: "GBP" },
+        kind: "first",
+        mode: "drop",
+      },
+      0,
+      randomUUID(),
+    );
+  const paid = await create("receipt");
+  await db.store.receivePaymentWebhook({
+    eventId: randomUUID(),
+    paymentId: paid.id,
+    payloadHash: "ab".repeat(32),
+    observed: { status: "completed", money: { minor: 100n, currency: "GBP" } },
+  });
+  await create("missing");
+  try {
+    const { POST: reconcile } = await import("../src/app/api/payments/reconcile/route.ts");
+    const { POST: outbox } = await import("../src/app/api/payments/outbox/route.ts");
+    const request = (secret: string) =>
+      new Request(`${env.baseUrl}/api/payments/reconcile`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${secret}` },
+      });
+    const checked = await reconcile(request(env.reconcileSecret));
+    expect(checked.status).toBe(200);
+    expect.soft(await checked.json()).toEqual({ checked: 1, changed: 1 });
+    const delivered = await outbox(request(values.RELAY_OUTBOX_SECRET));
+    expect(delivered.status).toBe(200);
+    expect
+      .soft(await delivered.json())
+      .toEqual({ processed: 1, sent: 0, failed: 1, suppressed: 0, unknown: 0 });
+  } finally {
+    await globalThis.relayComposition?.store.close();
+    Reflect.deleteProperty(globalThis, "relayComposition");
+    vi.unstubAllEnvs();
+  }
 });

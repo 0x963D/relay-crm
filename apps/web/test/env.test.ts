@@ -174,3 +174,31 @@ it("a production build requires an explicit demo deployment for sandbox payments
   expect(parseEnv({ ...values, RELAY_DEMO: "1" }, false)).toMatchObject({ demo: true });
   expect(parseEnv(values, true)).toMatchObject({ demo: false });
 });
+
+it.each(["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_RECONCILE_SECRET"])(
+  "%s follows the authentication secret strength rule",
+  (name) => {
+    for (const secret of ["a".repeat(40), "example-only-do-not-use-this-secret", "too-short"]) {
+      expect(() => parseEnv({ DATABASE_URL, [name]: secret })).toThrow(EnvError);
+    }
+  },
+);
+it.each([
+  ["AUTH_SECRET", "RELAY_PAYMENT_WEBHOOK_SECRET"],
+  ["AUTH_SECRET", "RELAY_RECONCILE_SECRET"],
+  ["RELAY_PAYMENT_WEBHOOK_SECRET", "RELAY_RECONCILE_SECRET"],
+])("refuses equal secrets for %s and %s", (first, second) => {
+  expect(() =>
+    parseEnv(
+      {
+        DATABASE_URL,
+        NODE_ENV: "development",
+        AUTH_URL: "http://127.0.0.1:3000",
+        AUTH_SECRET: "fake-authentication-secret-for-tests-only",
+        [first]: "fake-shared-authentication-secret-for-tests-only",
+        [second]: "fake-shared-authentication-secret-for-tests-only",
+      },
+      true,
+    ),
+  ).toThrow(/distinct/);
+});

@@ -490,9 +490,7 @@ databaseTest(
             headers: { authorization: `Bearer ${reconcileSecret}` },
           });
           expect(run.status).toBe(200);
-          expect(await run.json()).toEqual([
-            { id: created.paymentId, status: "completed", changed: true },
-          ]);
+          expect(await run.json()).toEqual({ checked: 1, changed: 1 });
         }
         let detail = Detail.parse(await rpc("payments.get", { id: created.paymentId }, accountant));
         const deliveries = mode === "twice" ? 2 : 1;

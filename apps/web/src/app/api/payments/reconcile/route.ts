@@ -15,8 +15,14 @@ export function POST(request: Request) {
     )
       return new Response(null, { status: 401 });
     if ((await readBody(request)) === null) return new Response(null, { status: 413 });
-    return Response.json(
-      await reconcilePayments(app.store, app.payments.provider, app.env.payments.intervalMs),
+    const results = await reconcilePayments(
+      app.store,
+      app.payments.provider,
+      app.env.payments.intervalMs,
     );
+    return Response.json({
+      checked: results.length,
+      changed: results.filter((r) => r.changed).length,
+    });
   });
 }

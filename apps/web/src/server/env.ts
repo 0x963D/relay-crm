@@ -3,23 +3,24 @@ import { z } from "zod";
 
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
 
+const Secret = z
+  .string()
+  .min(32)
+  .refine((value) => new Set(value).size >= 12, "must contain at least 12 distinct characters")
+  .refine((value) => value !== EXAMPLE_AUTH_SECRET, "must not use the secret from .env.example");
+
 const Variables = z.object({
   RELAY_OUTBOX_SECRET: z.string().min(32).optional(),
   RELAY_DEMO: z.literal("1").optional(),
   RELAY_SANDBOX: z.literal("1").optional(),
   RELAY_SANDBOX_URL: z.url().optional(),
-  RELAY_PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
-  RELAY_RECONCILE_SECRET: z.string().min(32).optional(),
+  RELAY_PAYMENT_WEBHOOK_SECRET: Secret.optional(),
+  RELAY_RECONCILE_SECRET: Secret.optional(),
   RELAY_RECONCILE_FIRST_MS: z.coerce.number().int().min(0).max(86400000).default(900000),
   RELAY_RECONCILE_INTERVAL_MS: z.coerce.number().int().min(1000).max(86400000).default(300000),
   RELAY_CHECKOUT_TTL_MS: z.coerce.number().int().min(1).max(604800000).default(86400000),
   RELAY_SANDBOX_LATE_MS: z.coerce.number().int().min(0).max(60000).default(30000),
-  AUTH_SECRET: z
-    .string()
-    .min(32)
-    .refine((value) => new Set(value).size >= 12, "must contain at least 12 distinct characters")
-    .refine((value) => value !== EXAMPLE_AUTH_SECRET, "must not use the secret from .env.example")
-    .optional(),
+  AUTH_SECRET: Secret.optional(),
   AUTH_URL: z.url().optional(),
   RELAY_AUTH_GLOBAL_LIMIT: z.coerce.number().int().min(21).max(1_000_000).default(10_000),
   SMTP_URL: z.url().optional(),
@@ -160,6 +161,15 @@ export function parseEnv(
     throw new EnvError(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
   }
   const { DATABASE_URL, NODE_ENV, RELAY_DEV_ACTOR, RELAY_DEV_ROLE } = parsed.data;
+  const secrets = [
+    parsed.data.AUTH_SECRET,
+    parsed.data.RELAY_PAYMENT_WEBHOOK_SECRET,
+    parsed.data.RELAY_RECONCILE_SECRET,
+  ].filter((value) => value !== undefined);
+  if (new Set(secrets).size !== secrets.length)
+    throw new EnvError(
+      "AUTH_SECRET, RELAY_PAYMENT_WEBHOOK_SECRET and RELAY_RECONCILE_SECRET must be distinct.",
+    );
   if (parsed.data.RELAY_SANDBOX && !developmentBuild && parsed.data.RELAY_DEMO !== "1")
     throw new EnvError("Sandbox payments in a production build require RELAY_DEMO=1.");
   if (RELAY_DEV_ACTOR && !developmentBuild)
