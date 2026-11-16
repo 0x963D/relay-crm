@@ -22,6 +22,7 @@ export type ReceiptDelivery = (
   signal: AbortSignal,
 ) => Promise<DeliveryOutcome>;
 export interface OutboxOptions {
+  readonly signal?: AbortSignal | undefined;
   readonly at?: Date;
   readonly leaseMs?: number;
   readonly sendTimeoutMs?: number;
@@ -148,6 +149,7 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
     failureRecorded?: boolean;
   }[] = [];
   for (const { id, paymentId } of candidates) {
+    options.signal?.throwIfAborted();
     try {
       const deadline = performance.now() + sendTimeoutMs;
       const lease = await leaseReceipt(db, id, now(), leaseMs, lifetimeAttemptLimit);
@@ -179,7 +181,9 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
                 amount: payment.amount.toString(),
                 currency: payment.currency,
               },
-              controller.signal,
+              options.signal
+                ? AbortSignal.any([controller.signal, options.signal])
+                : controller.signal,
             ),
             new Promise<DeliveryOutcome>((resolve) => {
               timer = setTimeout(() => {

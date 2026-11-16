@@ -18,8 +18,8 @@ export function POST(request: Request) {
     if ((await readBody(request)) === null) return new Response(null, { status: 413 });
     const payments = app.payments;
     const intervalMs = app.env.payments.intervalMs;
-    const run = await app.store.exclusiveJob("reconcile", () =>
-      reconcilePayments(app.store, payments.provider, intervalMs),
+    const run = await app.store.exclusiveJob("reconcile", (signal) =>
+      reconcilePayments(app.store, payments.provider, intervalMs, new Date(), signal),
     );
     if (!run.ran) return rateLimited();
     const results = run.result;

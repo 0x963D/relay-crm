@@ -86,7 +86,7 @@ async function connections<T>(options: DemoOptions, run: (owner: Db, app: Db) =>
   }
 }
 
-async function demoLease<T>(owner: Db, run: () => Promise<T>) {
+async function demoLease<T>(owner: Db, run: (signal: AbortSignal) => Promise<T>) {
   const lease = await exclusiveJob(owner, "demo", run);
   if (!lease.ran) throw new Error("Demo setup or reset is already running.");
   return lease.result;
@@ -108,7 +108,7 @@ async function demoTables(tx: Tx) {
   return tables.map(({ name }) => `public."${name.replaceAll('"', '""')}"`);
 }
 
-async function seed(owner: Db, app: Db, options: DemoOptions) {
+async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSignal) {
   await transact(owner, async (tx) => {
     for (const table of await demoTables(tx)) {
       const [row] = await tx.$queryRawUnsafe<{ occupied: boolean }[]>(
@@ -151,6 +151,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
   let paymentTime = required(history[7]).at;
   const clock = () => paymentTime;
   const advance = () => {
+    signal.throwIfAborted();
     const step = tick++;
     paymentTime = new Date(
       required(history[7 + Math.floor(step / 8)]).at.getTime() + (step % 8) * 3600000,
@@ -184,6 +185,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
   };
   let phone = 140;
   async function lead(name: string, course: string, source: IntakeSource = "metaLeadAds") {
+    signal.throwIfAborted();
     phone++;
     const number = leadNumber++;
     const createdAt = new Date(required(history[number % 7]).at.getTime() + (number % 12) * 900000);
@@ -211,6 +213,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     return result.outcome.leadId;
   }
   async function assign(id: LeadId, to = agent) {
+    signal.throwIfAborted();
     await assignPool(
       app,
       manager,
@@ -220,8 +223,10 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       storyTime(id),
     );
   }
-  const work = (id: LeadId, command: LeadWork, by = agent) =>
-    workLead(app, by, { id, key: randomUUID(), work: command }, randomUUID(), storyTime(id));
+  const work = (id: LeadId, command: LeadWork, by = agent) => {
+    signal.throwIfAborted();
+    return workLead(app, by, { id, key: randomUUID(), work: command }, randomUUID(), storyTime(id));
+  };
   const attempt = (id: LeadId, note: string, spoke: boolean, callbackAt?: Date) =>
     work(id, {
       kind: "attempt",
@@ -598,7 +603,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
         : options.deliver(message, signal);
     };
     const receiptStart = new Date(required(history[13]).at.getTime() + 6 * 3600000);
-    await store.runOutbox(delivery, { at: receiptStart });
+    await store.runOutbox(delivery, { at: receiptStart, signal });
     await transact(app, (tx) =>
       tx.outbox.update({ where: { paymentId: retrying }, data: { nextAttemptAt: dueToday } }),
     );
@@ -607,10 +612,10 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       if (cycle > 0) {
         paymentTime = new Date(cycleStart);
         await store.requeueReceipt(manager, exhausted, randomUUID());
-        await store.runOutbox(delivery, { at: paymentTime });
+        await store.runOutbox(delivery, { at: paymentTime, signal });
       }
       for (const minutes of [5, 15, 35])
-        await store.runOutbox(delivery, { at: new Date(cycleStart + minutes * 60000) });
+        await store.runOutbox(delivery, { at: new Date(cycleStart + minutes * 60000), signal });
     }
     await transact(
       owner,
@@ -630,7 +635,7 @@ export function seedDemo(options: DemoOptions) {
       if (row.state !== "ready") return resetDemo({ ...options, demo: true });
       return { changed: false, company: DEMO_COMPANY };
     }
-    return demoLease(owner, () => seed(owner, app, options));
+    return demoLease(owner, (signal) => seed(owner, app, options, signal));
   });
 }
 
@@ -638,9 +643,11 @@ export function resetDemo(options: DemoOptions & { readonly demo: boolean }) {
   if (!options.demo) throw new Error("Demo reset requires RELAY_DEMO=1.");
   return connections(options, async (owner, app) => {
     await marker(owner);
-    return demoLease(owner, async () => {
-      const reconcile = await exclusiveJob(owner, "reconcile", async () => {
-        const outbox = await exclusiveJob(owner, "outbox", async () => {
+    return demoLease(owner, async (demoSignal) => {
+      const reconcile = await exclusiveJob(owner, "reconcile", async (reconcileSignal) => {
+        const outbox = await exclusiveJob(owner, "outbox", async (outboxSignal) => {
+          const signal = AbortSignal.any([demoSignal, reconcileSignal, outboxSignal]);
+          signal.throwIfAborted();
           await transact(
             owner,
             async (tx) => {
@@ -655,7 +662,7 @@ export function resetDemo(options: DemoOptions & { readonly demo: boolean }) {
             },
             { timeoutMs: 30000, maxAttempts: 1 },
           );
-          return seed(owner, app, options);
+          return seed(owner, app, options, signal);
         });
         if (!outbox.ran) throw new Error("Receipt delivery is running. Retry the reset.");
         return outbox.result;

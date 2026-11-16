@@ -16,7 +16,9 @@ export function POST(request: Request) {
     if (denied) return denied;
     if ((await readBody(request)) === null) return new Response(null, { status: 413 });
     const mailer = app.receiptMailer;
-    const run = await app.store.exclusiveJob("outbox", () => app.store.runOutbox(mailer));
+    const run = await app.store.exclusiveJob("outbox", (signal) =>
+      app.store.runOutbox(mailer, { signal }),
+    );
     if (!run.ran) return rateLimited();
     const results = run.result;
     return Response.json({

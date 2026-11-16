@@ -670,7 +670,8 @@ checks both HTTP routes. Each allows five failed authentication attempts per cli
 60-second window, then returns 429 with `Retry-After: 60`. Valid secrets do not consume that failed
 attempt budget. The route guard only stops overlapping scheduled calls to the same route.
 An overlapping call returns 429. The outbox and reconcile routes use separate lease rows, with
-expiry one hour after the database clock. Finishing or failing releases the caller's lease token.
+leases of 15 seconds for reconciliation and 60 seconds for the outbox, renewed every third of their
+lease while they run. The database clock sets and checks expiry. Finishing or failing releases the caller's lease token.
 A stopped caller's lease expires. The callback holds no transaction open and is never retried
 by the guard. `pnpm exec dotenv -- vitest run --project integration packages/store/test/jobs.int.test.ts`
 checks expiry, token ownership and the absence of a transaction during the callback.

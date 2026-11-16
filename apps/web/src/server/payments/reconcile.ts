@@ -6,10 +6,12 @@ export async function reconcilePayments(
   provider: PaymentProvider,
   intervalMs: number,
   at = new Date(),
+  signal?: AbortSignal,
 ) {
   const candidates = await store.duePayments(at, 100);
   const results = [];
   for (const { id } of candidates) {
+    signal?.throwIfAborted();
     const token = await store.claimPaymentCheck(id, new Date(), intervalMs);
     if (token === null) continue;
     let observed: ProviderPayment | null;
@@ -18,6 +20,7 @@ export async function reconcilePayments(
     } catch {
       observed = null;
     }
+    signal?.throwIfAborted();
     results.push({ id, ...(await store.finishPaymentCheck(id, token, observed)) });
   }
   return results;

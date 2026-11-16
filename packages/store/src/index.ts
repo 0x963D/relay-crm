@@ -85,7 +85,7 @@ export function openStore(config: {
     demoPerson: (role: DemoRole) => demoPerson(db, role),
     demoReady: () => demoReady(db),
     databaseReady: () => databaseReady(db),
-    exclusiveJob: <T>(route: "outbox" | "reconcile" | "demo", run: () => Promise<T>) =>
+    exclusiveJob: <T>(route: "outbox" | "reconcile", run: (signal: AbortSignal) => Promise<T>) =>
       exclusiveJob(db, route, run),
     runOutbox: (deliver: ReceiptDelivery, options?: OutboxOptions) =>
       runOutbox(db, deliver, { ...config.receipts, ...options }),

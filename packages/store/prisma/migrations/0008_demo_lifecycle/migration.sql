@@ -22,3 +22,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 $$;
 REVOKE ALL ON FUNCTION public.relay_ready() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.relay_ready() TO relay_app;
+
+ALTER TABLE public.job_leases ENABLE ROW LEVEL SECURITY;
+CREATE POLICY app_job_routes ON public.job_leases TO relay_app
+    USING (route IN ('outbox', 'reconcile'))
+    WITH CHECK (route IN ('outbox', 'reconcile'));
