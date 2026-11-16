@@ -1,5 +1,5 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { expect, type Page, type Locator } from "@playwright/test";
+import { expect, type Page, type Locator, type BrowserContext } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,15 +21,25 @@ export function rpc(page: Page) {
     ],
   });
 }
+const sessions = new Map<string, Awaited<ReturnType<BrowserContext["cookies"]>>>();
 export async function signIn(page: Page, role: "manager" | "agent") {
-  await page.goto(browserState().url);
-  await page
-    .getByRole("button", {
-      name: role === "manager" ? "Priya Raman Manager" : "Dele Akinwale Agent",
-      exact: true,
-    })
-    .click();
-  await expect(page.getByRole("radiogroup", { name: "View the demo as" })).toBeVisible();
+  const { url } = browserState();
+  const key = `${url}:${role}`;
+  const cookies = sessions.get(key);
+  if (cookies) await page.context().addCookies(cookies);
+  await page.goto(url);
+  const login = page.getByRole("button", {
+    name: role === "manager" ? "Priya Raman Manager" : "Dele Akinwale Agent",
+    exact: true,
+  });
+  if (!cookies || (await login.isVisible())) {
+    await login.click();
+    await expect(page.getByRole("radiogroup", { name: "View the demo as" })).toBeVisible();
+    sessions.set(key, await page.context().cookies());
+  }
+  await expect(
+    page.getByRole("radio", { name: role === "manager" ? "Manager" : "Agent", exact: true }),
+  ).toBeChecked();
 }
 export async function settleFrame(page: Page) {
   await page.evaluate(async () => {
