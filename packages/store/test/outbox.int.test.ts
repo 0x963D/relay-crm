@@ -256,3 +256,74 @@ test("one outcome recording failure is recorded and the batch continues", async 
     },
   ]);
 });
+
+test("completed payment cannot commit without its receipt even with a valid posting", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const accountId = await db.seedAccount();
+  const { id } = await db.store.createPayment(
+    actor,
+    {
+      key: randomUUID(),
+      accountId,
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      mode: "drop",
+    },
+    0,
+    requestId,
+  );
+  await db.ownerRows("BEGIN");
+  try {
+    await db.ownerRows(
+      "UPDATE payments SET status='completed',completed_by='reconciler',decided_at=now() WHERE id=$1",
+      [id],
+    );
+    await db.ownerRows(
+      `WITH customer AS (INSERT INTO ledger_accounts(id,account_id,kind,currency) VALUES (gen_random_uuid(),$2,'customer','GBP') RETURNING id),
+  provider AS (INSERT INTO ledger_accounts(id,kind,currency) VALUES (gen_random_uuid(),'cardProviderSandbox','GBP') RETURNING id),
+  posting AS (INSERT INTO ledger_transactions(id,payment_id,at) VALUES (gen_random_uuid(),$1,now()) RETURNING id)
+  INSERT INTO ledger_lines(id,transaction_id,ledger_account_id,side,amount)
+  SELECT gen_random_uuid(),posting.id,customer.id,'credit',100 FROM posting,customer UNION ALL SELECT gen_random_uuid(),posting.id,provider.id,'debit',100 FROM posting,provider`,
+      [id, accountId],
+    );
+    await expect(db.ownerRows("COMMIT")).rejects.toMatchObject({
+      code: "23514",
+      constraint: "payment_outbox_required",
+    });
+  } finally {
+    await db.ownerRows("ROLLBACK");
+  }
+  expect((await db.store.getPayment(actor, id)).state.status).toBe("checkoutCreated");
+});
+
+test("receipt rows cannot be deleted by the owner or restricted app role", async ({ db }) => {
+  const w = await receipt(db);
+  await expect(db.ownerRows("DELETE FROM outbox WHERE id=$1", [w.outboxId])).rejects.toMatchObject({
+    code: "23001",
+  });
+  await expect(db.rows("DELETE FROM outbox WHERE id=$1", [w.outboxId])).rejects.toMatchObject({
+    code: "42501",
+  });
+});
+
+test("a completed payment cannot lose its receipt by moving it", async ({ db }) => {
+  const w = await receipt(db),
+    accountId = await db.seedAccount();
+  const other = await db.store.createPayment(
+    w.actor,
+    {
+      key: randomUUID(),
+      accountId,
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      mode: "drop",
+    },
+    0,
+    requestId,
+  );
+  await expect(
+    db.rows("UPDATE outbox SET payment_id=$1 WHERE id=$2", [other.id, w.outboxId]),
+  ).rejects.toMatchObject({ code: "23001" });
+});
