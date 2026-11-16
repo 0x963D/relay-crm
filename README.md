@@ -414,6 +414,8 @@ repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-
 
 ## Working a lead
 
+The queue reads all of an agent's open leads with their activity history on each request, then applies the per-group limit.
+
 `leads.queue` returns `overdueCallbacks`, `dueToday` and `notYetCalled`, their full counts and the
 next future callback time. `limit` bounds each group. The default target is the signed-in agent.
 A sales team lead can request an agent on their selected team. Managers, admins and owners can
