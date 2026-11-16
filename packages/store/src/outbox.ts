@@ -50,7 +50,7 @@ async function beginDelivery(db: Db, id: string, token: string, at: Date) {
     if (!row) return null;
     const suppression = row.recipient
       ? await tx.emailSuppression.findUnique({ where: { email: row.recipient } })
-      : null;
+      : { reason: "no address" };
     const number = suppression ? row.attempts : row.attempts + 1;
     const outcome = suppression ? "suppressed" : "unknown";
     const reason = suppression?.reason ?? "Delivery began without a confirmed outcome.";

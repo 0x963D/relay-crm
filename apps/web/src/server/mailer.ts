@@ -52,8 +52,7 @@ export function createReceiptMailer(
         },
       },
     });
-    if (!receipt.email)
-      return { state: "failed", reason: "The account has no receipt email address." };
+    if (!receipt.email) return { state: "suppressed", reason: "no address" };
     if (!isCurrencyCode(receipt.currency)) throw new Error("Invalid receipt currency");
     try {
       const message = {

@@ -163,3 +163,19 @@ test("suppressed addresses send nothing and keep the completed payment", async (
     code: "refreshConflict",
   });
 });
+
+test("a receipt without an address is suppressed without sending or retrying", async ({ db }) => {
+  const w = await receipt(db);
+  await db.rows("UPDATE outbox SET recipient=NULL WHERE id=$1", [w.outboxId]);
+  let calls = 0;
+  const send = () => {
+    calls++;
+    return Promise.resolve({ state: "failed" as const, reason: "No address" });
+  };
+  expect(await db.store.runOutbox(send, { at })).toEqual([{ id: w.outboxId, state: "suppressed" }]);
+  expect(await db.store.runOutbox(send, { at: new Date(at.getTime() + 86400000) })).toEqual([]);
+  expect(calls).toBe(0);
+  const detail = await db.store.getPayment(w.actor, w.id);
+  expect(detail.receipt).toMatchObject({ state: "suppressed", attempts: 0, nextAttemptAt: null });
+  expect(detail.receipt?.history[0]).toMatchObject({ state: "suppressed", reason: "no address" });
+});
