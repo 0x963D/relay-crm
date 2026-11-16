@@ -24,6 +24,7 @@ export function leadStateExamples(seed: LeadStateSeed): LeadStateExamples {
     new: [{ status: "new" }],
     assigned: [{ status: "assigned", assignee }],
     working: [
+      { status: "working", assignee, stage: { kind: "ready" } },
       { status: "working", assignee, stage: { kind: "contacted" } },
       { status: "working", assignee, stage: { kind: "callBack", at: callBackAt } },
       { status: "working", assignee, stage: { kind: "noAnswer", count: 2 } },

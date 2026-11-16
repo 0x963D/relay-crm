@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  ATTEMPT_CHANNELS,
+  ATTEMPT_OUTCOMES,
+  LOST_REASONS,
+  DEAD_REASONS,
   PaymentId,
   SANDBOX_MODES,
   isCurrencyCode,
@@ -21,6 +25,7 @@ import { boundedRequest } from "./http.ts";
 import { reportFailure } from "./errors.ts";
 
 export interface RpcContext {
+  readonly timeZone?: string;
   readonly demo?: boolean;
   readonly requestId?: string;
   readonly store: Store;
@@ -120,6 +125,18 @@ function parsedMoney(input: { amount: string; currency: string }) {
   if (!isCurrencyCode(input.currency)) throw new TRPCError({ code: "BAD_REQUEST" });
   return { minor: BigInt(input.amount), currency: input.currency };
 }
+
+const CallbackInput = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("set"), at: z.date() }).strict(),
+  z.object({ kind: z.literal("clear") }).strict(),
+]);
+const WorkInput = { id: LeadIdentifier, key: z.string().min(1).max(200) };
+const Note = z.string().trim().min(1).max(4000);
+const ClosingInput = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("won") }).strict(),
+  z.object({ kind: z.literal("lost"), reason: z.enum(LOST_REASONS), note: Note }).strict(),
+  z.object({ kind: z.literal("dead"), reason: z.enum(DEAD_REASONS) }).strict(),
+]);
 
 export const appRouter = t.router({
   payments: t.router({
@@ -255,7 +272,65 @@ export const appRouter = t.router({
         };
       }),
   }),
+  reports: t.router({
+    funnel: authenticated.query(({ ctx }) => ctx.store.campaignFunnel(ctx.actor)),
+  }),
   leads: t.router({
+    queue: authenticated
+      .input(
+        z
+          .object({
+            agentId: identifier(UserId).optional(),
+            limit: z.int().min(1).max(100).default(100),
+          })
+          .strict(),
+      )
+      .query(({ ctx, input }) =>
+        ctx.store.workQueue(ctx.actor, {
+          agentId: input.agentId ?? ctx.actor.userId,
+          limit: input.limit,
+          at: new Date(),
+          timeZone: ctx.timeZone ?? "UTC",
+        }),
+      ),
+    logAttempt: authenticated
+      .input(
+        z
+          .object({
+            ...WorkInput,
+            channel: z.enum(ATTEMPT_CHANNELS),
+            outcome: z.enum(ATTEMPT_OUTCOMES),
+            note: Note,
+            callback: CallbackInput.optional(),
+          })
+          .strict(),
+      )
+      .mutation(({ ctx, input: { id, key, ...attempt } }) =>
+        ctx.store.workLead(
+          ctx.actor,
+          { id, key, work: { kind: "attempt", attempt } },
+          ctx.requestId,
+        ),
+      ),
+    addNote: authenticated
+      .input(z.object({ ...WorkInput, note: Note }).strict())
+      .mutation(({ ctx, input: { id, key, note } }) =>
+        ctx.store.workLead(ctx.actor, { id, key, work: { kind: "note", note } }, ctx.requestId),
+      ),
+    setCallback: authenticated
+      .input(z.object({ ...WorkInput, change: CallbackInput }).strict())
+      .mutation(({ ctx, input: { id, key, change } }) =>
+        ctx.store.workLead(
+          ctx.actor,
+          { id, key, work: { kind: "callback", change } },
+          ctx.requestId,
+        ),
+      ),
+    close: authenticated
+      .input(z.object({ ...WorkInput, closing: ClosingInput }).strict())
+      .mutation(({ ctx, input: { id, key, closing } }) =>
+        ctx.store.workLead(ctx.actor, { id, key, work: { kind: "close", closing } }, ctx.requestId),
+      ),
     list: authenticated
       .input(Page)
       .query(({ ctx, input }) => ctx.store.listLeads(ctx.actor, input)),

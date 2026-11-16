@@ -39,6 +39,7 @@ enum LeadStatus {
 }
 
 enum WorkStage {
+  ready
   contacted
   callBack
   noAnswer

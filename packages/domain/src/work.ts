@@ -10,7 +10,7 @@ export interface Attempt {
   readonly channel: (typeof ATTEMPT_CHANNELS)[number];
   readonly outcome: (typeof ATTEMPT_OUTCOMES)[number];
   readonly note: string;
-  readonly callback?: CallbackChange;
+  readonly callback?: CallbackChange | undefined;
 }
 
 export type ClosingReason =

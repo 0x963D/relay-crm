@@ -11,7 +11,7 @@ const WAIT_LIMIT_MS = 10_000;
  * have all decided on the same stale state, and opening the gate lets them collide.
  */
 export interface Gate {
-  close(table?: "payments" | "outbox"): Promise<void>;
+  close(table?: "payments" | "outbox" | "leads"): Promise<void>;
   waitForWaiters(count: number): Promise<void>;
   open(): Promise<void>;
 }
@@ -26,11 +26,13 @@ export function createGate(holder: pg.Client, watcher: pg.Client): Gate {
     close: async (table) => {
       await holder.query("BEGIN");
       await holder.query(
-        table === "outbox"
-          ? "LOCK TABLE outbox IN SHARE MODE"
-          : table === "payments"
-            ? "LOCK TABLE payments IN SHARE MODE"
-            : "LOCK TABLE leads, intake_events, activities IN SHARE MODE",
+        table === "leads"
+          ? "LOCK TABLE leads IN SHARE MODE"
+          : table === "outbox"
+            ? "LOCK TABLE outbox IN SHARE MODE"
+            : table === "payments"
+              ? "LOCK TABLE payments IN SHARE MODE"
+              : "LOCK TABLE leads, intake_events, activities IN SHARE MODE",
       );
     },
     waitForWaiters: async (count) => {

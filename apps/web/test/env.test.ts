@@ -13,6 +13,7 @@ const META = {
 describe("parseEnv", () => {
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
+      timeZone: "UTC",
       demo: false,
       outboxSecret: null,
       receipts: { leaseMs: 60000, sendTimeoutMs: 30000, lifetimeAttemptLimit: 12 },
@@ -229,5 +230,14 @@ it.each(["60000", "60001"])("refuses receipt send timeout %s at or beyond its le
 it.each(["0", "-1", "1.5", "1001"])("refuses invalid lifetime receipt limit %s", (limit) => {
   expect(() => parseEnv({ DATABASE_URL, RELAY_RECEIPT_LIFETIME_ATTEMPTS: limit })).toThrow(
     "RELAY_RECEIPT_LIFETIME_ATTEMPTS",
+  );
+});
+
+it("accepts an organisation time zone and refuses an unknown one", () => {
+  expect(parseEnv({ DATABASE_URL, RELAY_TIME_ZONE: "Pacific/Auckland" }).timeZone).toBe(
+    "Pacific/Auckland",
+  );
+  expect(() => parseEnv({ DATABASE_URL, RELAY_TIME_ZONE: "not-a-zone" })).toThrow(
+    /RELAY_TIME_ZONE/,
   );
 });

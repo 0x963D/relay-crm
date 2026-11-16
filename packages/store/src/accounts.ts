@@ -1,3 +1,4 @@
+import { readAccountLedger } from "./payments.ts";
 import { scopeWhere } from "./scope.ts";
 import {
   AccountId,
@@ -23,19 +24,35 @@ function accountFromRow(row: AccountRow): Account {
   }
   return { id, ownerId, teamId, createdAt: row.createdAt };
 }
-export async function listAccounts(
-  db: Db,
-  actor: Actor,
-  page: { readonly limit: number },
-): Promise<readonly Account[]> {
+export async function listAccounts(db: Db, actor: Actor, page: { readonly limit: number }) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const rows = await tx.account.findMany({
       where: scopeWhere(recordScope(current, "account", "read")),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: page.limit,
+      include: {
+        owner: { select: { id: true, name: true } },
+        lead: { select: { id: true, email: true, name: true } },
+      },
     });
-    return rows.map(accountFromRow);
+    const mayReadLedger = recordScope(current, "ledger", "read").kind === "all";
+    return Promise.all(
+      rows.map(async (row) => {
+        const account = accountFromRow(row);
+        return {
+          ...account,
+          owner: row.owner,
+          person: row.lead,
+          balances: mayReadLedger
+            ? (await readAccountLedger(tx, account.id)).balances.map(({ currency, balance }) => ({
+                currency,
+                balance,
+              }))
+            : null,
+        };
+      }),
+    );
   });
 }
 export async function getAccount(db: Db, actor: Actor, id: AccountId): Promise<Account> {

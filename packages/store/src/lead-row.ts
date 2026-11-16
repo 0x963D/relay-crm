@@ -78,8 +78,9 @@ function stageColumns(
   stage: WorkStage,
 ): Pick<StateColumns, "stage" | "callBackAt" | "noAnswerCount"> {
   switch (stage.kind) {
+    case "ready":
     case "contacted":
-      return { stage: "contacted", callBackAt: null, noAnswerCount: null };
+      return { stage: stage.kind, callBackAt: null, noAnswerCount: null };
     case "callBack":
       return { stage: "callBack", callBackAt: stage.at, noAnswerCount: null };
     case "noAnswer":
@@ -162,6 +163,8 @@ function assigneeFromRow(row: Pick<StateColumns, "ownerId" | "teamId">): Assignm
 
 function stageFromRow(row: StateColumns): WorkStage {
   switch (present(row.stage, "stage")) {
+    case "ready":
+      return { kind: "ready" };
     case "contacted":
       return { kind: "contacted" };
     case "callBack":
@@ -220,7 +223,5 @@ export function leadFromRow(row: LeadRow): Lead {
     phone: row.phone,
     lifecycle: lifecycleFromRow(row),
     createdAt: row.createdAt,
-    contactedAt: row.contactedAt,
-    lostNote: row.lostNote,
   };
 }

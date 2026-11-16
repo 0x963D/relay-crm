@@ -11,6 +11,7 @@ function handle(request: Request) {
       async () => ({
         store: app.store,
         demo: app.env.demo,
+        timeZone: app.env.timeZone,
         payments:
           app.payments && app.env.payments
             ? { provider: app.payments.provider, firstCheckMs: app.env.payments.firstCheckMs }

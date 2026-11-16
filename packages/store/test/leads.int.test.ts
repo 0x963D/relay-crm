@@ -131,9 +131,9 @@ describe("listLeads scoping", () => {
     };
     const leadsTeamA = { id: world.ana.teamId, kind: "sales", isLead: true } as const;
 
-    expect(await count({ role: "owner", team: null }), "all").toBe(39);
-    expect(await count({ role: "agent", team: leadsTeamA }), "own").toBe(10);
-    expect(await count({ role: "teamLead", team: leadsTeamA }), "team and pool").toBe(23);
+    expect(await count({ role: "owner", team: null }), "all").toBe(42);
+    expect(await count({ role: "agent", team: leadsTeamA }), "own").toBe(11);
+    expect(await count({ role: "teamLead", team: leadsTeamA }), "team and pool").toBe(25);
     expect(await count({ role: "accountant", team: leadsTeamA }), "none").toBe(0);
   });
 });

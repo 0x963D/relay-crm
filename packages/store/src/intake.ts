@@ -74,8 +74,16 @@ async function applyDecision(
       });
       return record(tx, submission, { kind: "leadCreated", leadId });
     }
-    case "attach":
+    case "attach": {
+      const row = await scopedLead(
+        tx,
+        { kind: "system", name: "intake" },
+        decision.leadId,
+        "identity",
+      );
+      await updateLifecycle(tx, decision.leadId, lifecycleFromRow(row));
       return record(tx, submission, { kind: "attachedToOpenLead", leadId: decision.leadId });
+    }
     case "reopen": {
       const principal = { kind: "system", name: "intake" } as const;
       const before = lifecycleFromRow(await scopedLead(tx, principal, decision.leadId, "reopen"));

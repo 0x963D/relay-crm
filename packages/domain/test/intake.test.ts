@@ -58,6 +58,7 @@ describe("resolveIntake", () => {
   const DECISIONS: readonly (readonly [state: string, decision: IntakeDecision["kind"]])[] = [
     ["new", "attach"],
     ["assigned", "attach"],
+    ["working(ready)", "attach"],
     ["working(contacted)", "attach"],
     ["working(callBack)", "attach"],
     ["working(noAnswer)", "attach"],

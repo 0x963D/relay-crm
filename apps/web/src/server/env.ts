@@ -30,6 +30,17 @@ const Variables = z.object({
     .max(3600000)
     .default(RECEIPT_SEND_TIMEOUT_MS),
   RELAY_OUTBOX_SECRET: z.string().min(32).optional(),
+  RELAY_TIME_ZONE: z
+    .string()
+    .refine((value) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "must be an IANA time zone")
+    .default("UTC"),
   RELAY_DEMO: z.literal("1").optional(),
   RELAY_SANDBOX: z.literal("1").optional(),
   RELAY_SANDBOX_URL: z.url().optional(),
@@ -90,6 +101,7 @@ export interface PaymentEnv {
 }
 
 export interface Env {
+  readonly timeZone: string;
   readonly demo: boolean;
   readonly receipts: {
     readonly leaseMs: number;
@@ -203,6 +215,7 @@ export function parseEnv(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
   return {
+    timeZone: parsed.data.RELAY_TIME_ZONE,
     demo: parsed.data.RELAY_DEMO === "1",
     receipts: {
       lifetimeAttemptLimit: parsed.data.RELAY_RECEIPT_LIFETIME_ATTEMPTS,

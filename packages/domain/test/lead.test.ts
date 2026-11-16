@@ -134,13 +134,7 @@ describe("transition matrix", () => {
     ({ state, event, target }) => {
       const result = transition(lifecycleOf(state), event, NOW);
       if (result.ok) {
-        expect(result.value.state.status).toBe(
-          event.type === "clearCallBack" &&
-            state.status === "working" &&
-            state.stage.kind === "callBack"
-            ? "assigned"
-            : target,
-        );
+        expect(result.value.state.status).toBe(target);
       } else {
         expect(result.error).toMatchObject({
           kind: "refused",

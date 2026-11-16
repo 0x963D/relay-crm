@@ -23,6 +23,7 @@ export interface Assignment {
 }
 
 export type WorkStage =
+  | { readonly kind: "ready" }
   | { readonly kind: "contacted" }
   | { readonly kind: "callBack"; readonly at: Date }
   | { readonly kind: "noAnswer"; readonly count: number };
@@ -51,8 +52,6 @@ export interface Lead {
   readonly phone: string | null;
   readonly lifecycle: LeadLifecycle;
   readonly createdAt: Date;
-  readonly contactedAt: Date | null;
-  readonly lostNote: string | null;
 }
 
 export interface InboundReopen {
@@ -152,9 +151,7 @@ const RULES: Rules = {
     logContact: (from) => work(from.assignee, { kind: "contacted" }),
     scheduleCallBack: (from, event, at) => callBack(from.assignee, event.at, at),
     clearCallBack: (from) =>
-      from.stage.kind === "callBack"
-        ? ok({ status: "assigned", assignee: from.assignee })
-        : ok(from),
+      from.stage.kind === "callBack" ? work(from.assignee, { kind: "ready" }) : ok(from),
     logNoAnswer: (from) =>
       work(from.assignee, {
         kind: "noAnswer",

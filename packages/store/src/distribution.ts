@@ -22,7 +22,7 @@ import {
 } from "@relay/domain";
 import { currentActor } from "./auth.ts";
 import { AccessError } from "./errors.ts";
-import { InvariantError, leadFromRow, lifecycleFromRow } from "./lead-row.ts";
+import { InvariantError, lifecycleFromRow } from "./lead-row.ts";
 import { scopedLead, updateLifecycle, editLeadFields } from "./leads.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
 
@@ -36,12 +36,6 @@ async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
     throw new AccessError("accessDenied");
   if (!isAssignableAgent(member ? { role: member.user.role, teamKind: member.team.kind } : null))
     throw new AccessError("invalidAgent");
-}
-
-export async function getLead(db: Db, actor: Actor, id: LeadId): Promise<Lead> {
-  return transact(db, async (tx) =>
-    leadFromRow(await scopedLead(tx, await currentActor(tx, actor), id, "read")),
-  );
 }
 
 export async function editLead(

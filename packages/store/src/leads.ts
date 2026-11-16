@@ -3,6 +3,7 @@ import {
   scopeAdmits,
   recordScope,
   type Actor,
+  type UserId,
   type EmailAddress,
   type IntakeSource,
   type Lead,
@@ -84,8 +85,20 @@ export async function insertLead(tx: Tx, lead: NewLead): Promise<LeadId> {
   return leadId(row.id);
 }
 
-export async function updateLifecycle(tx: Tx, id: LeadId, lifecycle: LeadLifecycle): Promise<void> {
-  await tx.lead.update({ where: { id }, data: { ...lifecycleToColumns(lifecycle) } });
+export async function updateLifecycle(
+  tx: Tx,
+  id: LeadId,
+  lifecycle: LeadLifecycle,
+  fields?: { readonly contactedAt: Date | null; readonly lostNote: string | null },
+): Promise<void> {
+  await tx.lead.update({
+    where: { id },
+    data: {
+      ...lifecycleToColumns(lifecycle),
+      ...fields,
+      ...(lifecycle.state.status === "lost" ? {} : { lostNote: null }),
+    },
+  });
 }
 
 export async function scopedLead(
@@ -106,4 +119,34 @@ export async function editLeadFields(
   fields: { readonly name: string | null; readonly phone: string | null },
 ): Promise<Lead> {
   return leadFromRow(await tx.lead.update({ where: { id }, data: { ...fields } }));
+}
+
+export async function queueLeadRows(tx: Tx, actor: Actor, agentId: UserId) {
+  return tx.lead.findMany({
+    where: {
+      AND: [
+        scopeWhere(recordScope(actor, "lead", "read")),
+        { ownerId: agentId, status: { in: ["assigned", "working"] } },
+      ],
+    },
+    orderBy: [{ callBackAt: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }, { id: "asc" }],
+    include: {
+      activities: { orderBy: { sequence: "desc" } },
+      intakeEvents: {
+        where: { outcome: "leadCreated" },
+        orderBy: { id: "asc" },
+        select: { campaign: true },
+        take: 1,
+      },
+    },
+  });
+}
+
+export async function funnelLeadRows(tx: Tx, actor: Actor) {
+  if (recordScope(actor, "lead", "read").kind !== "all") throw new AccessError("accessDenied");
+  return tx.lead.findMany({
+    include: {
+      intakeEvents: { where: { outcome: "leadCreated" }, orderBy: { id: "asc" }, take: 1 },
+    },
+  });
 }

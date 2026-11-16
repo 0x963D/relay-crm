@@ -656,35 +656,38 @@ export async function accountLedger(db: Db, actor: Actor, accountId: AccountId) 
     if (!account) {
       throw new AccessError("accessDenied");
     }
-    const ledgerAccounts = await tx.ledgerAccount.findMany({
-      where: { accountId },
-      orderBy: { currency: "asc" },
-    });
-    const balances = [];
-    for (const ledgerAccount of ledgerAccounts) {
-      const lines = await tx.ledgerLine.findMany({ where: { ledgerAccountId: ledgerAccount.id } });
-      const transactions = await tx.ledgerTransaction.findMany({
-        where: { id: { in: lines.map((l) => l.transactionId) } },
-        orderBy: [{ at: "asc" }, { id: "asc" }],
-      });
-      let balance = 0n;
-      const entries = [];
-      for (const transaction of transactions) {
-        const line = required(lines.find((l) => l.transactionId === transaction.id));
-        balance += line.side === "credit" ? line.amount : -line.amount;
-        entries.push({
-          paymentId: transaction.paymentId,
-          at: transaction.at,
-          amount: line.amount,
-          side: line.side,
-          balance,
-          posting: await posting(tx, transaction.paymentId),
-        });
-      }
-      balances.push({ currency: ledgerAccount.currency, balance, entries });
-    }
-    return { accountId, balances };
+    return readAccountLedger(tx, accountId);
   });
+}
+export async function readAccountLedger(tx: Tx, accountId: AccountId) {
+  const ledgerAccounts = await tx.ledgerAccount.findMany({
+    where: { accountId },
+    orderBy: { currency: "asc" },
+  });
+  const balances = [];
+  for (const ledgerAccount of ledgerAccounts) {
+    const lines = await tx.ledgerLine.findMany({ where: { ledgerAccountId: ledgerAccount.id } });
+    const transactions = await tx.ledgerTransaction.findMany({
+      where: { id: { in: lines.map((l) => l.transactionId) } },
+      orderBy: [{ at: "asc" }, { id: "asc" }],
+    });
+    let balance = 0n;
+    const entries = [];
+    for (const transaction of transactions) {
+      const line = required(lines.find((l) => l.transactionId === transaction.id));
+      balance += line.side === "credit" ? line.amount : -line.amount;
+      entries.push({
+        paymentId: transaction.paymentId,
+        at: transaction.at,
+        amount: line.amount,
+        side: line.side,
+        balance,
+        posting: await posting(tx, transaction.paymentId),
+      });
+    }
+    balances.push({ currency: ledgerAccount.currency, balance, entries });
+  }
+  return { accountId, balances };
 }
 
 export interface ManualTerms {

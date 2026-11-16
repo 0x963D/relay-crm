@@ -26,7 +26,6 @@ import {
   ensureDevelopmentActor,
 } from "./auth.ts";
 import {
-  getLead,
   editLead,
   assignPool,
   reassignLead,
@@ -63,6 +62,8 @@ import {
   paySandboxCheckout,
   cancelSandboxCheckout,
 } from "./sandbox.ts";
+import { workLead, workQueue, leadDetail as getLead, campaignFunnel } from "./work.ts";
+import type { UserId, LeadWork } from "@relay/domain";
 import { connect } from "./tx.ts";
 
 export type { LeadListItem };
@@ -131,6 +132,21 @@ export function openStore(config: {
     takeRequestLimit: (key: string, max: number, windowSeconds: number) =>
       takeRequestLimit(db, key, max, windowSeconds),
     ensureDevelopmentActor: (actor: Actor) => ensureDevelopmentActor(db, actor),
+    workLead: (
+      actor: Actor,
+      input: { readonly id: LeadId; readonly key: string; readonly work: LeadWork },
+      requestId: string,
+    ) => workLead(db, actor, input, requestId),
+    workQueue: (
+      actor: Actor,
+      input: {
+        readonly agentId: UserId;
+        readonly at: Date;
+        readonly timeZone: string;
+        readonly limit: number;
+      },
+    ) => workQueue(db, actor, input),
+    campaignFunnel: (actor: Actor) => campaignFunnel(db, actor),
     listLeads: (actor: Actor, page: { readonly limit: number }) => listLeads(db, actor, page),
     getLead: (actor: Actor, id: LeadId) => getLead(db, actor, id),
     editLead: (
