@@ -43,17 +43,37 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   const link = page.getByRole("textbox", { name: "Pay link", exact: true });
   await expect(link).toBeVisible();
   const capability = await link.inputValue();
+  for (const response of [
+    await page.request.get(capability),
+    await page.request.get(`${browserState().url}/sandbox/checkout/missing`),
+    await page.request.post(capability, { headers: { origin: "https://foreign.example" } }),
+  ])
+    expect(response.headers()["referrer-policy"]).toBe("no-referrer");
   const paymentPath = await page
     .getByRole("link", { name: "Go to payment", exact: true })
     .getAttribute("href");
   if (!paymentPath) throw new Error("Missing payment route");
   const id = paymentPath.split("/").at(-1) ?? "";
   await accessibility(page, "checkout-created");
-  await page.getByRole("link", { name: "Open the page", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true })).toBeVisible();
-  await page.goBack();
+  const open = page.getByRole("link", { name: "Open the page", exact: true });
+  await expect(open).toHaveAttribute("target", "_blank");
+  await expect(open).toHaveAttribute("rel", "noopener noreferrer");
+  const popup = page.context().waitForEvent("page");
+  await open.click();
+  const sandbox = await popup;
+  await expect(
+    sandbox.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true }),
+  ).toBeVisible();
+  expect(await sandbox.evaluate(() => document.referrer)).toBe("");
+  expect(await sandbox.evaluate(() => window.opener === null)).toBe(true);
   await expect(link).toHaveCount(0);
   await page.reload();
+  expect(await page.content()).not.toContain(capability);
+  const second = await page.context().newPage();
+  await second.goto(page.url());
+  expect(await second.content()).not.toContain(capability);
+  await expect(second.getByRole("textbox", { name: "Pay link", exact: true })).toHaveCount(0);
+  await second.close();
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("1.00");
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   await expect(
@@ -61,11 +81,20 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   ).toBeVisible();
   await expect(link).toHaveCount(0);
   expect(await page.content()).not.toContain(capability);
-  await page.goto(capability);
-  await accessibility(page, "sandbox-checkout");
-  await page.getByRole("radio", { name: /^Drop it/ }).check();
-  await page.getByRole("button", { name: "Pay £395.00", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Paid in the sandbox");
+  await accessibility(sandbox, "sandbox-checkout");
+  await sandbox.getByRole("radio", { name: /^Drop it/ }).check();
+  await sandbox.getByRole("button", { name: "Pay £395.00", exact: true }).click();
+  await expect(sandbox.getByRole("status")).toContainText("Paid in the sandbox");
+  await sandbox.getByRole("link", { name: "go back to Relay CRM", exact: true }).click();
+  await expect(sandbox).toHaveURL(`${browserState().url}${paymentPath}`);
+  expect(await sandbox.evaluate(() => document.referrer)).toBe("");
+  await sandbox.goBack();
+  expect(sandbox.url()).not.toContain(capability);
+  expect(await sandbox.content()).not.toContain(capability);
+  await sandbox.close();
+  await page.goBack();
+  expect(page.url()).not.toContain(capability);
+  expect(await page.content()).not.toContain(capability);
   const response = await page.request.post(`${browserState().url}/api/payments/reconcile`, {
     headers: { authorization: `Bearer ${reconcileSecret()}` },
   });
@@ -202,9 +231,13 @@ test("all five sandbox choices produce their stated outcome", async ({ page }) =
       .getAttribute("href");
     if (!path) throw new Error("Missing payment route");
     const id = path.split("/").at(-1) ?? "";
+    const popup = page.context().waitForEvent("page");
     await page.getByRole("link", { name: "Open the page", exact: true }).click();
-    await page.getByRole("radio", { name: new RegExp(`^${choice}`) }).check();
-    await page.getByRole("button", { name: "Pay £25.00", exact: true }).click();
+    const sandbox = await popup;
+    await sandbox.getByRole("radio", { name: new RegExp(`^${choice}`) }).check();
+    await sandbox.getByRole("button", { name: "Pay £25.00", exact: true }).click();
+    await expect(sandbox.getByRole("status")).toContainText("Paid in the sandbox");
+    await sandbox.close();
     if (expectedBy === "reconciler") {
       const result = await page.request.post(`${browserState().url}/api/payments/reconcile`, {
         headers: { authorization: `Bearer ${reconcileSecret()}` },
@@ -280,13 +313,20 @@ test("a card checkout can be created and paid with the keyboard alone", async ({
   await page.keyboard.type("19.00");
   await enter(page.getByRole("button", { name: "Create checkout", exact: true }));
   await expect(page.getByRole("textbox", { name: "Pay link", exact: true })).toBeVisible();
+  const popup = page.context().waitForEvent("page");
   await enter(page.getByRole("link", { name: "Open the page", exact: true }));
-  await expect(page.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true })).toBeVisible();
-  await enter(page.getByRole("button", { name: "Pay £19.00", exact: true }));
-  await expect(page.getByRole("status")).toBeFocused();
-  await enter(page.getByRole("link", { name: "go back to Relay CRM", exact: true }));
-  await expect(page.getByRole("heading", { name: "Credited once", exact: true })).toBeVisible();
-  await accessibility(page, "keyboard-card-completed");
+  const sandbox = await popup;
+  await expect(
+    sandbox.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true }),
+  ).toBeVisible();
+  await tabTo(sandbox, sandbox.getByRole("button", { name: "Pay £19.00", exact: true }));
+  await sandbox.keyboard.press("Enter");
+  await expect(sandbox.getByRole("status")).toBeFocused();
+  await tabTo(sandbox, sandbox.getByRole("link", { name: "go back to Relay CRM", exact: true }));
+  await sandbox.keyboard.press("Enter");
+  await expect(sandbox.getByRole("heading", { name: "Credited once", exact: true })).toBeVisible();
+  await accessibility(sandbox, "keyboard-card-completed");
+  await sandbox.close();
 });
 
 test("receipt retry keeps the posting and refuses another attempt at the cap", async ({ page }) => {
@@ -437,10 +477,15 @@ test("@capture payment creation, refusals and the campaign funnel", async ({ pag
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Pay link", exact: true })).toBeVisible();
   await capture("22-checkout-created");
+  const popup = page.context().waitForEvent("page");
   await page.getByRole("link", { name: "Open the page", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true })).toBeVisible();
-  await accessibility(page, "23-sandbox");
-  await page.screenshot({ path: join(captureDirectory, "23-sandbox.png") });
+  const sandbox = await popup;
+  await expect(
+    sandbox.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true }),
+  ).toBeVisible();
+  await accessibility(sandbox, "23-sandbox");
+  await sandbox.screenshot({ path: join(captureDirectory, "23-sandbox.png") });
+  await sandbox.close();
   await page.goto(browserState().url);
   await openAccount(page, "Yusuf Demir");
   await page.getByRole("link", { name: "Record manual payment", exact: true }).click();

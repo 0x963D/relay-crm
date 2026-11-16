@@ -162,6 +162,8 @@ export function PaymentForm({
               <Button variant="outline" asChild>
                 <a
                   href={created.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   onClick={() => {
                     setCreated(null);
                   }}

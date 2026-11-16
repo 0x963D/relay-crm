@@ -48,11 +48,15 @@ export function sandboxCheckout(
         headers: {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store",
-          "content-security-policy": `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+          "content-security-policy": `default-src 'none'; connect-src 'self'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
         },
       });
     }
-    if (request.headers.get("origin") !== env.baseUrl) return new Response(null, { status: 403 });
+    const sameOrigin =
+      request.headers.get("origin") === env.baseUrl ||
+      (request.headers.get("origin") === "null" &&
+        request.headers.get("sec-fetch-site") === "same-origin");
+    if (!sameOrigin) return new Response(null, { status: 403 });
     const body = await readBody(request);
     if (body === null) return new Response(null, { status: 413 });
     const value = new URLSearchParams(new TextDecoder().decode(body)).get("mode");
