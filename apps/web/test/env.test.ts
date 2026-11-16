@@ -13,6 +13,7 @@ const META = {
 describe("parseEnv", () => {
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
+      demo: false,
       outboxSecret: null,
       payments: null,
       trustedProxyCount: 0,
@@ -136,6 +137,7 @@ it("keeps payments off until enabled and checks the reconciliation timing defaul
   const values = {
     DATABASE_URL,
     RELAY_SANDBOX: "1",
+    RELAY_DEMO: "1",
     RELAY_SANDBOX_URL: "http://127.0.0.1:3000",
     RELAY_PAYMENT_WEBHOOK_SECRET: "fake-sandbox-signature-secret-for-tests",
     RELAY_RECONCILE_SECRET: "fake-reconciler-authentication-secret-for-tests",
@@ -157,4 +159,18 @@ it("keeps payments off until enabled and checks the reconciliation timing defaul
   expect(() => parseEnv({ ...values, RELAY_SANDBOX_URL: "https://example.com/untrusted" })).toThrow(
     EnvError,
   );
+});
+
+it("a production build requires an explicit demo deployment for sandbox payments", () => {
+  const values = {
+    DATABASE_URL,
+    RELAY_SANDBOX: "1",
+    RELAY_SANDBOX_URL: "http://127.0.0.1:3000",
+    RELAY_PAYMENT_WEBHOOK_SECRET: "fake-sandbox-signature-secret-for-tests",
+    RELAY_RECONCILE_SECRET: "fake-reconciler-authentication-secret-for-tests",
+  };
+  expect(() => parseEnv({ ...values, NODE_ENV: "production" }, false)).toThrow(/RELAY_DEMO/);
+  expect(() => parseEnv({ ...values, NODE_ENV: "development" }, false)).toThrow(/RELAY_DEMO/);
+  expect(parseEnv({ ...values, RELAY_DEMO: "1" }, false)).toMatchObject({ demo: true });
+  expect(parseEnv(values, true)).toMatchObject({ demo: false });
 });

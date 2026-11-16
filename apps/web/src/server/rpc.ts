@@ -21,10 +21,17 @@ import { boundedRequest } from "./http.ts";
 import { reportFailure } from "./errors.ts";
 
 export interface RpcContext {
+  readonly demo?: boolean;
   readonly requestId?: string;
   readonly store: Store;
   readonly payments?: { readonly provider: PaymentProvider; readonly firstCheckMs: number } | null;
   readonly principal: SessionPrincipal | null;
+}
+async function paymentResponse<T extends object | null>(
+  ctx: { readonly demo?: boolean | undefined },
+  result: Promise<T>,
+) {
+  return { ...(await result), demo: ctx.demo ?? false };
 }
 const t = initTRPC.context<RpcContext>().create({
   transformer: superjson,
@@ -117,7 +124,9 @@ export const appRouter = t.router({
   payments: t.router({
     requeueReceipt: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
-      .mutation(({ ctx, input }) => ctx.store.requeueReceipt(ctx.actor, input.id, ctx.requestId)),
+      .mutation(({ ctx, input }) =>
+        paymentResponse(ctx, ctx.store.requeueReceipt(ctx.actor, input.id, ctx.requestId)),
+      ),
     recordManual: authenticated
       .input(
         z
@@ -130,42 +139,56 @@ export const appRouter = t.router({
           .strict(),
       )
       .mutation(({ ctx, input }) =>
-        ctx.store.recordManualPayment(
-          ctx.actor,
-          { ...input, money: parsedMoney(input) },
-          ctx.requestId,
+        paymentResponse(
+          ctx,
+          ctx.store.recordManualPayment(
+            ctx.actor,
+            { ...input, money: parsedMoney(input) },
+            ctx.requestId,
+          ),
         ),
       ),
     approve: authenticated
       .input(z.object({ ...DecisionInput, roleVersion: z.int().min(0) }).strict())
       .mutation(({ ctx, input }) =>
-        ctx.store.approveManualPayment(ctx.actor, input, ctx.requestId),
+        paymentResponse(ctx, ctx.store.approveManualPayment(ctx.actor, input, ctx.requestId)),
       ),
     reject: authenticated
       .input(RefusalInput)
       .mutation(({ ctx, input }) =>
-        ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "reject" }, ctx.requestId),
+        paymentResponse(
+          ctx,
+          ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "reject" }, ctx.requestId),
+        ),
       ),
     cancel: authenticated
       .input(RefusalInput)
       .mutation(({ ctx, input }) =>
-        ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "cancel" }, ctx.requestId),
+        paymentResponse(
+          ctx,
+          ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "cancel" }, ctx.requestId),
+        ),
       ),
     editManual: authenticated
       .input(z.object({ ...DecisionInput, ...ManualTermsInput }).strict())
       .mutation(({ ctx, input }) =>
-        ctx.store.editManualPayment(
-          ctx.actor,
-          { ...input, money: parsedMoney(input) },
-          ctx.requestId,
+        paymentResponse(
+          ctx,
+          ctx.store.editManualPayment(
+            ctx.actor,
+            { ...input, money: parsedMoney(input) },
+            ctx.requestId,
+          ),
         ),
       ),
     list: authenticated
       .input(Page)
-      .query(({ ctx, input }) => ctx.store.listPayments(ctx.actor, input.limit)),
+      .query(({ ctx, input }) =>
+        paymentResponse(ctx, ctx.store.listPayments(ctx.actor, input.limit)),
+      ),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
-      .query(({ ctx, input }) => ctx.store.getPayment(ctx.actor, input.id)),
+      .query(({ ctx, input }) => paymentResponse(ctx, ctx.store.getPayment(ctx.actor, input.id))),
     closeCheckout: authenticated
       .input(
         z
@@ -181,7 +204,7 @@ export const appRouter = t.router({
           ctx.requestId,
         );
         await ctx.payments.provider.cancelCheckout(input.id);
-        return result;
+        return { ...result, demo: ctx.demo ?? false };
       }),
     closeReview: authenticated
       .input(
@@ -190,7 +213,10 @@ export const appRouter = t.router({
           .strict(),
       )
       .mutation(({ ctx, input }) =>
-        ctx.store.closePaymentReview(ctx.actor, input.id, input.reason, ctx.requestId),
+        paymentResponse(
+          ctx,
+          ctx.store.closePaymentReview(ctx.actor, input.id, input.reason, ctx.requestId),
+        ),
       ),
     createCheckout: authenticated
       .input(
@@ -222,6 +248,7 @@ export const appRouter = t.router({
         );
         const terms = await ctx.store.checkoutTerms(ctx.actor, created.id);
         return {
+          demo: ctx.demo ?? false,
           paymentId: created.id,
           checkout: await ctx.payments.provider.createCheckout(terms),
         };
@@ -264,7 +291,9 @@ export const appRouter = t.router({
   accounts: t.router({
     ledger: authenticated
       .input(z.object({ id: identifier(AccountId) }).strict())
-      .query(({ ctx, input }) => ctx.store.accountLedger(ctx.actor, input.id)),
+      .query(({ ctx, input }) =>
+        paymentResponse(ctx, ctx.store.accountLedger(ctx.actor, input.id)),
+      ),
     list: authenticated
       .input(Page)
       .query(({ ctx, input }) => ctx.store.listAccounts(ctx.actor, input)),

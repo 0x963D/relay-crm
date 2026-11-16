@@ -390,7 +390,11 @@ Run them with `pnpm exec dotenv -- vitest run --project integration packages/sto
 
 Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` to the app's HTTP
 origin, and distinct `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` values. The sandbox
-moves no real money. It stores its checkout status separately from the CRM payment and signs
+moves no real money. A production build refuses sandbox startup without `RELAY_DEMO=1`.
+With that setting, payment API responses and account ledger responses carry `demo: true` for
+screens to show a demo banner. The flag is false otherwise. `pnpm test -- apps/web/test/env.test.ts`
+and `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
+check the startup rule and response flag. The sandbox stores its checkout status separately from the CRM payment and signs
 webhooks over the timestamp, a period and the raw body with HMAC-SHA256.
 
 `payments.createCheckout` takes `accountId`, a request `key`, `amount` as a positive integer string

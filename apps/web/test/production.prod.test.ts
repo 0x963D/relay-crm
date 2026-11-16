@@ -368,6 +368,7 @@ databaseTest(
         SMTP_URL: inbox.url,
         SMTP_FROM: "relay@sender.example",
         RELAY_SANDBOX: "1",
+        RELAY_DEMO: "1",
         RELAY_SANDBOX_URL: origin,
         RELAY_PAYMENT_WEBHOOK_SECRET: "fake-production-webhook-secret-for-tests",
         RELAY_RECONCILE_SECRET: reconcileSecret,

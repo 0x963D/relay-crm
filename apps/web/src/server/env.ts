@@ -5,6 +5,7 @@ const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
 
 const Variables = z.object({
   RELAY_OUTBOX_SECRET: z.string().min(32).optional(),
+  RELAY_DEMO: z.literal("1").optional(),
   RELAY_SANDBOX: z.literal("1").optional(),
   RELAY_SANDBOX_URL: z.url().optional(),
   RELAY_PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
@@ -69,6 +70,7 @@ export interface PaymentEnv {
 }
 
 export interface Env {
+  readonly demo: boolean;
   readonly outboxSecret: string | null;
   readonly payments: PaymentEnv | null;
   readonly trustedProxyCount: number;
@@ -158,11 +160,14 @@ export function parseEnv(
     throw new EnvError(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
   }
   const { DATABASE_URL, NODE_ENV, RELAY_DEV_ACTOR, RELAY_DEV_ROLE } = parsed.data;
+  if (parsed.data.RELAY_SANDBOX && !developmentBuild && parsed.data.RELAY_DEMO !== "1")
+    throw new EnvError("Sandbox payments in a production build require RELAY_DEMO=1.");
   if (RELAY_DEV_ACTOR && !developmentBuild)
     throw new EnvError(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
   return {
+    demo: parsed.data.RELAY_DEMO === "1",
     outboxSecret: parsed.data.RELAY_OUTBOX_SECRET ?? null,
     payments: paymentEnv(parsed.data),
     trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,

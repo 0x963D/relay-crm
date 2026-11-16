@@ -185,6 +185,7 @@ test("the typed payment API enforces scope and retries provider checkout creatio
   const created = await caller.payments.createCheckout(input);
   expect(await caller.payments.createCheckout(input)).toEqual({
     paymentId: created.paymentId,
+    demo: false,
     checkout: { id: created.checkout.id, url: null },
   });
   expect(await db.rows("SELECT * FROM payments")).toHaveLength(1);
@@ -440,4 +441,29 @@ test("payment readers cannot obtain or use the sandbox pay capability", async ({
       kind: "first",
     }),
   ).rejects.toMatchObject({ code: "FORBIDDEN" });
+});
+
+test("payment API responses identify a demo deployment", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const caller = appRouter.createCaller({
+    store: db.store,
+    principal: { kind: "development", actor },
+    demo: true,
+    payments: { provider: sandboxProvider(db.store, env), firstCheckMs: 0 },
+  });
+  const accountId = await db.seedAccount();
+  const created = await caller.payments.createCheckout({
+    key: "demo",
+    accountId,
+    amount: "100",
+    currency: "GBP",
+    kind: "first",
+  });
+  expect(created).toMatchObject({ demo: true });
+  expect(await caller.payments.get({ id: created.paymentId })).toMatchObject({ demo: true });
+  expect(await caller.payments.list({ limit: 10 })).toMatchObject({ demo: true });
+  expect(
+    await caller.payments.closeCheckout({ id: created.paymentId, reason: "Demo close" }),
+  ).toMatchObject({ demo: true });
+  expect(await caller.accounts.ledger({ id: accountId })).toMatchObject({ demo: true });
 });
