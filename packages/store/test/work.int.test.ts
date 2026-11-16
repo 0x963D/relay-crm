@@ -268,7 +268,7 @@ test.for([
   },
 );
 
-test("notes, callback moves and clearing, and all closing decisions keep their history", async ({
+test("notes and callback changes keep history, and won and dead closes update state", async ({
   db,
 }) => {
   const w = await world(db);
@@ -319,7 +319,7 @@ test("notes, callback moves and clearing, and all closing decisions keep their h
 });
 
 for (const role of ROLES) {
-  test(`${role} has the existing read and edit scope on every new operation`, async ({ db }) => {
+  test(`${role} scopes lead work, agent queues and the funnel`, async ({ db }) => {
     const w = await world(db);
     const actor = await w.makeActor(role);
     const own = await w.makeLead(actor);
@@ -391,7 +391,7 @@ test("working reloads a revoked role inside its transaction, including a replay"
   });
 });
 
-test("the funnel counts original leads once and keeps missing contact history unknown", async ({
+test("the funnel excludes repeat enquiries and keeps missing contact history unknown", async ({
   db,
 }) => {
   const w = await world(db);
