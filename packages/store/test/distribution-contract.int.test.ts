@@ -415,7 +415,7 @@ describe("scoped records", () => {
         { ownerId: await db.seedUser("agent"), teamId: w.teamId },
         "00000000-0000-4000-8000-000000000001",
       ),
-    ).rejects.toMatchObject({ code: "invalidAgent" });
+    ).rejects.toMatchObject({ code: "accessDenied" });
   });
 });
 
@@ -437,4 +437,17 @@ describe("request limits", () => {
       { count: 1 },
     ]);
   });
+});
+
+test("a foreign agent named with the caller's team is outside scope", async ({ db }) => {
+  const w = await world(db, "teamLead");
+  const id = await w.pool("scope@example.com");
+  await expect(
+    db.store.assignPool(
+      w.actor,
+      [id],
+      { ownerId: w.other.ownerId, teamId: w.teamId },
+      "00000000-0000-4000-8000-000000000001",
+    ),
+  ).rejects.toMatchObject({ code: "accessDenied" });
 });

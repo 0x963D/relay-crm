@@ -32,6 +32,8 @@ async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
     where: { userId_teamId: { userId: to.ownerId, teamId: to.teamId } },
     include: { user: true, team: true },
   });
+  if (!member && recordScope(actor, "lead", "assign").kind !== "all")
+    throw new AccessError("accessDenied");
   if (!isAssignableAgent(member ? { role: member.user.role, teamKind: member.team.kind } : null))
     throw new AccessError("invalidAgent");
 }
