@@ -134,7 +134,7 @@ export function PaymentForm({
         aria-label="Checkout created"
         className="space-y-4 rounded-lg border p-4"
       >
-        <h3 className="text-panel font-bold">Card checkout created</h3>
+        <h2 className="text-panel font-bold">Card checkout created</h2>
         <p>
           {formatMoney(parseAmount(amount, currency) ?? { minor: 0n, currency: "GBP" })} ·{" "}
           {kind === "first" ? "First" : "Repeat"} payment
@@ -172,7 +172,7 @@ export function PaymentForm({
             </div>
             <p role="status">{copied}</p>
             <div className="rounded-lg border border-waiting-border bg-waiting p-4 text-waiting-foreground">
-              <h4 className="font-semibold">Copy this link now. It will not be shown again.</h4>
+              <h3 className="font-semibold">Copy this link now. It will not be shown again.</h3>
               <p className="mt-1 text-caption">
                 Only this page holds the pay link. Leaving or reloading removes it. If it is lost,
                 close the payment as failed and create another checkout.
@@ -215,13 +215,13 @@ export function PaymentForm({
         save.mutate();
       }}
     >
-      <h3 className="text-panel font-bold">
+      <h2 className="text-panel font-bold">
         {editing
           ? "Edit manual payment"
           : mode === "card"
             ? "Create a card checkout"
             : "Record a manual payment"}
-      </h3>
+      </h2>
       <div ref={result} tabIndex={-1}>
         {(validation || save.error) && (
           <Refusal
@@ -245,6 +245,17 @@ export function PaymentForm({
           </Refusal>
         )}
       </div>
+      {mode === "manual" && (
+        <Field label="Account" hint="Accounts come from won leads.">
+          {(control) => (
+            <Input
+              {...control}
+              value={account.person?.name ?? account.person?.email ?? "Account"}
+              readOnly
+            />
+          )}
+        </Field>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Amount">
           {(control) => (

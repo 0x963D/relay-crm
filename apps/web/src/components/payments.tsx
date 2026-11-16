@@ -1,9 +1,10 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/lib/trpc/client";
 import { usePagedQuery } from "@/lib/trpc/use-paged-query";
-import { paymentGroups } from "@/lib/payments";
+import { type PaymentRow, paymentGroups } from "@/lib/payments";
 import { callbackDate, formatMoney } from "@/lib/display";
 import { failureMessage } from "@/lib/failures";
 import { cn } from "@/lib/utils";
@@ -16,14 +17,24 @@ export function PaymentsScreen({
   zone,
   selected,
   children,
+  form = false,
 }: {
   zone: string;
   selected?: string;
   children?: ReactNode;
+  form?: boolean;
 }) {
   const trpc = useTRPC();
   const api = useTRPCClient();
   const [limit, setLimit] = useState(20);
+  const opened = useQuery(
+    trpc.payments.get.queryOptions({ id: selected ?? "" }, { enabled: !!selected }),
+  );
+  const narrowPanel =
+    form ||
+    opened.data?.state.status === "pendingApproval" ||
+    opened.data?.state.status === "checkoutCreated";
+  const compact = !!selected && !narrowPanel;
   const query = usePagedQuery(trpc.payments.list.queryOptions({ limit, offset: 0 }), "payments", {
     limit,
     read: (page, signal) => api.payments.list.query(page, { signal }),
@@ -63,7 +74,11 @@ export function PaymentsScreen({
           aria-label="Payments"
           className={cn(
             "min-w-0 overflow-auto",
-            selected ? "hidden w-pay-list shrink-0 border-e xl:block" : "flex-1",
+            selected || form
+              ? compact
+                ? "hidden w-pay-list shrink-0 border-e xl:block"
+                : "hidden flex-1 border-e xl:block"
+              : "flex-1",
           )}
         >
           {!total && (
@@ -71,6 +86,18 @@ export function PaymentsScreen({
               Open an account to record a payment or create a checkout.
             </Empty>
           )}
+          {compact &&
+            opened.data &&
+            !paymentGroups.some(([key]) => data[key].some((row) => row.id === selected)) && (
+              <section aria-label="Opened payment">
+                <h2 className="px-6 pb-2 pt-5 text-caption font-semibold text-secondary-foreground">
+                  Opened payment
+                </h2>
+                <ul>
+                  <CompactPayment payment={opened.data} selected={selected} />
+                </ul>
+              </section>
+            )}
           {paymentGroups.map(
             ([key, label]) =>
               data.counts[key] > 0 && (
@@ -79,30 +106,10 @@ export function PaymentsScreen({
                     {label}
                     <span>{data.counts[key]}</span>
                   </h2>
-                  {selected ? (
+                  {compact ? (
                     <ul>
                       {data[key].map((payment) => (
-                        <li key={payment.id}>
-                          <Link
-                            href={`/payments/${payment.id}`}
-                            aria-current={payment.id === selected ? "page" : undefined}
-                            className="block border-b px-6 py-3 hover:bg-muted aria-[current=page]:bg-accent"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="truncate font-semibold">
-                                {payment.account?.name ?? payment.account?.email ?? "Account"}
-                              </span>
-                              <PaymentStatus payment={payment} compact={!!selected} />
-                            </div>
-                            <p className="mt-1 text-caption text-secondary-foreground">
-                              <strong className="text-foreground">
-                                {formatMoney(payment.money)}
-                              </strong>{" "}
-                              · {payment.method === "manual" ? "Manual" : "Card"} ·{" "}
-                              {payment.kind === "first" ? "First" : "Repeat"}
-                            </p>
-                          </Link>
-                        </li>
+                        <CompactPayment key={payment.id} payment={payment} selected={selected} />
                       ))}
                     </ul>
                   ) : (
@@ -116,7 +123,11 @@ export function PaymentsScreen({
                             "Kind",
                             "Recorded by",
                             "Status",
-                            key === "waitingForProvider" ? "Next check" : "When",
+                            key === "waitingForProvider"
+                              ? "Next check"
+                              : key === "waitingForApproval"
+                                ? "Your part"
+                                : "When",
                           ].map((name) => (
                             <TableHead key={name}>{name}</TableHead>
                           ))}
@@ -124,7 +135,10 @@ export function PaymentsScreen({
                       </TableHeader>
                       <TableBody>
                         {data[key].map((payment) => (
-                          <TableRow key={payment.id}>
+                          <TableRow
+                            key={payment.id}
+                            data-state={payment.id === selected ? "selected" : undefined}
+                          >
                             <TableCell>
                               <Link
                                 href={`/payments/${payment.id}`}
@@ -140,17 +154,25 @@ export function PaymentsScreen({
                             <TableCell>{payment.kind === "first" ? "First" : "Repeat"}</TableCell>
                             <TableCell>{payment.recordedBy?.name ?? "Staff member"}</TableCell>
                             <TableCell>
-                              <PaymentStatus payment={payment} compact={!!selected} />
+                              <PaymentStatus payment={payment} compact={compact} />
                             </TableCell>
                             <TableCell>
-                              {callbackDate(
-                                key === "waitingForProvider"
-                                  ? payment.nextCheckAt
-                                  : "at" in payment.state
-                                    ? payment.state.at
-                                    : payment.createdAt,
-                                zone,
-                              )}
+                              {key === "waitingForApproval"
+                                ? payment.actions.approve
+                                  ? "You can approve"
+                                  : payment.actions.cancel
+                                    ? "You can cancel it"
+                                    : payment.actions.approvalRefusal === "alreadyApproved"
+                                      ? "You approved it"
+                                      : "You cannot approve"
+                                : callbackDate(
+                                    key === "waitingForProvider"
+                                      ? payment.nextCheckAt
+                                      : "at" in payment.state
+                                        ? payment.state.at
+                                        : payment.createdAt,
+                                    zone,
+                                  )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -180,8 +202,47 @@ export function PaymentsScreen({
             </div>
           )}
         </section>
-        {children && <div className="min-w-0 flex-1 overflow-auto">{children}</div>}
+        {children && (
+          <div
+            className={cn(
+              "min-w-0 flex-1 overflow-auto",
+              narrowPanel && "xl:w-payment-form xl:flex-none",
+            )}
+          >
+            {children}
+          </div>
+        )}
       </div>
     </>
+  );
+}
+
+function CompactPayment({
+  payment,
+  selected,
+}: {
+  payment: Pick<PaymentRow, "id" | "account" | "state" | "approvals" | "money" | "method" | "kind">;
+  selected?: string;
+}) {
+  return (
+    <li>
+      <Link
+        href={`/payments/${payment.id}`}
+        aria-current={payment.id === selected ? "page" : undefined}
+        className="block border-b px-6 py-3 hover:bg-muted aria-[current=page]:bg-accent"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate font-semibold">
+            {payment.account?.name ?? payment.account?.email ?? "Account"}
+          </span>
+          <PaymentStatus payment={payment} compact />
+        </div>
+        <p className="mt-1 text-caption text-secondary-foreground">
+          <strong className="text-foreground">{formatMoney(payment.money)}</strong> �{" "}
+          {payment.method === "manual" ? "Manual" : "Card"} �{" "}
+          {payment.kind === "first" ? "First" : "Repeat"}
+        </p>
+      </Link>
+    </li>
   );
 }

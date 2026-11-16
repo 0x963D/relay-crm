@@ -168,6 +168,7 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
   const shown = mode && !expanded ? 1 : visible;
   return (
     <>
+      <h1 className="sr-only md:hidden">Lead detail</h1>
       <header className="space-y-5 border-b p-4 @lg/detail:p-6">
         <Button asChild variant="ghost" className="md:hidden">
           <Link href={basePath}>

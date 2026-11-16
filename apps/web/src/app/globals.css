@@ -91,6 +91,7 @@
   --spacing-rail: 14.5rem;
   --spacing-queue: 30.5rem;
   --spacing-pay-list: 25rem;
+  --spacing-payment-form: 27rem;
   --color-funnel-received: light-dark(#c5cbf4, #3a4199);
   --color-funnel-won: light-dark(#1f8f49, #5fd08a);
 }

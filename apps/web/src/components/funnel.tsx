@@ -38,7 +38,11 @@ export function FunnelScreen() {
         }).format(won / received)
       : "—";
   function exportCsv() {
-    const escape = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const escape = (value: string | number) => {
+      const text = String(value);
+      const cell = /^[=+@\-\t\r]/.test(text) ? `'${text}` : text;
+      return `"${cell.replaceAll('"', '""')}"`;
+    };
     const rows = [
       ["Campaign", "Source", "Received", "Unassigned", "Contacted", "Won", "Conversion"],
       ...data.rows.map((row) => [

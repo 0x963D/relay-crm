@@ -8,8 +8,10 @@ export default async function PoolPage() {
   const { profile, zone } = await requireSession();
   if (!isLeadManager(profile.role)) redirect(homeFor(profile.role));
   const client = getQueryClient();
-  void client.query(trpc.leads.pool.queryOptions({ limit: 14, offset: 0 })).catch(() => undefined);
-  void client.query(trpc.leads.agents.queryOptions({ offset: 0 })).catch(() => undefined);
+  await Promise.all([
+    client.query(trpc.leads.pool.queryOptions({ limit: 14, offset: 0 })),
+    client.query(trpc.leads.agents.queryOptions({ offset: 0 })),
+  ]);
   return (
     <HydrateClient>
       <Suspense fallback={<Loading label="Loading pool" />}>

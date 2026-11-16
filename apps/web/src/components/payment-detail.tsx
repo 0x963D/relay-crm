@@ -138,7 +138,7 @@ export function PaymentDetail({
             {payment.method === "manual" ? "manual" : "card, sandbox provider"}
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 @lg/payment:grid-cols-3">
           <Signoff
             caption={payment.method === "manual" ? "Recorded by" : "Checkout created by"}
             name={payment.recordedBy?.name ?? "Staff member"}
@@ -234,7 +234,7 @@ export function PaymentDetail({
           </section>
         )}
         {reviewing && (
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 @lg/payment:grid-cols-3">
             <div>
               <p className="text-xs text-muted-foreground">This payment</p>
               <p className="text-xl font-bold">{formatMoney(payment.money)}</p>
