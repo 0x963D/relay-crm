@@ -17,6 +17,11 @@ Open the app at <http://127.0.0.1:3107> and the inbox at <http://127.0.0.1:8127>
 These are the only published ports. Both bind to loopback, and the database has no published port.
 `docker compose config` prints the effective ports and service configuration.
 
+The three upstream images in `compose.yaml` pin a tag and its manifest digest.
+To update one, choose its new tag, run `docker buildx imagetools inspect <image>:<tag>`, and replace
+both the tag and the `sha256` digest with that manifest's values.
+Run `pnpm demo:check <evidence-directory>` before committing the update.
+
 To run another copy, choose a different project name and free ports. In a POSIX shell, for example,
 run `COMPOSE_PROJECT_NAME=relay-second RELAY_HTTP_PORT=3117 RELAY_INBOX_PORT=8137 docker compose up`.
 Use the same variables with later Compose commands. `RELAY_TIME_ZONE` selects the local day for

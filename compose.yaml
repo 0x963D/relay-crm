@@ -1,6 +1,6 @@
 services:
   secrets:
-    image: node:24.14.0-bookworm-slim
+    image: node:24.14.0-bookworm-slim@sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8
     command: ["node", "/seed-secrets.ts", "${RELAY_TIME_ZONE:-UTC}", "${RELAY_HTTP_PORT:-3107}"]
     volumes:
       - db-config:/run/relay-secrets/db
@@ -10,7 +10,7 @@ services:
       - ./apps/web/scripts/demo-secrets.ts:/seed-secrets.ts:ro
 
   db:
-    image: postgres:17
+    image: postgres:17@sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac
     environment:
       POSTGRES_USER: relay
       POSTGRES_DB: relay
@@ -30,7 +30,7 @@ services:
       retries: 30
 
   mail:
-    image: axllent/mailpit:v1.29.2
+    image: axllent/mailpit:v1.29.2@sha256:030f06031ce5c60913ac9363da1ab0d4be6fd2a78147dd0e1ca0fcac665d6b34
     environment:
       MP_DATABASE: /data/mailpit.db
       MP_MAX_MESSAGES: "0"
