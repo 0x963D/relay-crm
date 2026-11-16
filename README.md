@@ -21,9 +21,8 @@ A ledger line has a `side` of `debit` or `credit` and a positive amount in minor
 A posting balances when debits equal credits. Customer accounts are liabilities, so a payment
 credits the customer. The card provider and bank are assets, so the payment debits them.
 A customer balance is credits minus debits. The database checks both sides against the payment.
-The forward migration converts signed historical amounts to that convention.
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/migrations.int.test.ts`
-to check postings, balances and historical conversion.
+Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts`
+to check postings and balances.
 
 ## Status
 
@@ -63,7 +62,7 @@ What works today:
 - A typed tRPC API parses inputs and uses superjson for dates.
 
 `pnpm test` runs unit tests. `pnpm test:int` runs integration tests against real PostgreSQL,
-including forced races, forward migration of populated tables and catalog checks for unique indexes.
+including forced races and catalog checks for unique indexes, grants and triggers.
 `pnpm test:prod` checks the production build, SMTP sign-in and scoped API errors.
 `pnpm test:mutations <output-directory>` removes each covered safety check in turn, requires its
 named test to fail, restores the source in `finally`, and reruns the unchanged tests.
@@ -171,7 +170,7 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
    The app has schema usage and sequence usage. Immutable tables, including the ledger, grant
    only `SELECT` and `INSERT`. Mutable business tables also grant `UPDATE`. Memberships,
    authentication tables, request limits and email suppressions also grant `DELETE`.
-   No app table grants `TRUNCATE`, DDL or trigger control. The forward migration lists every grant.
+   No app table grants `TRUNCATE`, DDL or trigger control. The roles and grants migration lists every grant.
    The statement-level `BEFORE TRUNCATE` triggers remain a second defence, including for the owner.
    Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts packages/store/test/schema.int.test.ts`
    to check permissions and the truncate guards.
@@ -282,11 +281,6 @@ The HTTP boundary generates a request ID and returns it in `X-Request-ID`. Assig
 payment events and audit rows keep that ID. Idempotent operations also keep their separate
 `idempotency_id`. Reopening uses its intake event ID. The receipt foreign key checks at commit so the audit
 can precede its immutable receipt inside the same transaction.
-
-Forward migrations preserve stored receipts and decode old lifecycle snapshot strings into objects.
-Old audit rows use their own audit ID as a correlation ID because their original request was not stored.
-Receipts created before request hashing have an `unrecoverable:<id>` marker and refuse key reuse.
-The hash column is required. New receipts store the request hash. These limits apply to historical data, not to newly recorded operations.
 
 `RACE_CONSTRAINTS` in `packages/store/src/tx.ts` classifies every public unique index as `retry` or
 `reject`. The PostgreSQL catalog test fails if an index has no classification or a named index is absent.
@@ -478,14 +472,12 @@ of the lead decisions.
 
 `leads.get` includes custody, original attribution and the timeline in descending database sequence.
 Custody gives the original intake source and receipt time, the latest assigner and assignment time,
-and the current holder. Missing historical custody is null. Timeline entries include actor names,
+and the current holder. Missing custody is null. Timeline entries include actor names,
 the submitted command and the request ID. Attempt summaries return `callbackAt` as a date and
 `noAnswerCount` at that entry. Activity snapshots are JSON objects. Entries remain append-only.
 
-`contactedAt` is null when no contact is recorded or the first contact time cannot be known.
-`workHistoryKnown` distinguishes a lead whose capture began at creation from historical leads
-already present when the work feature was migrated. The timeline retains each observed attempt
-at its recorded time. The migration does not infer historical contact times.
+`contactedAt` is null when no contact is recorded. The timeline retains each observed attempt
+at its recorded time.
 
 ## Campaign funnel and accounts
 
@@ -552,7 +544,7 @@ checkout creation after an interrupted request. The provider gives each checkout
 The pay URL contains a random bearer token. Only its SHA-256 hash is stored. Only the authorized
 creation response returns the URL. Later reads and creation replays return no token or pay URL.
 If that response is lost after provider creation, close the waiting payment and create another.
-The migration invalidates old payment-ID links. Creation replays recheck current account edit access.
+Creation replays recheck current account edit access.
 `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts` checks
 that an accountant cannot pay with a disclosed payment ID, and that tokens use 32 random bytes.
 `recordedById` and `soldById` are fixed at creation.
@@ -654,14 +646,13 @@ increments the user's role version and voids that person's approvals on waiting 
 Completed payments keep their historical approvals. The approving transaction reloads both
 approvers' roles and versions. The database checks eligibility on approval insert and independently
 requires two current approvals from people other than the makers at completion. User emails are
-unique ignoring case. The email migration refuses existing case-insensitive duplicates.
+unique ignoring case.
 
 `payments.editManual` accepts money, receipt hash and reference while the payment waits. The
 account is immutable. The edit checks the displayed version, adds the editor to the append-only maker set, increments
 the version and voids every active approval in the same transaction. Earlier approvals therefore
 cannot approve the new terms. Editing and approval serialize on the payment. A request whose
-terms version became stale must refresh. The maker migration recovers earlier editors from payment
-events and refuses edited records whose editor history is missing.
+terms version became stale must refresh.
 
 `payments.get` and `payments.list` include the recorder, approval history and the
 signed-in person's actions. Typed errors include `pendingPayment`, `receiptUsed`, `paymentRecorder`,

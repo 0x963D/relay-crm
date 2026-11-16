@@ -76,7 +76,7 @@ const definitions: {
   },
   {
     name: "payment-completion-maker",
-    file: "packages/store/prisma/migrations/0037_manual_completion_eligibility/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
       "NOT EXISTS (SELECT 1 FROM payment_makers m WHERE m.payment_id=NEW.id AND m.user_id=a.approver_id)",
     after: "true",
@@ -85,7 +85,7 @@ const definitions: {
   },
   {
     name: "payment-role-insert",
-    file: "packages/store/prisma/migrations/0033_payment_maker_history/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before: " OR u.role_version<>NEW.role_version",
     after: "",
     test: "approval insert independently compares the current role version",
@@ -93,7 +93,7 @@ const definitions: {
   },
   {
     name: "payment-role-completion",
-    file: "packages/store/prisma/migrations/0037_manual_completion_eligibility/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before: "AND a.role_version=u.role_version",
     after: "",
     test: "completion independently compares both approval role versions",
@@ -125,126 +125,126 @@ const definitions: {
   },
   {
     name: "truncate-intake_events",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0002_leads_and_intake/migration.sql",
     before:
-      "CREATE TRIGGER intake_events_no_truncate BEFORE TRUNCATE ON intake_events FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER intake_events_no_truncate BEFORE TRUNCATE ON public.intake_events FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses intake_events",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-activities",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0002_leads_and_intake/migration.sql",
     before:
-      "CREATE TRIGGER activities_no_truncate BEFORE TRUNCATE ON activities FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER activities_no_truncate BEFORE TRUNCATE ON public.activities FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses activities",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-audit_log",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0002_leads_and_intake/migration.sql",
     before:
-      "CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON public.audit_log FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses audit_log",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-distribution_previews",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0002_leads_and_intake/migration.sql",
     before:
-      "CREATE TRIGGER distribution_previews_no_truncate BEFORE TRUNCATE ON distribution_previews FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER distribution_previews_no_truncate BEFORE TRUNCATE ON public.distribution_previews FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses distribution_previews",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-idempotency_records",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0002_leads_and_intake/migration.sql",
     before:
-      "CREATE TRIGGER idempotency_records_no_truncate BEFORE TRUNCATE ON idempotency_records FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER idempotency_records_no_truncate BEFORE TRUNCATE ON public.idempotency_records FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses idempotency_records",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-ledger_accounts",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE TRIGGER ledger_accounts_no_truncate BEFORE TRUNCATE ON ledger_accounts FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER ledger_accounts_no_truncate BEFORE TRUNCATE ON public.ledger_accounts FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses ledger_accounts",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-ledger_transactions",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE TRIGGER ledger_transactions_no_truncate BEFORE TRUNCATE ON ledger_transactions FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER ledger_transactions_no_truncate BEFORE TRUNCATE ON public.ledger_transactions FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses ledger_transactions",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-ledger_lines",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE TRIGGER ledger_lines_no_truncate BEFORE TRUNCATE ON ledger_lines FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER ledger_lines_no_truncate BEFORE TRUNCATE ON public.ledger_lines FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses ledger_lines",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-payment_events",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE TRIGGER payment_events_no_truncate BEFORE TRUNCATE ON payment_events FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER payment_events_no_truncate BEFORE TRUNCATE ON public.payment_events FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses payment_events",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-webhook_inbox",
-    file: "packages/store/prisma/migrations/0013_block_truncate/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE TRIGGER webhook_inbox_no_truncate BEFORE TRUNCATE ON webhook_inbox FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER webhook_inbox_no_truncate BEFORE TRUNCATE ON public.webhook_inbox FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses webhook_inbox",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-payment_approvals",
-    file: "packages/store/prisma/migrations/0016_manual_payments/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE TRIGGER payment_approvals_no_truncate BEFORE TRUNCATE ON payment_approvals FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER payment_approvals_no_truncate BEFORE TRUNCATE ON public.payment_approvals FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses payment_approvals",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-receipt_attempts",
-    file: "packages/store/prisma/migrations/0017_receipt_delivery/migration.sql",
+    file: "packages/store/prisma/migrations/0004_outbox_and_receipts/migration.sql",
     before:
-      "CREATE TRIGGER receipt_attempts_no_truncate BEFORE TRUNCATE ON receipt_attempts FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER receipt_attempts_no_truncate BEFORE TRUNCATE ON public.receipt_attempts FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses receipt_attempts",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "truncate-outbox",
-    file: "packages/store/prisma/migrations/0028_required_payment_receipt/migration.sql",
+    file: "packages/store/prisma/migrations/0004_outbox_and_receipts/migration.sql",
     before:
-      "CREATE TRIGGER outbox_no_truncate BEFORE TRUNCATE ON outbox FOR EACH STATEMENT EXECUTE FUNCTION reject_mutation();",
+      "CREATE TRIGGER outbox_no_truncate BEFORE TRUNCATE ON public.outbox FOR EACH STATEMENT EXECUTE FUNCTION public.reject_mutation();",
     after: "",
     test: "standalone truncate refuses outbox",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
   {
     name: "payment-active-approval-index",
-    file: "packages/store/prisma/migrations/0016_manual_payments/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before:
-      "CREATE UNIQUE INDEX payment_approvals_active_key ON payment_approvals(payment_id,approver_id) WHERE voided_at IS NULL;",
+      "CREATE UNIQUE INDEX payment_approvals_active_key ON public.payment_approvals USING btree (payment_id, approver_id) WHERE (voided_at IS NULL);",
     after: "",
     test: "the database refuses duplicate active approvals but permits a fresh approval after voiding",
     testFile: "packages/store/test/payment-guards.int.test.ts",
@@ -290,7 +290,7 @@ definitions.push(
 definitions.push(
   {
     name: "payments-close-reason",
-    file: "packages/store/prisma/migrations/0036_checkout_creation_owner/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before: " AND NEW.reason='paid after close'",
     after: "",
     test: "the SQL guard requires paid after close",
@@ -298,7 +298,7 @@ definitions.push(
   },
   {
     name: "payments-waiting-reason",
-    file: "packages/store/prisma/migrations/0036_checkout_creation_owner/migration.sql",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
     before: " AND NEW.reason IN ('amount mismatch','currency mismatch')",
     after: "",
     test: "the SQL guard permits only mismatch reasons",
@@ -313,14 +313,6 @@ definitions.push(
     testFile: "packages/store/test/payment-safety.int.test.ts",
   },
   {
-    name: "payments-historical-sides",
-    file: "packages/store/prisma/migrations/0020_ledger_sides/migration.sql",
-    before: "amount>0 THEN 'credit' ELSE 'debit'",
-    after: "amount>0 THEN 'debit' ELSE 'credit'",
-    test: "forward migration preserves a signed historical posting as credit and debit",
-    testFile: "packages/store/test/migrations.int.test.ts",
-  },
-  {
     name: "payments-close-scope",
     file: "packages/store/src/payments.ts",
     before: 'type === "closeCheckout" &&',
@@ -330,8 +322,8 @@ definitions.push(
   },
   {
     name: "payments-card-index",
-    file: "packages/store/prisma/migrations/0025_payment_in_progress/migration.sql",
-    before: "'pendingApproval','checkoutCreated'",
+    file: "packages/store/prisma/migrations/0003_payments_and_ledger/migration.sql",
+    before: "'pendingApproval'::text, 'checkoutCreated'::text",
     after: "'pendingApproval'",
     test: "two card checkouts reach the in-progress unique index",
     testFile: "packages/store/test/payment-safety.int.test.ts",
