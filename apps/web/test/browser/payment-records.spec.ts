@@ -2,6 +2,35 @@ import { test, expect } from "@playwright/test";
 import { signIn, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("money routes show their loading state while navigation waits", async ({ page }) => {
+  await signIn(page, "manager");
+  for (const [path, label, loading] of [
+    ["payments", "Payments", "Loading payments"],
+    ["accounts", "Accounts", "Loading accounts"],
+    ["funnel", "Campaign funnel", "Loading funnel"],
+  ]) {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/${path}?*`, async (route) => {
+      if (!route.request().headers()["next-router-prefetch"]) await gate;
+      await route.continue();
+    });
+    try {
+      await page
+        .getByRole("navigation", { name: "Main" })
+        .getByRole("link", { name: label, exact: true })
+        .click();
+      await expect(page.getByRole("status", { name: loading, exact: true })).toBeVisible();
+    } finally {
+      release();
+    }
+    await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+    await page.unroute(`**/${path}?*`);
+  }
+});
+
 test("missing, foreign and malformed records have an unavailable message instead of a server error", async ({
   page,
 }) => {
