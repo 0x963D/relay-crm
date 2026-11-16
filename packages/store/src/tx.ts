@@ -12,10 +12,13 @@ const boundTransactions = new WeakMap<Db, Tx>();
 /** Demo setup composes existing operations into one owner transaction. */
 export function transactionConnection(db: Db, tx: Tx): Db {
   const bound = new Proxy(db, {
-    get(target, key) {
+    get(_target, key) {
       if (key === "$disconnect") return () => Promise.resolve();
-      const value: unknown = Reflect.get(tx, key, tx) ?? Reflect.get(target, key, target);
-      return value;
+      if (key === "$transaction")
+        return () => {
+          throw new Error("A bound seed connection cannot open a transaction. Use transact.");
+        };
+      return Reflect.get(tx, key, tx);
     },
   });
   boundTransactions.set(bound, tx);

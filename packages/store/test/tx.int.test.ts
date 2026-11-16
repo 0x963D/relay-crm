@@ -1,6 +1,13 @@
 import { describe, expect } from "vitest";
 import { test, type TestDatabase } from "../src/testing/index.ts";
-import { connect, isStaleSnapshot, RACE_CONSTRAINTS, transact, type Db } from "../src/tx.ts";
+import {
+  connect,
+  isStaleSnapshot,
+  RACE_CONSTRAINTS,
+  transact,
+  type Db,
+  transactionConnection,
+} from "../src/tx.ts";
 
 const SERIALIZABLE = { isolationLevel: "Serializable", maxWait: 2_000, timeout: 5_000 } as const;
 
@@ -270,4 +277,21 @@ test("every PostgreSQL unique index has an explicit race classification", async 
       .map((row) => row.name)
       .filter((name) => typeof name === "string" && !Object.hasOwn(RACE_CONSTRAINTS, name)),
   ).toEqual([]);
+});
+
+test("a bound seed connection cannot escape its owner transaction", async ({ db }) => {
+  await withOwnerClient(db, async (owner) => {
+    await expect(
+      owner.$transaction(async (tx) => {
+        const bound = transactionConnection(owner, tx);
+        await transact(bound, (same) =>
+          same.team.create({ data: { name: "Must roll back", kind: "sales" } }),
+        );
+        await bound.$transaction(async (outside) =>
+          outside.team.create({ data: { name: "Must never exist", kind: "sales" } }),
+        );
+      }),
+    ).rejects.toThrow("cannot open a transaction");
+    expect(await owner.team.count()).toBe(0);
+  });
 });
