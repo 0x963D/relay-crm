@@ -5,8 +5,9 @@ import { createTestDatabase, prepareTestServer } from "@relay/store/testing/data
 import { seedDemo } from "@relay/store/demo";
 import { openSmtpInbox } from "../support/smtp.ts";
 import { serve } from "../support/production-server.ts";
-import { browserDirectory, stateFile } from "./paths.ts";
+import { browserDirectory, stateFile, captureDay } from "./paths.ts";
 export default async function setup() {
+  const today = captureDay ? new Date(captureDay) : new Date();
   await mkdir(browserDirectory, { recursive: true });
   await prepareTestServer();
   const { db, dispose } = await createTestDatabase();
@@ -22,7 +23,7 @@ export default async function setup() {
     await seedDemo({
       ownerUrl: db.ownerConnectionString,
       appUrl: db.connectionString,
-      today: new Date(),
+      today,
       timeZone: "UTC",
       deliver: () => Promise.resolve({ state: "sent" }),
     });
@@ -35,8 +36,17 @@ export default async function setup() {
         RELAY_DEMO: "1",
         RELAY_TIME_ZONE: "UTC",
         RELAY_TRUSTED_PROXY_COUNT: "1",
+        RELAY_SANDBOX: "1",
+        RELAY_SANDBOX_URL: origin,
+        RELAY_PAYMENT_WEBHOOK_SECRET: "fake-browser-webhook-secret-abcdefghijklmnopqrstuvwxyz",
+        RELAY_RECONCILE_SECRET: "fake-browser-reconcile-secret-abcdefghijklmnopqrstuvwxyz",
+        RELAY_RECONCILE_FIRST_MS: "0",
+        RELAY_RECONCILE_INTERVAL_MS: "1000",
+        RELAY_SANDBOX_LATE_MS: "5000",
       }),
       db.connectionString,
+      false,
+      captureDay,
     );
     standard = await serve(
       (origin) => ({
@@ -46,10 +56,17 @@ export default async function setup() {
         SMTP_FROM: "relay@tidewell.example",
       }),
       db.connectionString,
+      false,
+      captureDay,
     );
     await writeFile(
       stateFile,
-      JSON.stringify({ url: server.url(""), signInUrl: standard.url(""), inbox: inboxFile }),
+      JSON.stringify({
+        url: server.url(""),
+        signInUrl: standard.url(""),
+        inbox: inboxFile,
+        today: today.toISOString(),
+      }),
     );
   } catch (error) {
     await server?.stop();

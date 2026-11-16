@@ -240,7 +240,10 @@ test("a failed refresh reports the read failure after a successful save", async 
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
   await page.unrouteAll();
-  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Lead detail", exact: true })
+    .getByRole("button", { name: "Try again", exact: true })
+    .click();
   await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
     "Saved while the refresh is unavailable.",
   );

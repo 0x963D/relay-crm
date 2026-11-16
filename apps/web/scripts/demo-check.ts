@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import superjson from "superjson";
+import { createRequire } from "node:module";
+import { commandEnvironment } from "../src/server/env.ts";
 import { z } from "zod";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -242,7 +244,7 @@ async function check() {
       (clock[1] ?? 0) * 60 +
       (clock[2] ?? 0) +
       queue.at.getMilliseconds() / 1000;
-    const passed = Number(seconds > 17.5 * 3600) + Number(seconds > 18.5 * 3600);
+    const passed = Number(seconds > 20 * 3600) + Number(seconds > 22 * 3600);
     assert.deepEqual(queue.counts, {
       overdueCallbacks: 2 + passed,
       dueToday: 2 - passed,
@@ -409,6 +411,61 @@ async function check() {
     paymentCounts: restoredPayments.counts,
     ledgerBalanceMinor: "118500",
   });
+  if (process.argv.includes("--browser")) {
+    const raw: unknown = JSON.parse(
+      (
+        await docker([
+          ...composeArgs,
+          "exec",
+          "-T",
+          "app",
+          "node",
+          "-e",
+          "process.stdout.write(require('node:fs').readFileSync('/run/relay-secrets/app/config.json','utf8'))",
+        ])
+      ).stdout,
+    );
+    const keys = z
+      .object({ RELAY_PAYMENT_WEBHOOK_SECRET: z.string(), RELAY_RECONCILE_SECRET: z.string() })
+      .parse(raw);
+    const browserDirectory = resolve(directory, "playwright");
+    await mkdir(browserDirectory, { recursive: true });
+    await writeFile(
+      resolve(browserDirectory, "state.json"),
+      JSON.stringify({
+        url: origin,
+        signInUrl: origin,
+        inbox,
+        today: new Date().toISOString(),
+        webhookSecret: keys.RELAY_PAYMENT_WEBHOOK_SECRET,
+        reconcileSecret: keys.RELAY_RECONCILE_SECRET,
+      }),
+    );
+    try {
+      const cli = createRequire(import.meta.url).resolve("@playwright/test/cli");
+      const code = await new Promise<number>((accept, reject) => {
+        const child = spawn(
+          process.execPath,
+          [cli, "test", "--config", "playwright.demo.config.ts"],
+          {
+            cwd: root,
+            stdio: "inherit",
+            env: commandEnvironment({ RELAY_EVIDENCE_DIR: directory }),
+          },
+        );
+        child.on("error", reject);
+        child.on("exit", (code) => {
+          accept(code ?? 1);
+        });
+      });
+      assert.equal(code, 0, "The fresh demo browser check failed.");
+    } finally {
+      await writeFile(
+        resolve(browserDirectory, "state.json"),
+        JSON.stringify({ url: origin, signInUrl: origin, inbox, today: new Date().toISOString() }),
+      );
+    }
+  }
 }
 try {
   const deadline = performance.now() + 900000;

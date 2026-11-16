@@ -8,7 +8,7 @@ test.use({ deviceScaleFactor: 2 });
 
 async function frameCapture(page: Page) {
   await mkdir(captureDirectory, { recursive: true });
-  await page.clock.setFixedTime(new Date());
+  await page.clock.setFixedTime(new Date(browserState().today));
   return async (name: string) => {
     await expect(page.getByRole("status", { name: /^Loading / })).toHaveCount(0);
     for (const theme of ["light", "dark"]) {
@@ -206,8 +206,6 @@ test("@capture empty and refused workspaces in both themes", async ({ page }) =>
   });
   expect(role.status()).toBe(200);
   await page.goto(`${browserState().url}/pool`);
-  await expect(
-    page.getByRole("heading", { name: "Accountant screens are not built yet", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible();
   await capture("15-pool-failed");
 });

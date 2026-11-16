@@ -27,6 +27,7 @@ export async function serve(
     Readonly<Record<string, string>> | ((origin: string) => Readonly<Record<string, string>>),
   databaseUrl = UNREACHABLE_DATABASE,
   rawNext = false,
+  captureDay?: string,
 ) {
   const port = await freePort();
   const origin = `http://127.0.0.1:${String(port)}`;
@@ -40,7 +41,10 @@ export async function serve(
   );
   const server = spawn(
     process.execPath,
-    rawNext ? [NEXT, "start", "--port", String(port)] : ["scripts/serve.ts"],
+    [
+      ...(captureDay ? ["--import", new URL("./fixed-clock.mjs", import.meta.url).href] : []),
+      ...(rawNext ? [NEXT, "start", "--port", String(port)] : ["scripts/serve.ts"]),
+    ],
     {
       cwd: APP,
       env: {
@@ -48,6 +52,7 @@ export async function serve(
         DATABASE_URL: databaseUrl,
         PORT: String(port),
         HOST: "127.0.0.1",
+        ...(captureDay ? { RELAY_CAPTURE_DAY: captureDay } : {}),
         ...configured,
       },
       stdio: ["ignore", "pipe", "pipe"],

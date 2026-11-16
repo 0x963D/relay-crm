@@ -310,6 +310,7 @@ test("tabs render enabled and respond after hydration", async ({ page }) => {
     await expect(tab).toBeVisible();
     await expect(tab).toBeEnabled();
     release();
+    await page.waitForLoadState("load");
     await expect(tab).toBeEnabled();
     await tab.click();
     await expect(tab).toHaveAttribute("aria-selected", "true");

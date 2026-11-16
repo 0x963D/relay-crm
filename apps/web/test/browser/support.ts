@@ -4,6 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import superjson from "superjson";
+import { z } from "zod";
 import type { AppRouter } from "../../src/server/rpc.ts";
 import { browserState, browserDirectory } from "./paths.ts";
 export function rpc(page: Page) {
@@ -92,7 +93,22 @@ export async function accessibility(page: Page, label: string) {
 }
 export async function latestCode() {
   const { inbox } = browserState();
-  const contents = await readFile(inbox, "utf8");
+  let contents: string;
+  if (inbox.startsWith("http://")) {
+    const listing: unknown = await (await fetch(`${inbox}/api/v1/messages`)).json();
+    const messages = z
+      .object({ messages: z.array(z.object({ ID: z.string() })) })
+      .parse(listing).messages;
+    contents = "";
+    for (const message of messages) {
+      const raw: unknown = await (await fetch(`${inbox}/api/v1/message/${message.ID}`)).json();
+      const text = z.object({ Text: z.string() }).parse(raw).Text;
+      if (/\b\d{6}\b/.test(text)) {
+        contents = text;
+        break;
+      }
+    }
+  } else contents = await readFile(inbox, "utf8");
   const codes = [...contents.matchAll(/\b(\d{6})\b/g)];
   return codes.at(-1)?.[1] ?? "";
 }

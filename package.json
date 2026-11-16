@@ -32,7 +32,8 @@
     "import:csv": "dotenv -- tsx apps/web/scripts/import-csv.ts",
     "test:mutations": "tsx packages/store/test/safety-mutations.ts",
     "test:browser": "dotenv -- playwright test --grep-invert @capture",
-    "capture": "dotenv -- playwright test --grep @capture"
+    "capture": "dotenv -- tsx apps/web/scripts/capture.ts",
+    "capture:readme": "dotenv -- tsx apps/web/scripts/capture.ts --readme"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
