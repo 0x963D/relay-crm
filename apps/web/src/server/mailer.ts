@@ -5,6 +5,7 @@ import {
   type DeliveryOutcome,
 } from "@relay/domain";
 import nodemailer from "nodemailer";
+import type { SMTPConnectionOptions } from "nodemailer/lib/smtp-connection";
 import type { AuthEnv } from "./env.ts";
 
 export type Mailer = (message: { readonly email: string; readonly code: string }) => Promise<void>;
@@ -28,14 +29,29 @@ export function createMailer(delivery: AuthEnv["delivery"]): Mailer {
   };
 }
 
-export function createReceiptMailer(delivery: Extract<AuthEnv["delivery"], { kind: "smtp" }>) {
-  const transport = nodemailer.createTransport({
-    url: delivery.url,
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 20_000,
-  });
+export function createReceiptMailer(
+  delivery: Extract<AuthEnv["delivery"], { kind: "smtp" }>,
+  timeouts: Pick<
+    SMTPConnectionOptions,
+    "connectionTimeout" | "greetingTimeout" | "socketTimeout" | "dnsTimeout"
+  > = {},
+) {
   return async (receipt: ReceiptMessage, signal: AbortSignal): Promise<DeliveryOutcome> => {
+    const transmission = { started: false };
+    const transport = nodemailer.createTransport({
+      url: delivery.url,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
+      ...timeouts,
+      debug: true,
+      // Nodemailer reports CONN even after DATA. Observe transmission without retaining its contents.
+      logger: {
+        debug(entry: { tnx?: string }) {
+          if (entry.tnx === "message") transmission.started = true;
+        },
+      },
+    });
     if (!receipt.email)
       return { state: "failed", reason: "The account has no receipt email address." };
     if (!isCurrencyCode(receipt.currency)) throw new Error("Invalid receipt currency");
@@ -62,8 +78,18 @@ export function createReceiptMailer(delivery: Extract<AuthEnv["delivery"], { kin
           state: "failed",
           reason: `The mail server refused delivery with SMTP ${String(responseCode)}.`,
         };
-      if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EAI_AGAIN")
-        return { state: "failed", reason: "Could not connect to the mail server." };
+      if (!transmission.started)
+        return {
+          state: "failed",
+          reason:
+            code === "EDNS"
+              ? "Could not resolve the mail server address."
+              : code === "ESOCKET"
+                ? "Could not connect to the mail server."
+                : code === "ETIMEDOUT"
+                  ? "The mail server timed out before message data was sent."
+                  : "Delivery stopped before message data was sent.",
+        };
       return {
         state: "unknown",
         reason:

@@ -3,6 +3,7 @@ import { createServer, type Socket } from "node:net";
 
 export async function openSmtpInbox(
   outcome: (message: string) => "sent" | "failed" | "unknown" = () => "sent",
+  fault?: "greeting" | "recipient",
 ) {
   const messages: string[] = [];
   const sockets = new Set<Socket>();
@@ -10,7 +11,7 @@ export async function openSmtpInbox(
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
     socket.setEncoding("utf8");
-    socket.write("220 relay.example ESMTP\r\n");
+    if (fault !== "greeting") socket.write("220 relay.example ESMTP\r\n");
     let buffer = "",
       data = false,
       message = "";
@@ -35,6 +36,8 @@ export async function openSmtpInbox(
           } else message += `${line}\n`;
         } else if (line.startsWith("EHLO") || line.startsWith("HELO"))
           socket.write("250 relay.example\r\n");
+        else if (fault === "recipient" && line.startsWith("RCPT TO"))
+          socket.write("550 recipient refused\r\n");
         else if (line === "DATA") {
           data = true;
           socket.write("354 send message\r\n");

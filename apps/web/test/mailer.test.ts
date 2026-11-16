@@ -1,3 +1,6 @@
+import dns from "node:dns";
+import { createSocket } from "node:dgram";
+import { once } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { createMailer, createReceiptMailer } from "../src/server/mailer.ts";
 import { parseEnv } from "../src/server/env.ts";
@@ -85,5 +88,92 @@ it.each(["failed", "unknown"] as const)("classifies a real SMTP %s outcome", asy
     expect(inbox.messages).toHaveLength(1);
   } finally {
     await inbox.close();
+  }
+});
+
+it("retries a refused local SMTP connection", async () => {
+  const inbox = await openSmtpInbox();
+  await inbox.close();
+  const send = createReceiptMailer({ kind: "smtp", url: inbox.url, from: "relay@sender.example" });
+  expect(
+    await send(
+      {
+        id: "fake-receipt",
+        paymentId: "fake-payment",
+        email: "recipient@example.com",
+        amount: "48000",
+        currency: "GBP",
+      },
+      new AbortController().signal,
+    ),
+  ).toMatchObject({ state: "failed" });
+});
+
+it.each(["greeting", "recipient"] as const)(
+  "retries a local SMTP %s failure before DATA",
+  async (fault) => {
+    const inbox = await openSmtpInbox(() => "sent", fault);
+    try {
+      const send = createReceiptMailer(
+        { kind: "smtp", url: inbox.url, from: "relay@sender.example" },
+        { greetingTimeout: 100 },
+      );
+      expect(
+        await send(
+          {
+            id: "fake-receipt",
+            paymentId: "fake-payment",
+            email: "recipient@example.com",
+            amount: "48000",
+            currency: "GBP",
+          },
+          new AbortController().signal,
+        ),
+      ).toMatchObject({ state: "failed" });
+      expect(inbox.messages).toHaveLength(0);
+    } finally {
+      await inbox.close();
+    }
+  },
+);
+
+it("retries a DNS timeout against a local DNS server", async () => {
+  const server = createSocket("udp4");
+  let queries = 0;
+  server.on("message", () => {
+    queries++;
+  });
+  server.bind(0, "127.0.0.1");
+  await once(server, "listening");
+  const Resolver = dns.Resolver;
+  const resolver = vi.spyOn(dns, "Resolver").mockImplementation(
+    class extends Resolver {
+      constructor(options?: ConstructorParameters<typeof Resolver>[0]) {
+        super(options);
+        this.setServers([`127.0.0.1:${String(server.address().port)}`]);
+      }
+    },
+  );
+  try {
+    const send = createReceiptMailer(
+      { kind: "smtp", url: "smtp://fake-receipt-mail.invalid:25", from: "relay@sender.example" },
+      { dnsTimeout: 100 },
+    );
+    expect(
+      await send(
+        {
+          id: "fake-receipt",
+          paymentId: "fake-payment",
+          email: "recipient@example.com",
+          amount: "48000",
+          currency: "GBP",
+        },
+        new AbortController().signal,
+      ),
+    ).toEqual({ state: "failed", reason: "Could not resolve the mail server address." });
+    expect(queries).toBeGreaterThan(0);
+  } finally {
+    resolver.mockRestore();
+    server.close();
   }
 });
