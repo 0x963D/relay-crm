@@ -152,3 +152,26 @@ test("assignment audit stores JSON snapshots, a typed subject and its idempotenc
   await db.store.submitDistribution(actor, input);
   expect(await db.rows("SELECT count(*)::int AS count FROM audit_log")).toEqual([{ count: 1 }]);
 });
+
+test("first result and replay both decode the stored JSON value", async ({ db }) => {
+  const client = connect(db.connectionString);
+  const input = { key: "date", operation: "record", request: {} };
+  try {
+    const run = () =>
+      transact(client, (tx) =>
+        idempotent(
+          tx,
+          { kind: "system", name: "reconciler" },
+          input,
+          (value) => value,
+          () => Promise.resolve({ at: new Date("2026-11-16T00:00:00Z") }),
+        ),
+      );
+    const first = await run();
+    const replay = await run();
+    expect(first).toEqual(replay);
+    expect(first).toEqual({ at: "2026-11-16T00:00:00.000Z" });
+  } finally {
+    await client.$disconnect();
+  }
+});

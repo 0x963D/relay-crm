@@ -46,9 +46,9 @@ export async function idempotent<T>(
   }
   const id = randomUUID();
   const result = await execute(id);
-  const decoded = decode(result);
-  await tx.idempotencyRecord.create({
+
+  const stored = await tx.idempotencyRecord.create({
     data: { id, scope, key: input.key, operation: input.operation, requestHash: hash, result },
   });
-  return decoded;
+  return decode(stored.result);
 }
