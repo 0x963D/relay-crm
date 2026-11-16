@@ -12,6 +12,7 @@ export function POST(request: Request) {
     const results = await app.store.runOutbox(app.receiptMailer);
     return Response.json({
       processed: results.length,
+      recordingFailed: results.filter((r) => r.state === "recordingFailed").length,
       superseded: results.filter((r) => r.state === "superseded").length,
       sent: results.filter((r) => r.state === "sent").length,
       failed: results.filter((r) => r.state === "failed").length,

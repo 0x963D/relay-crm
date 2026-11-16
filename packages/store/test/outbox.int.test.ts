@@ -223,3 +223,36 @@ test("a lost lease token never reports an unrecorded send as sent", async ({ db 
   expect(results).toEqual([{ id: w.outboxId, state: "superseded" }]);
   expect((await db.store.getPayment(w.actor, w.id)).receipt?.state).toBe("unknown");
 });
+
+test("one outcome recording failure is recorded and the batch continues", async ({ db }) => {
+  const a = await receipt(db, "first"),
+    b = await receipt(db, "second");
+  await db.rows("UPDATE outbox SET next_attempt_at='2000-01-01' WHERE id=$1", [a.outboxId]);
+  await db.ownerRows(
+    `CREATE FUNCTION fail_finish() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.outbox_id='${a.outboxId}'::uuid AND NEW.finished_at IS NOT NULL THEN RAISE EXCEPTION 'Fake storage failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_finish BEFORE UPDATE ON receipt_attempts FOR EACH ROW EXECUTE FUNCTION fail_finish()`,
+  );
+  const sent: string[] = [];
+  const results = await db.store.runOutbox(
+    (message) => {
+      sent.push(message.id);
+      return Promise.resolve({ state: "sent" });
+    },
+    { at },
+  );
+  expect(sent).toEqual([a.outboxId, b.outboxId]);
+  expect(results).toEqual([
+    { id: a.outboxId, state: "recordingFailed", failureRecorded: true },
+    { id: b.outboxId, state: "sent" },
+  ]);
+  expect((await db.store.getPayment(a.actor, a.id)).receipt?.state).toBe("unknown");
+  expect(
+    await db.rows(
+      "SELECT payment_id,detail FROM payment_events WHERE kind='receiptRecordingFailed'",
+    ),
+  ).toEqual([
+    {
+      payment_id: a.id,
+      detail: { outboxId: a.outboxId, reason: "Could not record receipt delivery outcome." },
+    },
+  ]);
+});

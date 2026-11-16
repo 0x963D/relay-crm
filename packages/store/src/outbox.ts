@@ -135,67 +135,91 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
     },
     orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
     take: options.limit ?? 100,
-    select: { id: true },
+    select: { id: true, paymentId: true },
   });
-  const results: { id: string; state: DeliveryOutcome["state"] | "superseded" }[] = [];
-  for (const { id } of candidates) {
-    const deadline = performance.now() + sendTimeoutMs;
-    const lease = await leaseReceipt(db, id, now(), leaseMs);
-    if (!lease?.leaseToken) continue;
-    const started = await beginDelivery(db, id, lease.leaseToken, now());
-    if (!started) continue;
-    if (started.suppressed) {
-      results.push({ id, state: "suppressed" });
-      continue;
-    }
-    const payment = await db.payment.findUnique({ where: { id: lease.paymentId } });
-    if (!payment) throw new InvariantError("A receipt has no payment");
-    const controller = new AbortController();
-    const timeout: DeliveryOutcome = {
-      state: "unknown",
-      reason: "Delivery exceeded its send timeout. The receipt may have arrived.",
-    };
-    const remaining = deadline - performance.now();
-    let outcome: DeliveryOutcome = timeout;
-    if (remaining > 0) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        outcome = await Promise.race([
-          deliver(
-            {
-              id,
-              paymentId: payment.id,
-              email: lease.recipient,
-              amount: payment.amount.toString(),
-              currency: payment.currency,
-            },
-            controller.signal,
-          ),
-          new Promise<DeliveryOutcome>((resolve) => {
-            timer = setTimeout(() => {
-              controller.abort();
-              resolve(timeout);
-            }, remaining);
-          }),
-        ]);
-      } catch {
-        outcome = {
-          state: "unknown",
-          reason: "Delivery stopped before a confirmed outcome was recorded.",
-        };
-      } finally {
-        clearTimeout(timer);
+  const results: {
+    id: string;
+    state: DeliveryOutcome["state"] | "superseded" | "recordingFailed";
+    failureRecorded?: boolean;
+  }[] = [];
+  for (const { id, paymentId } of candidates) {
+    try {
+      const deadline = performance.now() + sendTimeoutMs;
+      const lease = await leaseReceipt(db, id, now(), leaseMs);
+      if (!lease?.leaseToken) continue;
+      const started = await beginDelivery(db, id, lease.leaseToken, now());
+      if (!started) continue;
+      if (started.suppressed) {
+        results.push({ id, state: "suppressed" });
+        continue;
       }
+      const payment = await db.payment.findUnique({ where: { id: lease.paymentId } });
+      if (!payment) throw new InvariantError("A receipt has no payment");
+      const controller = new AbortController();
+      const timeout: DeliveryOutcome = {
+        state: "unknown",
+        reason: "Delivery exceeded its send timeout. The receipt may have arrived.",
+      };
+      const remaining = deadline - performance.now();
+      let outcome: DeliveryOutcome = timeout;
+      if (remaining > 0) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          outcome = await Promise.race([
+            deliver(
+              {
+                id,
+                paymentId: payment.id,
+                email: lease.recipient,
+                amount: payment.amount.toString(),
+                currency: payment.currency,
+              },
+              controller.signal,
+            ),
+            new Promise<DeliveryOutcome>((resolve) => {
+              timer = setTimeout(() => {
+                controller.abort();
+                resolve(timeout);
+              }, remaining);
+            }),
+          ]);
+        } catch {
+          outcome = {
+            state: "unknown",
+            reason: "Delivery stopped before a confirmed outcome was recorded.",
+          };
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      const recorded = await finishDelivery(
+        db,
+        id,
+        lease.leaseToken,
+        started.attempt.id,
+        outcome,
+        now(),
+      );
+      results.push({ id, state: recorded ? outcome.state : "superseded" });
+    } catch {
+      let failureRecorded = false;
+      try {
+        await transact(db, (tx) =>
+          tx.paymentEvent.create({
+            data: {
+              paymentId,
+              kind: "receiptRecordingFailed",
+              at: now(),
+              detail: { outboxId: id, reason: "Could not record receipt delivery outcome." },
+            },
+          }),
+        );
+        failureRecorded = true;
+      } catch {
+        // A database outage also prevents recording the failure. Keep it in the worker result.
+      }
+      results.push({ id, state: "recordingFailed", failureRecorded });
     }
-    const recorded = await finishDelivery(
-      db,
-      id,
-      lease.leaseToken,
-      started.attempt.id,
-      outcome,
-      now(),
-    );
-    results.push({ id, state: recorded ? outcome.state : "superseded" });
   }
   return results;
 }

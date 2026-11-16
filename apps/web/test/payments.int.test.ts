@@ -521,7 +521,15 @@ test("worker HTTP responses contain counts without record identifiers", async ({
     expect(delivered.status).toBe(200);
     expect
       .soft(await delivered.json())
-      .toEqual({ processed: 1, sent: 0, failed: 0, suppressed: 1, unknown: 0, superseded: 0 });
+      .toEqual({
+        processed: 1,
+        sent: 0,
+        failed: 0,
+        suppressed: 1,
+        unknown: 0,
+        recordingFailed: 0,
+        superseded: 0,
+      });
   } finally {
     await globalThis.relayComposition?.store.close();
     Reflect.deleteProperty(globalThis, "relayComposition");
