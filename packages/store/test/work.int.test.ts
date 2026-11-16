@@ -631,3 +631,25 @@ test("clearing an unset callback refuses without writing history", async ({ db }
   });
   expect((await db.store.getLead(w.agent, id)).noAnswerCount).toBe(2);
 });
+
+test("the app role cannot leave won or dead or reopen lost without intake", async ({ db }) => {
+  const w = await world(db);
+  for (const closing of [
+    won,
+    lost,
+    { kind: "close", closing: { kind: "dead", reason: "duplicate" } },
+  ] as const) {
+    const id = await w.makeLead();
+    await w.work(w.agent, id, noAnswer);
+    await w.work(w.agent, id, closing);
+    for (const sql of [
+      "UPDATE leads SET status='working',stage='ready',account_id=NULL,lost_note=NULL,dead_reason=NULL WHERE id=$1",
+      "UPDATE leads SET status='new',stage=NULL,owner_id=NULL,team_id=NULL,account_id=NULL,lost_note=NULL,dead_reason=NULL WHERE id=$1",
+    ]) {
+      await expect(db.rows(sql, [id])).rejects.toMatchObject({ code: "23514" });
+    }
+    expect((await db.store.getLead(w.manager, id)).lifecycle.state.status).toBe(
+      closing.closing.kind,
+    );
+  }
+});
