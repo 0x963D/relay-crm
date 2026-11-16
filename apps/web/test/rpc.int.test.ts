@@ -250,7 +250,7 @@ test("work endpoints parse commands, preserve callback dates and carry the HTTP 
     ],
     ["leads.addNote", { id, key: "bad", note: " " }],
     ["leads.setCallback", { id, key: "bad", change: { kind: "set", at: "2099-11-17" } }],
-    ["leads.close", { id, key: "bad", closing: { kind: "lost", reason: "other", note: " " } }],
+    ["leads.close", { id, key: "bad", closing: { kind: "lost", note: " " } }],
     ["leads.close", { id, key: "bad", closing: { kind: "dead", reason: "badTiming" } }],
   ] as const)
     expect((await rpc(context, path, input, "POST")).status).toBe(400);
@@ -268,7 +268,7 @@ test("work endpoints parse commands, preserve callback dates and carry the HTTP 
   await caller.leads.close({
     id,
     key: "lost",
-    closing: { kind: "lost", reason: "badTiming", note: "Starts next year" },
+    closing: { kind: "lost", note: "Starts next year" },
   });
   expect((await caller.leads.get({ id })).lostNote).toBe("Starts next year");
 });

@@ -47,16 +47,6 @@ enum WorkStage {
   @@map("work_stage")
 }
 
-enum LostReason {
-  notInterested
-  noBudget
-  choseCompetitor
-  badTiming
-  other
-
-  @@map("lost_reason")
-}
-
 enum DeadReason {
   duplicate
   wrongNumber
@@ -177,7 +167,6 @@ model Lead {
   stage           WorkStage?
   callBackAt      DateTime?   @map("call_back_at") @db.Timestamptz(3)
   noAnswerCount   Int?        @map("no_answer_count")
-  lostReason      LostReason? @map("lost_reason")
   deadReason      DeadReason? @map("dead_reason")
   accountId       String?     @unique @map("account_id") @db.Uuid
   firstAssignedAt DateTime?   @map("first_assigned_at") @db.Timestamptz(3)

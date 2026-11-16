@@ -82,7 +82,7 @@ const REJECTED: readonly (readonly [
         owner_id: p.owner,
         team_id: p.team,
         first_assigned_at: AT,
-        lost_reason: "other",
+        lost_note: "other",
         account_id: p.account,
       }),
   ],
@@ -96,7 +96,7 @@ const REJECTED: readonly (readonly [
     "a dead lead that also has a lost reason",
     "leads_state_shape",
     "leads",
-    () => lead({ status: "dead", dead_reason: "duplicate", lost_reason: "other" }),
+    () => lead({ status: "dead", dead_reason: "duplicate", lost_note: "other" }),
   ],
   [
     "a call-back stage with no time",

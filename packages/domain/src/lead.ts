@@ -5,15 +5,6 @@ import { err, ok, type Result } from "./result.ts";
 export const INTAKE_SOURCES = ["metaLeadAds", "webForm", "csv", "manual"] as const;
 export type IntakeSource = (typeof INTAKE_SOURCES)[number];
 
-export const LOST_REASONS = [
-  "notInterested",
-  "noBudget",
-  "choseCompetitor",
-  "badTiming",
-  "other",
-] as const;
-export type LostReason = (typeof LOST_REASONS)[number];
-
 export const DEAD_REASONS = ["duplicate", "wrongNumber", "doNotContact"] as const;
 export type DeadReason = (typeof DEAD_REASONS)[number];
 
@@ -33,7 +24,7 @@ export type LeadState =
   | { readonly status: "assigned"; readonly assignee: Assignment }
   | { readonly status: "working"; readonly assignee: Assignment; readonly stage: WorkStage }
   | { readonly status: "won"; readonly assignee: Assignment; readonly accountId: AccountId }
-  | { readonly status: "lost"; readonly assignee: Assignment; readonly reason: LostReason }
+  | { readonly status: "lost"; readonly assignee: Assignment; readonly reason: string }
   | { readonly status: "dead"; readonly assignee: Assignment | null; readonly reason: DeadReason };
 
 export type LeadStatus = LeadState["status"];
@@ -69,7 +60,7 @@ export type LeadEvent =
   | { readonly type: "logNoAnswer" }
   | { readonly type: "clearCallBack" }
   | { readonly type: "win"; readonly accountId: AccountId }
-  | { readonly type: "lose"; readonly reason: LostReason }
+  | { readonly type: "lose"; readonly reason: string }
   | { readonly type: "markDead"; readonly reason: DeadReason }
   | { readonly type: "reopen"; readonly reason: ReopenReason };
 

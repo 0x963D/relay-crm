@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   ATTEMPT_CHANNELS,
   ATTEMPT_OUTCOMES,
-  LOST_REASONS,
   DEAD_REASONS,
   PaymentId,
   SANDBOX_MODES,
@@ -134,7 +133,7 @@ const WorkInput = { id: LeadIdentifier, key: z.string().min(1).max(200) };
 const Note = z.string().trim().min(1).max(4000);
 const ClosingInput = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("won") }).strict(),
-  z.object({ kind: z.literal("lost"), reason: z.enum(LOST_REASONS), note: Note }).strict(),
+  z.object({ kind: z.literal("lost"), note: Note }).strict(),
   z.object({ kind: z.literal("dead"), reason: z.enum(DEAD_REASONS) }).strict(),
 ]);
 

@@ -153,7 +153,7 @@ export async function workLead(
                 next = nextState(before, { type: "markDead", reason: closing.reason }, at);
                 break;
               case "lost":
-                next = nextState(before, { type: "lose", reason: closing.reason }, at);
+                next = nextState(before, { type: "lose", reason: closing.note }, at);
                 lostNote = closing.note;
                 break;
               case "won": {

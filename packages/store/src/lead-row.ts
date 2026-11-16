@@ -16,7 +16,6 @@ import {
   type LeadLifecycle,
   type LeadState,
   type LeadStatus,
-  type LostReason,
   type Role,
   type TeamKind,
   type WorkStage,
@@ -32,7 +31,6 @@ export type EnumParity = [
   Assert<Same<$Enums.SystemActor, SystemActor>>,
   Assert<Same<$Enums.LeadStatus, LeadStatus>>,
   Assert<Same<$Enums.WorkStage, WorkStage["kind"]>>,
-  Assert<Same<$Enums.LostReason, LostReason>>,
   Assert<Same<$Enums.DeadReason, DeadReason>>,
   Assert<Same<$Enums.IntakeSource, IntakeSource>>,
   Assert<Same<$Enums.IntakeOutcome, IntakeOutcome["kind"]>>,
@@ -52,7 +50,7 @@ export type StateColumns = Pick<
   | "stage"
   | "callBackAt"
   | "noAnswerCount"
-  | "lostReason"
+  | "lostNote"
   | "deadReason"
   | "accountId"
 >;
@@ -65,7 +63,7 @@ const BLANK = {
   stage: null,
   callBackAt: null,
   noAnswerCount: null,
-  lostReason: null,
+  lostNote: null,
   deadReason: null,
   accountId: null,
 } satisfies Omit<StateColumns, "status">;
@@ -113,7 +111,7 @@ export function stateToColumns(state: LeadState): StateColumns {
         ...BLANK,
         status: "lost",
         ...ownerColumns(state.assignee),
-        lostReason: state.reason,
+        lostNote: state.reason,
       };
     case "dead":
       return {
@@ -197,7 +195,7 @@ function stateFromRow(row: StateColumns): LeadState {
       return {
         status: "lost",
         assignee: present(assignee, "owner_id"),
-        reason: present(row.lostReason, "lost_reason"),
+        reason: present(row.lostNote, "lost_note"),
       };
     case "dead":
       return { status: "dead", assignee, reason: present(row.deadReason, "dead_reason") };

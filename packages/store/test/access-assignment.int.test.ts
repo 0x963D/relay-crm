@@ -534,7 +534,7 @@ test("reassigning the current owner reports no change and writes no history", as
 
 test("intake reopening records the removed owner under its system actor", async ({ db }) => {
   const w = await world(db);
-  await db.rows("UPDATE leads SET status='lost',lost_reason='badTiming' WHERE id=$1", [w.teammate]);
+  await db.rows("UPDATE leads SET status='lost',lost_note='badTiming' WHERE id=$1", [w.teammate]);
   const result = await db.store.intake(submissionExample({ email: "teammate@example.com" }));
   expect(result.outcome.kind).toBe("leadReopened");
   expect(await db.rows("SELECT actor_id,system_actor,action,subject_id FROM audit_log")).toEqual([
@@ -550,7 +550,7 @@ test("intake reopening records the removed owner under its system actor", async 
 
 test("an unavailable reopen audit rolls back intake and ownership together", async ({ db }) => {
   const w = await world(db);
-  await db.rows("UPDATE leads SET status='lost',lost_reason='badTiming' WHERE id=$1", [w.teammate]);
+  await db.rows("UPDATE leads SET status='lost',lost_note='badTiming' WHERE id=$1", [w.teammate]);
   await db.ownerRows(
     "CREATE FUNCTION fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$; CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION fail_audit()",
   );

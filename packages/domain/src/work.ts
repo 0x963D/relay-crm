@@ -1,4 +1,4 @@
-import type { DeadReason, LostReason } from "./lead.ts";
+import type { DeadReason } from "./lead.ts";
 
 export const ATTEMPT_CHANNELS = ["call", "whatsApp"] as const;
 export const ATTEMPT_OUTCOMES = ["noAnswer", "spokeToThem"] as const;
@@ -15,7 +15,7 @@ export interface Attempt {
 
 export type ClosingReason =
   | { readonly kind: "won" }
-  | { readonly kind: "lost"; readonly reason: LostReason; readonly note: string }
+  | { readonly kind: "lost"; readonly note: string }
   | { readonly kind: "dead"; readonly reason: DeadReason };
 
 export type LeadWork =

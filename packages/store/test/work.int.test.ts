@@ -17,7 +17,7 @@ const spoke: LeadWork = {
 const won: LeadWork = { kind: "close", closing: { kind: "won" } };
 const lost: LeadWork = {
   kind: "close",
-  closing: { kind: "lost", reason: "other", note: "Chose a closer school" },
+  closing: { kind: "lost", note: "Chose a closer school" },
 };
 
 async function world(db: TestDatabase) {
