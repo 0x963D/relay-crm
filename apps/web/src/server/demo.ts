@@ -10,5 +10,11 @@ export async function demoOwnerUrl(file: string) {
 
 export function demoOptions(env: Env, ownerUrl: string, today = new Date()) {
   if (!env.smtp) throw new Error("Demo setup requires an SMTP sink.");
-  return { appUrl: env.databaseUrl, ownerUrl, today, deliver: createReceiptMailer(env.smtp) };
+  return {
+    appUrl: env.databaseUrl,
+    ownerUrl,
+    today,
+    timeZone: env.timeZone,
+    deliver: createReceiptMailer(env.smtp),
+  };
 }

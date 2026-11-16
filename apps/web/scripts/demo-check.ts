@@ -184,7 +184,17 @@ try {
   const manager = await signIn("manager");
   const agent = await signIn("agent");
   const accountant = await signIn("accountant");
-  const queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
+  let queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
+  const queueDeadline = performance.now() + 30000;
+  while (
+    Object.values(queue.counts).some((count) => count !== 2) &&
+    performance.now() < queueDeadline
+  ) {
+    await sleep(1000);
+    const renewed = await signIn("agent");
+    agent.cookie = renewed.cookie;
+    queue = z.object({ counts: Counts }).parse(await rpc("leads.queue", {}, agent.cookie));
+  }
   for (const count of Object.values(queue.counts)) assert.equal(count, 2);
   const paymentCounts = z
     .object({ counts: z.record(z.string(), z.number()) })

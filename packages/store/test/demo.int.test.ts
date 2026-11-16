@@ -153,3 +153,35 @@ test("seeding also refuses intake history without a lead", async ({ db }) => {
   await expect(seedDemo(options(db))).rejects.toThrow("empty database");
   expect(await db.rows("SELECT * FROM demo_seed")).toEqual([]);
 });
+
+test.for([
+  ["Asia/Tokyo", "2031-07-14T15:00:00Z"],
+  ["America/Los_Angeles", "2031-07-15T07:00:00Z"],
+])(
+  "demo queue keeps every group throughout the local day in %s",
+  async ([timeZone, start], { db }) => {
+    if (!timeZone || !start) throw new Error("Missing local day fixture");
+    const midnight = new Date(start);
+    await seedDemo({ ...options(db), today: midnight, timeZone });
+    const userId = UserId.parse(DEMO_PEOPLE.agent.id);
+    if (!userId) throw new Error("Missing agent");
+    for (const minutes of [1, 720, 1439]) {
+      const queue = await db.store.workQueue(
+        { userId, role: "agent", team: null },
+        {
+          agentId: userId,
+          at: new Date(midnight.getTime() + minutes * 60000),
+          timeZone,
+          limit: 100,
+        },
+      );
+      expect(queue.counts).toEqual({
+        overdueCallbacks: 2,
+        dueToday: 2,
+        noCallbackSet: 2,
+        notYetCalled: 2,
+        later: 2,
+      });
+    }
+  },
+);

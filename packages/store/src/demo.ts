@@ -26,6 +26,7 @@ export interface DemoOptions {
   readonly ownerUrl: string;
   readonly appUrl: string;
   readonly today: Date;
+  readonly timeZone?: string;
   readonly deliver: ReceiptDelivery;
 }
 
@@ -208,20 +209,21 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
         ...(callbackAt ? { callback: { kind: "set", at: callbackAt } } : {}),
       },
     });
-  const nextDay = new Date(options.today);
-  nextDay.setUTCHours(24, 0, 0, 0);
-  const due = (fraction: number) =>
-    new Date(
-      options.today.getTime() +
-        Math.max(1, Math.floor((nextDay.getTime() - options.today.getTime() - 1) * fraction)),
-    );
+  const [bounds] = await owner.$queryRaw<{ start: Date; end: Date }[]>`
+    SELECT date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
+      AT TIME ZONE ${options.timeZone ?? "UTC"} AS start,
+      (date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
+        + interval '1 day') AT TIME ZONE ${options.timeZone ?? "UTC"} AS end`;
+  const midnight = required(bounds).start;
+  const nextDay = required(bounds).end;
+  const dueToday = new Date(nextDay.getTime() - 1);
   const queue = [
     {
       name: "Hye-jin Park",
       course: "IELTS evening",
       note: "Asked for a call after her night shift",
       spoke: true,
-      callback: new Date(options.today.getTime() - 6600000),
+      callback: new Date(midnight.getTime() - 6600000),
     },
     {
       name: "Mateus Carvalho",
@@ -229,21 +231,21 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       note: "No answer",
       spoke: false,
       twice: true,
-      callback: new Date(options.today.getTime() - day),
+      callback: new Date(midnight.getTime() - day),
     },
     {
       name: "Sofia Lindgren",
       course: "Spanish beginners",
       note: "Wants the Saturday class times",
       spoke: true,
-      callback: due(0.35),
+      callback: dueToday,
     },
     {
       name: "Anika Sharma",
       course: "IELTS evening",
       note: "No answer",
       spoke: false,
-      callback: due(0.7),
+      callback: dueToday,
     },
     {
       name: "Kofi Mensah",
