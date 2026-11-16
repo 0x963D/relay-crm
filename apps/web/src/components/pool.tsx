@@ -371,203 +371,207 @@ export function PoolScreen({
             </>
           )}
         </div>
-        <section
-          ref={panel}
-          className="pane pane--side pad pool-panel"
-          aria-label="Assign leads"
-          aria-busy={pending}
-        >
-          <h2 className="h2">
-            {selected.length
-              ? `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}`
-              : "Assign leads"}
-          </h2>
-          <Tabs
-            className="pool-tabs"
-            value={method}
-            onValueChange={(v) => {
-              if (v !== "hand" && v !== "round") return;
-              invalidate();
-              setMethod(v);
-              setChosen(
-                v === "hand" && agents[0] ? [assignmentKey(agents[0])] : agents.map(assignmentKey),
-              );
-            }}
+        {remote.status === "ready" && (pool?.total !== 0 || preview.kind === "stale") && (
+          <section
+            ref={panel}
+            className="pane pane--side pad pool-panel"
+            aria-label="Assign leads"
+            aria-busy={pending}
           >
-            <TabsList className="tabs--fill" aria-label="Assignment method">
-              <TabsTrigger value="hand" disabled={pending}>
-                <Icon name="assign" size="small" />
-                To one person
-              </TabsTrigger>
-              <TabsTrigger value="round" disabled={pending}>
-                <Icon name="shuffle" size="small" />
-                Round-robin
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value={method} className="pool-tab-panel">
-              {people.isError && (
-                <Refusal title="Agents could not be loaded">
-                  {failureMessage(people.error, "read")}
-                </Refusal>
-              )}
-              {error && <Refusal title="Nothing was assigned">{error}</Refusal>}
-              {preview.kind === "stale" ? (
-                <Refusal title="Nothing was assigned">
-                  <p>
-                    {preview.changed.length
-                      ? `${String(preview.changed.length)} of these ${String(selected.length)} leads changed hands after your preview.`
-                      : "These leads changed or are no longer visible after your preview."}
-                  </p>
-                  {preview.changed.map((lead) => (
-                    <p key={lead.id}>
-                      {lead.custody.assignedBy?.name ?? "A staff member"} assigned{" "}
-                      {lead.name ?? "this lead"}
-                      {lead.custody.heldBy ? ` to ${lead.custody.heldBy.name}` : ""}
-                      {lead.custody.assignedBy?.at
-                        ? ` at ${shortDate(lead.custody.assignedBy.at, zone)}`
-                        : ""}
-                      .
+            <h2 className="h2">
+              {selected.length
+                ? `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}`
+                : "Assign leads"}
+            </h2>
+            <Tabs
+              className="pool-tabs"
+              value={method}
+              onValueChange={(v) => {
+                if (v !== "hand" && v !== "round") return;
+                invalidate();
+                setMethod(v);
+                setChosen(
+                  v === "hand" && agents[0]
+                    ? [assignmentKey(agents[0])]
+                    : agents.map(assignmentKey),
+                );
+              }}
+            >
+              <TabsList className="tabs--fill" aria-label="Assignment method">
+                <TabsTrigger value="hand" disabled={pending}>
+                  <Icon name="assign" size="small" />
+                  To one person
+                </TabsTrigger>
+                <TabsTrigger value="round" disabled={pending}>
+                  <Icon name="shuffle" size="small" />
+                  Round-robin
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value={method} className="pool-tab-panel">
+                {people.isError && (
+                  <Refusal title="Agents could not be loaded">
+                    {failureMessage(people.error, "read")}
+                  </Refusal>
+                )}
+                {error && <Refusal title="Nothing was assigned">{error}</Refusal>}
+                {preview.kind === "stale" ? (
+                  <Refusal title="Nothing was assigned">
+                    <p>
+                      {preview.changed.length
+                        ? `${String(preview.changed.length)} of these ${String(selected.length)} leads changed hands after your preview.`
+                        : "These leads changed or are no longer visible after your preview."}
                     </p>
-                  ))}
-                  <p>
-                    {preview.remaining.length} still have no owner. Make a new preview to share them
-                    out.
-                  </p>
-                </Refusal>
-              ) : method === "hand" ? (
-                <div className="field">
-                  <span className="label" id="recipient-label">
-                    Who gets them?
-                  </span>
-                  <RadioGroup
-                    className="pool-people"
-                    aria-labelledby="recipient-label"
-                    value={chosen[0] ?? ""}
-                    onValueChange={(v) => {
-                      invalidate();
-                      setChosen([v]);
-                    }}
-                  >
-                    {agents.map((agent) => (
-                      <label
-                        className="opt"
-                        data-checked={chosen.includes(assignmentKey(agent))}
-                        key={assignmentKey(agent)}
-                      >
-                        <RadioGroupItem value={assignmentKey(agent)} disabled={pending} />
-                        <Avatar name={agent.name} />
-                        <span className="b">{agent.name}</span>
-                        <span className="sm t2">{agent.openCount} in queue</span>
-                      </label>
+                    {preview.changed.map((lead) => (
+                      <p key={lead.id}>
+                        {lead.custody.assignedBy?.name ?? "A staff member"} assigned{" "}
+                        {lead.name ?? "this lead"}
+                        {lead.custody.heldBy ? ` to ${lead.custody.heldBy.name}` : ""}
+                        {lead.custody.assignedBy?.at
+                          ? ` at ${shortDate(lead.custody.assignedBy.at, zone)}`
+                          : ""}
+                        .
+                      </p>
                     ))}
-                  </RadioGroup>
-                </div>
-              ) : (
-                <>
+                    <p>
+                      {preview.remaining.length} still have no owner. Make a new preview to share
+                      them out.
+                    </p>
+                  </Refusal>
+                ) : method === "hand" ? (
                   <div className="field">
-                    <span className="label">Share between</span>
-                    <div className="share-agents">
+                    <span className="label" id="recipient-label">
+                      Who gets them?
+                    </span>
+                    <RadioGroup
+                      className="pool-people"
+                      aria-labelledby="recipient-label"
+                      value={chosen[0] ?? ""}
+                      onValueChange={(v) => {
+                        invalidate();
+                        setChosen([v]);
+                      }}
+                    >
                       {agents.map((agent) => (
-                        <label className="row" key={assignmentKey(agent)}>
-                          <Checkbox
-                            disabled={pending}
-                            checked={chosen.includes(assignmentKey(agent))}
-                            onCheckedChange={(v) => {
-                              invalidate();
-                              setChosen((ids) =>
-                                v === true
-                                  ? [...ids, assignmentKey(agent)]
-                                  : ids.filter((id) => id !== assignmentKey(agent)),
-                              );
-                            }}
-                          />
+                        <label
+                          className="opt"
+                          data-checked={chosen.includes(assignmentKey(agent))}
+                          key={assignmentKey(agent)}
+                        >
+                          <RadioGroupItem value={assignmentKey(agent)} disabled={pending} />
                           <Avatar name={agent.name} />
                           <span className="b">{agent.name}</span>
+                          <span className="sm t2">{agent.openCount} in queue</span>
                         </label>
                       ))}
-                    </div>
+                    </RadioGroup>
                   </div>
-                  <label className="row">
-                    <Checkbox
-                      disabled={pending}
-                      checked={exclude}
-                      onCheckedChange={(v) => {
-                        invalidate();
-                        setExclude(v === true);
-                      }}
-                    />
-                    <span className="b">Skip a lead's previous owner</span>
-                  </label>
-                </>
-              )}
-              {previewCard}
-              {preview.kind !== "stale" && (
-                <p className="help">
-                  {method === "hand"
-                    ? "Only agents have a queue, so only agents are listed. Assigned leads land in their queue as not yet called. Moving a lead to someone else later keeps its status."
-                    : "Nothing moves until you confirm. If one of these leads changes hands first, the preview is refused and nothing is assigned."}
-                </p>
-              )}
-              <div className="pool-submit col">
-                {preview.kind === "stale" ? (
-                  <>
-                    <Button
-                      className="btn--block"
-                      size="lg"
-                      data-repreview
-                      disabled={pending || preview.remaining.length === 0}
-                      onClick={() => {
-                        void makePreview(preview.remaining);
-                      }}
-                    >
-                      <Icon name="refresh" />
-                      Preview the remaining {preview.remaining.length} leads
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        invalidate();
-                        setSelected([]);
-                        void refresh();
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </>
-                ) : method === "round" && preview.kind === "editing" ? (
-                  <Button
-                    size="lg"
-                    className="btn--block"
-                    disabled={pending || selected.length === 0 || chosen.length === 0}
-                    onClick={() => {
-                      void makePreview();
-                    }}
-                  >
-                    Preview {selected.length} leads
-                  </Button>
                 ) : (
-                  <Button
-                    size="lg"
-                    className="btn--block"
-                    disabled={
-                      pending ||
-                      selected.length === 0 ||
-                      chosen.length === 0 ||
-                      remote.status !== "ready"
-                    }
-                    onClick={() => {
-                      void assign();
-                    }}
-                  >
-                    {pending
-                      ? "Assigning…"
-                      : `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}${method === "hand" && recipients[0] ? ` to ${recipients[0].name}` : ""}`}
-                  </Button>
+                  <>
+                    <div className="field">
+                      <span className="label">Share between</span>
+                      <div className="share-agents">
+                        {agents.map((agent) => (
+                          <label className="row" key={assignmentKey(agent)}>
+                            <Checkbox
+                              disabled={pending}
+                              checked={chosen.includes(assignmentKey(agent))}
+                              onCheckedChange={(v) => {
+                                invalidate();
+                                setChosen((ids) =>
+                                  v === true
+                                    ? [...ids, assignmentKey(agent)]
+                                    : ids.filter((id) => id !== assignmentKey(agent)),
+                                );
+                              }}
+                            />
+                            <Avatar name={agent.name} />
+                            <span className="b">{agent.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="row">
+                      <Checkbox
+                        disabled={pending}
+                        checked={exclude}
+                        onCheckedChange={(v) => {
+                          invalidate();
+                          setExclude(v === true);
+                        }}
+                      />
+                      <span className="b">Skip a lead's previous owner</span>
+                    </label>
+                  </>
                 )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        </section>
+                {previewCard}
+                {preview.kind !== "stale" && (
+                  <p className="help">
+                    {method === "hand"
+                      ? "Only agents have a queue, so only agents are listed. Assigned leads land in their queue as not yet called. Moving a lead to someone else later keeps its status."
+                      : "Nothing moves until you confirm. If one of these leads changes hands first, the preview is refused and nothing is assigned."}
+                  </p>
+                )}
+                <div className="pool-submit col">
+                  {preview.kind === "stale" ? (
+                    <>
+                      <Button
+                        className="btn--block"
+                        size="lg"
+                        data-repreview
+                        disabled={pending || preview.remaining.length === 0}
+                        onClick={() => {
+                          void makePreview(preview.remaining);
+                        }}
+                      >
+                        <Icon name="refresh" />
+                        Preview the remaining {preview.remaining.length} leads
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          invalidate();
+                          setSelected([]);
+                          void refresh();
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : method === "round" && preview.kind === "editing" ? (
+                    <Button
+                      size="lg"
+                      className="btn--block"
+                      disabled={pending || selected.length === 0 || chosen.length === 0}
+                      onClick={() => {
+                        void makePreview();
+                      }}
+                    >
+                      Preview {selected.length} leads
+                    </Button>
+                  ) : (
+                    <Button
+                      size="lg"
+                      className="btn--block"
+                      disabled={
+                        pending ||
+                        selected.length === 0 ||
+                        chosen.length === 0 ||
+                        remote.status !== "ready"
+                      }
+                      onClick={() => {
+                        void assign();
+                      }}
+                    >
+                      {pending
+                        ? "Assigning…"
+                        : `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}${method === "hand" && recipients[0] ? ` to ${recipients[0].name}` : ""}`}
+                    </Button>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </section>
+        )}
       </div>
     </>
   );

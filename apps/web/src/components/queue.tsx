@@ -212,8 +212,15 @@ export function QueueScreen({
               </Refusal>
             </div>
           ) : total === 0 ? (
-            <Empty icon="queue" title="You have no open leads">
-              New leads appear here when your manager or team lead assigns them.
+            <Empty
+              icon="queue"
+              title={
+                profile.role === "agent" ? "You have no open leads" : `${name} has no open leads`
+              }
+            >
+              {profile.role === "agent"
+                ? "New leads appear here when your manager or team lead assigns them."
+                : "Leads appear here when they are assigned to this agent."}
             </Empty>
           ) : (
             groups.map((group) => (
@@ -324,6 +331,18 @@ export function QueueScreen({
                 );
               }}
             />
+          ) : remote.status === "loading" ? (
+            <Loading />
+          ) : remote.status === "error" ? (
+            <Empty icon="info" title="The queue could not be opened">
+              Try loading the queue again.
+            </Empty>
+          ) : total === 0 ? (
+            <Empty icon="queue" title="No lead to open">
+              {profile.role === "agent"
+                ? "Your next assigned lead will appear in the queue."
+                : "This agent's next assigned lead will appear in the queue."}
+            </Empty>
           ) : (
             <Empty icon="queue" title="Choose a lead">
               Open a lead from the queue to see its history.
