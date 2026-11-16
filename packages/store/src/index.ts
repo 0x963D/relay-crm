@@ -39,6 +39,7 @@ import {
   approveManualPayment,
   decideManualPayment,
   editManualPayment,
+  paymentUsingReceipt,
   type RecordManualPayment,
   type ManualDecision,
   type ManualTerms,
@@ -100,6 +101,7 @@ export function openStore(config: {
       requeueReceipt(db, actor, id, requestId, config.receipts?.lifetimeAttemptLimit),
     recordManualPayment: (actor: Actor, input: RecordManualPayment, requestId: string) =>
       recordManualPayment(db, actor, input, requestId),
+    paymentUsingReceipt: (actor: Actor, hash: string) => paymentUsingReceipt(db, actor, hash),
     approveManualPayment: (
       actor: Actor,
       input: ManualDecision & { readonly roleVersion: number },

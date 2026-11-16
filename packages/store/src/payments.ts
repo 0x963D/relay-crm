@@ -946,16 +946,28 @@ async function availablePayment(tx: Tx, accountId: string, except?: string) {
 }
 async function availableManualTerms(tx: Tx, accountId: string, hash: string, except?: string) {
   await availablePayment(tx, accountId, except);
-  if (
-    await tx.payment.findFirst({
-      where: {
-        receiptHash: hash,
-        status: { notIn: ["rejected", "cancelled"] },
-        ...(except ? { id: { not: except } } : {}),
-      },
-    })
-  )
-    throw new AccessError("receiptUsed");
+  if (await receiptPayment(tx, hash, except)) throw new AccessError("receiptUsed");
+}
+function receiptPayment(tx: Tx, hash: string, except?: string) {
+  return tx.payment.findFirst({
+    where: {
+      receiptHash: hash,
+      status: { notIn: ["rejected", "cancelled"] },
+      ...(except ? { id: { not: except } } : {}),
+    },
+  });
+}
+export async function paymentUsingReceipt(db: Db, actor: Actor, hash: string) {
+  return transact(db, async (tx) => {
+    const current = await currentActor(tx, actor);
+    const row = await receiptPayment(tx, hash);
+    if (!row) return null;
+    const account = await tx.account.findFirst({
+      where: { id: row.accountId, ...scopeWhere(recordScope(current, "payment", "read")) },
+      select: { id: true },
+    });
+    return account ? { id: row.id } : null;
+  });
 }
 export async function recordManualPayment(
   db: Db,

@@ -14,6 +14,50 @@ import { sandboxCheckout, sandboxProvider } from "../src/server/payments/sandbox
 import { appRouter } from "../src/server/rpc.ts";
 
 const secret = "fake-sandbox-webhook-secret-for-tests-only";
+
+test("a maker's reject reports the maker refusal while foreign records stay unavailable", async ({
+  db,
+}) => {
+  const recorder: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const maker: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const stranger: Actor = { userId: await db.seedUser("agent"), role: "agent", team: null };
+  const payment = await db.store.recordManualPayment(
+    recorder,
+    {
+      key: randomUUID(),
+      accountId: await db.seedAccount(),
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      receiptHash: "a".repeat(64),
+      reference: null,
+    },
+    randomUUID(),
+  );
+  await db.store.editManualPayment(
+    maker,
+    {
+      id: payment.id,
+      version: 0,
+      money: { minor: 200n, currency: "GBP" },
+      receiptHash: "b".repeat(64),
+      reference: null,
+    },
+    randomUUID(),
+  );
+  for (const [actor, code] of [
+    [recorder, "paymentRecorder"],
+    [maker, "paymentMaker"],
+    [stranger, "accessDenied"],
+  ] as const) {
+    const caller = appRouter.createCaller({
+      store: db.store,
+      principal: { kind: "development", actor },
+    });
+    await expect(
+      caller.payments.reject({ id: payment.id, version: 1, reason: "No matching transfer." }),
+    ).rejects.toMatchObject({ cause: { code } });
+  }
+});
 const env = {
   baseUrl: "http://127.0.0.1:1",
   deliveryUrl: "http://app:3107",

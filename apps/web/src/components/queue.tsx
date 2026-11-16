@@ -322,7 +322,9 @@ export function QueueScreen({
               more={hasMore}
               busy={pageQuery.isFetching}
               noun="leads"
-              onMore={() => { setLimit((value) => value + 20); }}
+              onMore={() => {
+                setLimit((value) => value + 20);
+              }}
             />
           )}
           {people.isError && (

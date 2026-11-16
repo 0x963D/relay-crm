@@ -11,7 +11,7 @@ import {
   receiptPresentation,
   type PaymentView,
 } from "@/lib/payments";
-import { callbackDate, formatMoney, shortDate } from "@/lib/display";
+import { formatMoney, shortDate } from "@/lib/display";
 import { failureMessage, failureMessages } from "@/lib/failures";
 import { cn } from "@/lib/utils";
 import { PaymentStatus, LedgerPosting } from "./payment-pieces";
@@ -241,7 +241,7 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
           <Signoff
             caption={payment.method === "manual" ? "Recorded by" : "Checkout created by"}
             name={payment.recordedBy?.name ?? "Staff member"}
-            time={callbackDate(payment.createdAt, zone)}
+            time={shortDate(payment.createdAt, zone)}
           />
           {manualWaiting || (completed && payment.method === "manual") ? (
             <>
@@ -249,13 +249,13 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
                 caption="First approval"
                 emptyLabel="Waiting for a first approver"
                 name={approvals[0]?.approver?.name ?? null}
-                time={approvals[0] ? callbackDate(approvals[0].at, zone) : undefined}
+                time={approvals[0] ? shortDate(approvals[0].at, zone) : undefined}
               />
               <Signoff
                 caption="Second approval · a different person"
                 emptyLabel="Waiting for a second approver"
                 name={approvals[1]?.approver?.name ?? null}
-                time={approvals[1] ? callbackDate(approvals[1].at, zone) : undefined}
+                time={approvals[1] ? shortDate(approvals[1].at, zone) : undefined}
               />
             </>
           ) : (
@@ -319,7 +319,10 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
             </div>
             {payment.method !== "manual" && (
               <div className="text-center">
-                <p className="text-2xl font-bold">{reports}</p>
+                <p className="text-2xl font-bold">
+                  <span className="sr-only">Paid reports from the provider </span>
+                  {reports}
+                </p>
                 <p className="text-xs">
                   {reports === 1 ? "time" : "times"} the provider
                   <br />
@@ -328,7 +331,10 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
               </div>
             )}
             <div className="text-center">
-              <p className="text-2xl font-bold">{payment.postingCount}</p>
+              <p className="text-2xl font-bold">
+                <span className="sr-only">Ledger postings written </span>
+                {payment.postingCount}
+              </p>
               <p className="text-xs">
                 ledger {payment.postingCount === 1 ? "posting" : "postings"}
                 <br />
@@ -452,9 +458,9 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
                 )}
                 <h3 className="font-semibold">Who may not approve this payment</h3>
                 <ul className="space-y-3">
-                  {payment.cannotApprove.map((entry, index) => (
+                  {payment.cannotApprove.map((entry) => (
                     <li
-                      key={`${entry.user?.id ?? "unknown"}-${String(index)}`}
+                      key={`${entry.user?.id ?? "unknown"}-${entry.reason}-${entry.at.toISOString()}`}
                       className="text-caption"
                     >
                       <strong>{entry.user?.name ?? "Staff member"}</strong> ·{" "}
@@ -582,8 +588,8 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
                     {count > 1 ? `${String(count)} reconciler checks changed nothing` : title}
                   </h4>
                   <time className="text-xs text-muted-foreground" dateTime={event.at.toISOString()}>
-                    {callbackDate(event.at, zone)}
-                    {count > 1 && ` to ${callbackDate(lastAt, zone)}`}
+                    {shortDate(event.at, zone)}
+                    {count > 1 && ` to ${shortDate(lastAt, zone)}`}
                   </time>
                 </div>
                 <div className="mt-1 space-y-1 text-caption text-secondary-foreground">
@@ -696,7 +702,7 @@ function Receipt({
                   }
                 >
                   {presentation.nextAttemptAt
-                    ? `Next attempt ${callbackDate(presentation.nextAttemptAt, zone)}`
+                    ? `Next attempt ${shortDate(presentation.nextAttemptAt, zone)}`
                     : {
                         sending: "Sending",
                         sent: "Sent",

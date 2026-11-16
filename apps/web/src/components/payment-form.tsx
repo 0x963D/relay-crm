@@ -43,6 +43,7 @@ export function PaymentForm({
         : "first",
   );
   const [receipt, setReceipt] = useState<File | null>(null);
+  const [submittedReceipt, setSubmittedReceipt] = useState("");
   const [reference, setReference] = useState(editing?.reference ?? "");
   const [validation, setValidation] = useState("");
   const [created, setCreated] = useState<{ paymentId: string; url: string | null } | null>(null);
@@ -76,6 +77,7 @@ export function PaymentForm({
           new Uint8Array(await crypto.subtle.digest("SHA-256", await receipt.arrayBuffer())),
           (byte) => byte.toString(16).padStart(2, "0"),
         ).join("");
+      setSubmittedReceipt(hash);
       const terms = JSON.stringify({ accountId, amount, currency, kind, hash, reference });
       if (request.current?.terms !== terms) request.current = { terms, key: crypto.randomUUID() };
       const input = {
@@ -127,6 +129,12 @@ export function PaymentForm({
   useEffect(() => {
     if (save.error || created || validation) result.current?.focus();
   }, [save.error, created, validation]);
+  const receiptUse = useQuery(
+    trpc.payments.receiptUse.queryOptions(
+      { hash: submittedReceipt },
+      { enabled: failureCode(save.error) === "receiptUsed" && submittedReceipt !== "" },
+    ),
+  );
   if (!account.mayEdit || (editing && !editing.actions.editManual))
     return (
       <Refusal title="This payment cannot be changed">
@@ -264,6 +272,11 @@ export function PaymentForm({
             }
           >
             <p>{validation || failureMessage(save.error)}</p>
+            {failureCode(save.error) === "receiptUsed" && receiptUse.data && (
+              <Link className="underline" href={`/payments/${receiptUse.data.id}`}>
+                Open the payment that used this receipt
+              </Link>
+            )}
             {pending && (
               <>
                 <p>

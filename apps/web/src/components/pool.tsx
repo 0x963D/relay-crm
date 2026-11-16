@@ -344,7 +344,9 @@ export function PoolScreen({ zone }: { zone: string }) {
                 more={hasMore}
                 busy={pageQuery.isFetching}
                 noun="leads"
-                onMore={() => { setLimit((value) => value + 14); }}
+                onMore={() => {
+                  setLimit((value) => value + 14);
+                }}
               />
             )}
           </div>

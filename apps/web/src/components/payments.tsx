@@ -216,7 +216,9 @@ export function PaymentsScreen({
                 more={more}
                 busy={query.isFetching}
                 noun="payments"
-                onMore={() => { setLimit((value) => value + 20); }}
+                onMore={() => {
+                  setLimit((value) => value + 20);
+                }}
               />
             </div>
           )}

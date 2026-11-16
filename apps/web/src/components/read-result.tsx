@@ -12,11 +12,13 @@ export async function ReadResult<T>({
   children,
   back,
   title,
+  accessMessage,
 }: {
   query: Promise<T>;
   children: ReactNode | ((value: T) => ReactNode);
   back: string;
   title: string;
+  accessMessage?: string;
 }) {
   let value: T;
   try {
@@ -39,7 +41,7 @@ export async function ReadResult<T>({
           </Button>
         }
       >
-        {failureMessages[code]}
+        {code === "accessDenied" && accessMessage ? accessMessage : failureMessages[code]}
       </Empty>
     );
   }

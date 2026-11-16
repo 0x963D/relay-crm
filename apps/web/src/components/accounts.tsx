@@ -121,7 +121,9 @@ export function AccountsScreen({
                 more={more}
                 busy={query.isFetching}
                 noun="accounts"
-                onMore={() => { setLimit((value) => value + 20); }}
+                onMore={() => {
+                  setLimit((value) => value + 20);
+                }}
               />
             </div>
           )}

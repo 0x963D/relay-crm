@@ -145,10 +145,10 @@ export function Workspace({
           <ToggleGroup
             type="single"
             aria-label="View the demo as"
-            value={profile.role}
+            value={profile.demoRole ?? ""}
             className="rounded-lg bg-sidebar-accent p-1"
             onValueChange={(value) => {
-              if (value && value !== profile.role) void authAction(value);
+              if (value && value !== profile.demoRole) void authAction(value);
             }}
           >
             {["manager", "agent", "accountant"].map((role) => (

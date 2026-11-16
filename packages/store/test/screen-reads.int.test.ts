@@ -38,6 +38,7 @@ for (const role of ["manager", "teamLead", "agent", "accountant"] as const) {
       const profile = await db.store.sessionProfile(actor);
       expect(profile.userId).toBe(userId);
       expect(profile.name).toBeTruthy();
+      expect(profile).toMatchObject({ demoRole: null });
       if (role === "agent" || role === "accountant") {
         await expect(db.store.leadPool(actor, { limit: 14, offset: 0 })).rejects.toMatchObject({
           code: "accessDenied",

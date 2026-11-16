@@ -3,6 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { AccessError } from "./errors.ts";
 import { InvariantError } from "./lead-row.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
+import { DEMO_PEOPLE, DEMO_ROLES } from "./demo-state.ts";
 
 export function authenticationDatabase(db: Db) {
   return prismaAdapter(db, { provider: "postgresql" });
@@ -39,9 +40,16 @@ export async function sessionProfile(db: Db, actor: Actor) {
     const current = await currentActor(tx, actor);
     const user = await tx.user.findUniqueOrThrow({
       where: { id: current.userId },
-      select: { name: true },
+      select: { name: true, email: true },
     });
-    return { ...current, name: user.name };
+    const demoRole =
+      DEMO_ROLES.find(
+        (role) =>
+          current.role === role &&
+          current.userId === DEMO_PEOPLE[role].id &&
+          user.email === DEMO_PEOPLE[role].email,
+      ) ?? null;
+    return { ...current, name: user.name, demoRole };
   });
 }
 

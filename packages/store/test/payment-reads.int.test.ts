@@ -8,6 +8,34 @@ import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
 
+test("receipt lookup returns only the active payment in the caller's current scope", async ({
+  db,
+}) => {
+  const manager = await person(db, "manager");
+  const agent = await person(db, "agent");
+  const stranger = await person(db, "agent");
+  const accountant = await person(db, "accountant");
+  const accountId = await account(db, agent);
+  const receiptHash = "f".repeat(64);
+  const payment = await db.store.recordManualPayment(
+    agent,
+    { key: randomUUID(), accountId, money, kind: "first", receiptHash, reference: null },
+    randomUUID(),
+  );
+  expect(db.store).toHaveProperty("paymentUsingReceipt");
+  for (const actor of [agent, manager])
+    expect(await db.store.paymentUsingReceipt(actor, receiptHash)).toEqual({ id: payment.id });
+  expect(await db.store.paymentUsingReceipt(stranger, receiptHash)).toBeNull();
+  await db.ownerRows("UPDATE users SET role='agent' WHERE id=$1", [manager.userId]);
+  expect(await db.store.paymentUsingReceipt(manager, receiptHash)).toBeNull();
+  await db.store.decideManualPayment(
+    accountant,
+    { id: payment.id, version: 0, decision: "reject", reason: "Invented duplicate receipt." },
+    randomUUID(),
+  );
+  expect(await db.store.paymentUsingReceipt(agent, receiptHash)).toBeNull();
+});
+
 test("the payment read supplies review closure rights using the current role and record scope", async ({
   db,
 }) => {

@@ -1,11 +1,67 @@
+import { createHash, randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { signIn, rpc } from "./support.ts";
+import { signIn, rpc, latestCode } from "./support.ts";
 import { browserState } from "./paths.ts";
 
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error("Expected fixture or browser result.");
   return value;
 }
+
+test("an agent's funnel refusal names the report", async ({ page }) => {
+  await signIn(page, "agent");
+  await page.goto(`${browserState().url}/funnel`);
+  await expect(
+    page.getByText("Your role cannot open the campaign funnel.", { exact: true }),
+  ).toBeVisible();
+});
+
+test("a reused receipt links the payment that used it", async ({ page }) => {
+  await signIn(page, "manager");
+  const api = rpc(page);
+  const accounts = (await api.accounts.list.query({ limit: 100 })).items.filter(
+    (account) => account.mayEdit && !account.pendingPayment,
+  );
+  const receipt = Buffer.from(`Invented receipt ${randomUUID()}`);
+  const payment = await api.payments.recordManual.mutate({
+    accountId: required(accounts[0]).id,
+    key: randomUUID(),
+    amount: "100",
+    currency: "GBP",
+    kind: "first",
+    receiptHash: createHash("sha256").update(receipt).digest("hex"),
+    reference: null,
+  });
+  await page.goto(`${browserState().url}/payments/new/${required(accounts[1]).id}/manual`);
+  await page.getByRole("textbox", { name: "Amount", exact: true }).fill("1.00");
+  await page
+    .getByLabel("Receipt", { exact: true })
+    .setInputFiles({ name: "transfer.txt", mimeType: "text/plain", buffer: receipt });
+  await page.getByRole("button", { name: "Send for approval", exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Open the payment that used this receipt", exact: true }),
+  ).toHaveAttribute("href", `/payments/${payment.id}`);
+});
+
+test("a staff member using an emailed code is not shown as a shared demo identity", async ({
+  page,
+}) => {
+  await page.goto(browserState().url);
+  const previous = await latestCode();
+  await page
+    .getByRole("textbox", { name: "Work email", exact: true })
+    .fill("tomasz.zielinski@tidewell.example");
+  await page.getByRole("button", { name: "Send me a code", exact: true }).click();
+  await expect.poll(latestCode).not.toBe(previous);
+  await page.getByRole("textbox", { name: "6-digit code", exact: true }).fill(await latestCode());
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Lead pool", exact: true })).toBeVisible();
+  const manager = page.getByRole("radio", { name: "Manager", exact: true });
+  await expect(manager).not.toBeChecked();
+  await manager.click();
+  await expect(manager).toBeChecked();
+  await expect(page.getByText("Priya Raman", { exact: true }).first()).toBeVisible();
+});
 
 test("account and checkout navigation moves keyboard focus into the opened record", async ({
   page,

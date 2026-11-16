@@ -15,7 +15,7 @@ import {
   normalizePhone,
   type SessionPrincipal,
 } from "@relay/domain";
-import { isAccessError, type Store } from "@relay/store";
+import { AccessError, isAccessError, type Store } from "@relay/store";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
@@ -150,6 +150,9 @@ const ClosingInput = z.discriminatedUnion("kind", [
 
 export const appRouter = t.router({
   payments: t.router({
+    receiptUse: authenticated
+      .input(z.object({ hash: ManualTermsInput.receiptHash }).strict())
+      .query(({ ctx, input }) => ctx.store.paymentUsingReceipt(ctx.actor, input.hash)),
     requeueReceipt: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
       .mutation(({ ctx, input }) =>
@@ -181,14 +184,24 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) =>
         paymentResponse(ctx, ctx.store.approveManualPayment(ctx.actor, input, ctx.requestId)),
       ),
-    reject: authenticated
-      .input(RefusalInput)
-      .mutation(({ ctx, input }) =>
-        paymentResponse(
+    reject: authenticated.input(RefusalInput).mutation(async ({ ctx, input }) => {
+      try {
+        return await paymentResponse(
           ctx,
           ctx.store.decideManualPayment(ctx.actor, { ...input, decision: "reject" }, ctx.requestId),
-        ),
-      ),
+        );
+      } catch (cause) {
+        if (isAccessError(cause) && cause.code === "accessDenied") {
+          const { actions } = await ctx.store.getPayment(ctx.actor, input.id);
+          if (
+            actions.approvalRefusal === "paymentRecorder" ||
+            actions.approvalRefusal === "paymentMaker"
+          )
+            throw new AccessError(actions.approvalRefusal);
+        }
+        throw cause;
+      }
+    }),
     cancel: authenticated
       .input(RefusalInput)
       .mutation(({ ctx, input }) =>
