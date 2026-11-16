@@ -255,6 +255,12 @@ test.for(["Asia/Tokyo", "America/Los_Angeles"])(
     for (const at of dates) {
       expect(at.getTime()).toBeGreaterThanOrEqual(today.getTime() - 15 * 86400000);
       expect(at.getTime()).toBeLessThan(today.getTime());
+    }
+    const working = await db.rows(
+      "SELECT at FROM activities WHERE kind IN ('attempt','note','callback','closure','assignment') UNION ALL SELECT created_at AS at FROM payments UNION ALL SELECT at FROM payment_approvals UNION ALL SELECT at FROM ledger_transactions UNION ALL SELECT started_at AS at FROM receipt_attempts",
+    );
+    for (const row of working) {
+      const at = new Date(String(row.at));
       const hour = Number(
         new Intl.DateTimeFormat("en", { timeZone, hour: "numeric", hourCycle: "h23" }).format(at),
       );
@@ -303,7 +309,7 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
       source: "metaLeadAds",
       campaign: "IELTS evening · January intake",
       received: 142,
-      unassigned: 6,
+      unassigned: 5,
       contacted: 97,
       won: 21,
     },
@@ -327,7 +333,7 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
       source: "metaLeadAds",
       campaign: "German A1 · evening",
       received: 54,
-      unassigned: 2,
+      unassigned: 1,
       contacted: 31,
       won: 6,
     },
@@ -335,21 +341,32 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
       source: "metaLeadAds",
       campaign: "Summer school · early bird",
       received: 39,
-      unassigned: 11,
-      contacted: 12,
+      unassigned: 10,
+      contacted: 14,
       won: 1,
     },
     {
       source: "webForm",
       campaign: "German A1 · evening",
       received: 8,
-      unassigned: 0,
-      contacted: 7,
+      unassigned: 2,
+      contacted: 5,
       won: 3,
     },
-    { source: "csv", campaign: null, received: 5, unassigned: 0, contacted: 4, won: 1 },
+    { source: "csv", campaign: null, received: 5, unassigned: 1, contacted: 4, won: 1 },
   ]);
   expect(await db.rows("SELECT count(*)::int AS count FROM accounts")).toEqual([{ count: 54 }]);
+  const pool = await db.store.leadPool(
+    { userId, role: "manager", team: null },
+    { limit: 14, offset: 0 },
+  );
+  expect(new Set(pool.rows.map((row) => row.source)).size).toBe(3);
+  expect(pool.rows.some((row) => today.getTime() - row.createdAt.getTime() < 86400000)).toBe(true);
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS teams FROM memberships WHERE user_id='00000000-0000-7000-8000-000000000107'",
+    ),
+  ).toEqual([{ teams: 2 }]);
   expect(
     await db.rows(
       "SELECT name FROM leads WHERE status='new' AND name IN ('Luca Ferraro','Tunde Bakare','Emil Novak','Oskar Nowak') ORDER BY name",
@@ -378,6 +395,17 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
       { agentId, at: today, timeZone: "UTC", limit: 100 },
     );
     expect(Object.values(queue.counts).reduce((sum, count) => sum + count, 0)).toBe(count);
+    const rows = [
+      ...queue.overdueCallbacks,
+      ...queue.dueToday,
+      ...queue.noCallbackSet,
+      ...queue.notYetCalled,
+      ...queue.later,
+    ];
+    expect(new Set(rows.map((row) => row.lastNoteOrOutcome?.note)).size).toBeGreaterThanOrEqual(5);
+    expect(
+      new Set(rows.map((row) => row.assignedAt?.toISOString().slice(0, 10))).size,
+    ).toBeGreaterThanOrEqual(3);
   }
 });
 

@@ -1,5 +1,9 @@
+import { cn } from "@/lib/utils";
 import {
   AlarmClock,
+  ChevronDown,
+  Circle,
+  Minus,
   ArrowLeft,
   ArrowRight,
   Ban,
@@ -33,6 +37,9 @@ import {
 } from "lucide-react";
 const icons = {
   alarm: AlarmClock,
+  down: ChevronDown,
+  circle: Circle,
+  minus: Minus,
   back: ArrowLeft,
   next: ArrowRight,
   ban: Ban,
@@ -67,21 +74,24 @@ export type IconName = keyof typeof icons;
 export function Icon({
   name,
   size = "normal",
+  className,
 }: {
   name: IconName;
+  className?: string;
   size?: "small" | "normal" | "large";
 }) {
   const Component = icons[name];
   return (
     <Component
       aria-hidden="true"
-      className={
+      className={cn(
         size === "small"
-          ? "i-14 w-[14px] h-[14px] flex-none"
+          ? "size-3.5 shrink-0"
           : size === "large"
-            ? "i-20 w-[20px] h-[20px] flex-none"
-            : "i w-[16px] h-[16px] flex-none"
-      }
+            ? "size-5 shrink-0"
+            : "size-4 shrink-0",
+        className,
+      )}
     />
   );
 }

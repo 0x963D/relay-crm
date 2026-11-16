@@ -48,7 +48,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17
+        image: postgres:17@sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac
         env:
           POSTGRES_USER: relay
           POSTGRES_PASSWORD: relay
@@ -95,6 +95,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      RELAY_EVIDENCE_DIR: /tmp/relay-crm-screens
       DATABASE_URL: postgresql://relay_app:fake-local-app-password@localhost:5432/relay
       MIGRATION_DATABASE_URL: postgresql://relay_owner:fake-local-owner-password@localhost:5432/relay
     steps:

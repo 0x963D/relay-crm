@@ -1,28 +1,45 @@
-import type { ComponentProps } from "react";
+import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
+import { Slot } from "radix-ui";
+
 const badgeVariants = cva(
-  "slip inline-flex items-center gap-[5px] h-[22px] px-[7px] rounded-slip text-(length:--text-caption) leading-[1] font-[600] whitespace-nowrap border-[1px] border-solid border-transparent [font-stretch:94%] max-phone:[.qrow_.q-top_&]:mt-[5px] max-phone:[.q-top_&]:[order:2] max-phone:[.q-top_&]:[align-self:flex-start] max-phone:[.q-top_&]:mt-[5px]",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {
-        pink: "slip--pink bg-refused text-refused-foreground border-refused-border",
-        canary: "slip--canary bg-waiting text-waiting-foreground border-waiting-border",
-        green: "slip--green bg-complete text-complete-foreground border-complete-border",
-        ink: "slip--ink bg-selected text-primary",
-        mute: "slip--mute bg-muted text-secondary",
-        line: "slip--line bg-transparent text-secondary border-control-border",
+        default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
+        secondary: "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
+        destructive:
+          "bg-destructive text-background focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90",
+        outline:
+          "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 [a&]:hover:underline",
       },
     },
-    defaultVariants: { variant: "mute" },
+    defaultVariants: {
+      variant: "default",
+    },
   },
 );
-export function Badge({
+
+function Badge({
   className,
-  variant,
+  variant = "default",
+  asChild = false,
   ...props
-}: ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
+}: React.ComponentProps<"span"> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+  const Comp = asChild ? Slot.Root : "span";
+
   return (
-    <span data-slot="badge" className={cn(badgeVariants({ variant }), className)} {...props} />
+    <Comp
+      data-slot="badge"
+      data-variant={variant}
+      className={cn(badgeVariants({ variant }), className)}
+      {...props}
+    />
   );
 }
+
+export { Badge, badgeVariants };

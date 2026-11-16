@@ -1,45 +1,71 @@
-import type { ComponentProps } from "react";
-import { Slot } from "radix-ui";
+"use client";
+import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
+import { Slot } from "radix-ui";
+
 const buttonVariants = cva(
-  "btn inline-flex items-center justify-center gap-[7px] h-[36px] px-[14px] rounded-control border-[1px] border-solid border-transparent text-(length:--text-body) font-[600] whitespace-nowrap [cursor:pointer] bg-transparent text-foreground [transition:background-color_var(--duration-control)_ease-out,_border-color_var(--duration-control)_ease-out] [&:focus-visible]:[outline:2px_solid_var(--color-primary)] [&:focus-visible]:[outline-offset:2px] [&[disabled]]:bg-muted [&[disabled]]:[border-color:transparent] [&[disabled]]:text-tertiary [&[disabled]]:[cursor:not-allowed] motion-reduce:[transition:none] [.demo-choices_&]:justify-between [.demo-choices_&]:h-auto [.demo-choices_&]:min-h-[44px] [.demo-choices_&]:whitespace-normal [.demo-choices_&]:text-start [.empty_&]:mt-compact max-phone:[.lead-title_&]:min-h-[44px] max-phone:[.form-actions_&]:min-h-[44px] max-phone:[.tl-actions_&]:min-h-[44px] max-phone:[.mobile-identity_&]:p-0 phone:max-poolcompact:[.lead-title_&]:px-related",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-disabled:opacity-50 max-md:min-h-11 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "btn--pri bg-primary text-primary-foreground [&:hover]:bg-primary-hover",
-        outline: "btn--sec bg-surface border-control-border text-foreground [&:hover]:bg-muted",
-        ghost:
-          "btn--ghost text-primary px-related [&:hover]:bg-selected [.rail_&]:text-shell-secondary [.rail_&:hover]:bg-shell-hover [.rail_&:hover]:text-shell-foreground",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "btn--danger bg-surface border-refused-border text-refused-foreground [&:hover]:bg-refused",
+          "bg-destructive text-background hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
+        outline:
+          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "",
-        sm: "btn--sm h-[30px] px-control text-(length:--text-small)",
-        lg: "btn--lg h-[44px] px-section text-(length:--text-action)",
-        icon: "btn--icon w-[44px] h-[44px] p-0 rounded-group",
+        default: "h-9 px-4 py-2 has-[>svg]:px-3",
+        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
+        lg: "h-11 rounded-md px-6 has-[>svg]:px-4",
+        icon: "size-9",
+        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm": "size-8",
+        "icon-lg": "size-10",
       },
     },
-    defaultVariants: { variant: "default", size: "default" },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
   },
 );
+
 function Button({
   className,
-  variant,
-  size,
+  variant = "default",
+  size = "default",
   asChild = false,
-  type = "button",
+  busy = false,
+  onClick,
   ...props
-}: ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean }) {
+}: React.ComponentProps<"button"> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean;
+    busy?: boolean;
+  }) {
   const Comp = asChild ? Slot.Root : "button";
+
   return (
     <Comp
-      type={type}
       data-slot="button"
-      className={cn(buttonVariants({ variant, size }), className)}
+      data-variant={variant}
+      data-size={size}
+      className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      aria-busy={busy || undefined}
+      aria-disabled={busy || props["aria-disabled"]}
+      onClick={(event) => {
+        if (busy) event.preventDefault();
+        else onClick?.(event);
+      }}
     />
   );
 }
+
 export { Button, buttonVariants };

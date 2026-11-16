@@ -5,7 +5,6 @@ import { z } from "zod";
 export const evidenceDirectory =
   process.env.RELAY_EVIDENCE_DIR ??
   fileURLToPath(new URL("../../../../test-results/evidence/", import.meta.url));
-export const legacyStyles = process.env.RELAY_LEGACY_CSS;
 export const browserDirectory = join(evidenceDirectory, "playwright");
 export const captureDirectory = join(evidenceDirectory, "built");
 export const stateFile = join(browserDirectory, "state.json");

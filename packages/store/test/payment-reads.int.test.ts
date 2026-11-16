@@ -245,9 +245,6 @@ test("ledger entries batch completion provenance for both system callers and the
     );
     const multiple = await read();
     expect(multiple.queries).toBe(single.queries);
-    process.stdout.write(
-      `LEDGER_READ_QUERIES ${JSON.stringify({ onePayment: single.queries, severalPayments: multiple.queries })}\n`,
-    );
     const ledger = await db.store.accountLedger(manager, accountId);
     const entries = ledger.balances.flatMap((balance) => balance.entries);
     expect(entries).toHaveLength(3);

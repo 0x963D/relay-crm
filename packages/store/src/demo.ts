@@ -186,11 +186,15 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
     course: string,
     source: IntakeSource = "metaLeadAds",
     previous?: Actor,
+    receivedAt?: Date,
   ) {
     signal.throwIfAborted();
     phone++;
     const number = leadNumber++;
-    const createdAt = new Date(required(history[number % 7]).at.getTime() + (number % 12) * 900000);
+    const historicalAt = new Date(
+      required(history[previous ? 13 : number % 7]).at.getTime() + (number % 12) * 900000,
+    );
+    const createdAt = previous ? historicalAt : (receivedAt ?? historicalAt);
     const email = parseEmail(`${nameEmail(name)}@example.com`);
     if (!email.ok) throw new Error("Invalid invented email.");
     const leadPhone = `+44 7700 900${String(phone)}`;
@@ -235,7 +239,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         { kind: "close", closing: { kind: "lost", note: "The earlier course date did not work." } },
         previous,
       );
-      const reopened = await submit(`demo:reopen:${name}`, storyTime(id));
+      const reopened = await submit(`demo:reopen:${name}`, receivedAt ?? storyTime(id));
       if (reopened.outcome.kind !== "leadReopened")
         throw new Error("Demo enquiry did not reopen the lost lead.");
     }
@@ -335,18 +339,24 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       ["Nadia Rahimi", "IELTS evening", "metaLeadAds"],
       ["Wei Chen", "IELTS evening", "metaLeadAds"],
       ["Zainab Yusuf", "Summer school", "metaLeadAds"],
-      ["Tunde Bakare", "Summer school", "metaLeadAds", noor],
+      ["Tunde Bakare", "No campaign", "csv", noor],
       ["Diego Salazar", "Spanish beginners", "metaLeadAds"],
       ["Ingrid Solberg", "German A1", "metaLeadAds"],
       ["Ravi Menon", "Summer school", "metaLeadAds", callum],
       ["Farah Siddiqui", "IELTS evening", "metaLeadAds"],
-      ["Emil Novak", "IELTS evening", "metaLeadAds"],
-      ["Oskar Nowak", "German A1", "metaLeadAds"],
+      ["Emil Novak", "German A1", "webForm"],
+      ["Oskar Nowak", "German A1", "webForm"],
       ["Thabo Nkosi", "Summer school", "metaLeadAds"],
       ["Chiara Russo", "Summer school", "metaLeadAds"],
       ["Marek Dvorak", "Summer school", "metaLeadAds"],
     ] as const)
-      await lead(name, course, source, previous);
+      await lead(
+        name,
+        course,
+        source,
+        previous,
+        new Date(options.today.getTime() - (2 + (leadNumber % 14)) * 3600000),
+      );
     const accountIds = new Map<string, AccountId>();
     const accountOpenedAt = new Map<string, Date>();
     for (const [name, course, owner] of [
@@ -381,13 +391,13 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       accountOpenedAt.set(name, required(stories.get(id)));
     }
     const targets = [
-      ["IELTS evening", "metaLeadAds", 142, 6, 97, 21],
+      ["IELTS evening", "metaLeadAds", 142, 5, 97, 21],
       ["Business English", "metaLeadAds", 88, 0, 61, 9],
       ["Spanish beginners", "metaLeadAds", 76, 4, 49, 13],
-      ["German A1", "metaLeadAds", 54, 2, 31, 6],
-      ["Summer school", "metaLeadAds", 39, 11, 12, 1],
-      ["German A1", "webForm", 8, 0, 7, 3],
-      ["No campaign", "csv", 5, 0, 4, 1],
+      ["German A1", "metaLeadAds", 54, 1, 31, 6],
+      ["Summer school", "metaLeadAds", 39, 10, 14, 1],
+      ["German A1", "webForm", 8, 2, 5, 3],
+      ["No campaign", "csv", 5, 1, 4, 1],
     ] as const;
     const existing = await store.campaignFunnel(manager);
     const firstNames = [
@@ -487,9 +497,38 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
             attempt: {
               channel: "call",
               outcome: spoke ? "spokeToThem" : "noAnswer",
+              ...(open && number % 3 !== 0
+                ? {
+                    callback: {
+                      kind: "set" as const,
+                      at:
+                        number % 3 === 1
+                          ? new Date(options.today.getTime() - 3600000)
+                          : new Date(nextDay.getTime() + (9 + (number % 7)) * 3600000),
+                    },
+                  }
+                : {}),
               note: spoke
-                ? "Discussed the course schedule and fees."
-                : "No answer after the course enquiry.",
+                ? ([
+                    "Asked whether the Tuesday group has places.",
+                    "Requested the course dates by email.",
+                    "Comparing the evening and weekend groups.",
+                    "Needs to check the timetable with their employer.",
+                    "Asked about the placement conversation.",
+                    "Would like to join with a friend.",
+                    "Asked how long each class lasts.",
+                    "Checking travel time before choosing a group.",
+                    "Requested the price for the full term.",
+                    "Prefers a call after the school run.",
+                    "Asked about online attendance while travelling.",
+                    "Deciding between the next two start dates.",
+                  ][number % 12] ?? "Requested the course timetable.")
+                : ([
+                    "Rang out. Try after work.",
+                    "No reply to the course dates.",
+                    "Left a message with the class times.",
+                    "Asked by email for a better time to call.",
+                  ][number % 4] ?? "Rang out."),
             },
           },
           owner,
@@ -697,6 +736,10 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       for (const minutes of [5, 15, 35])
         await store.runOutbox(delivery, { at: new Date(cycleStart + minutes * 60000), signal });
     }
+    await transact(owner, async (tx) => {
+      const team = await tx.team.create({ data: { name: "Evening courses", kind: "sales" } });
+      await tx.membership.create({ data: { userId: callum.userId, teamId: team.id } });
+    });
     await transact(
       owner,
       (tx) => tx.$executeRaw`UPDATE demo_seed SET state='ready' WHERE key=${DEMO_KEY}`,

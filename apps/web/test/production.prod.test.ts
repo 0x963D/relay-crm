@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 databaseTest(
-  "a production demo offers roles with a workspace and keeps emailed sign-in",
+  "a production demo offers each role and keeps emailed sign-in",
   { timeout: 120_000 },
   async ({ db }) => {
     await seedDemo({
@@ -50,9 +50,8 @@ databaseTest(
         expect(signedOut.status).toBe(200);
         expect(firstPage).not.toContain("RELAY_DEV_ACTOR");
         if (demo) {
-          for (const role of ["manager", "agent"] as const)
+          for (const role of ["manager", "agent", "accountant"] as const)
             expect(firstPage).toContain(DEMO_PEOPLE[role].name);
-          expect(firstPage).not.toContain(DEMO_PEOPLE.accountant.name);
         } else {
           expect(firstPage).toContain("/api/auth/email-otp/send-verification-otp");
           expect(firstPage).toContain("Send me a code");
@@ -87,6 +86,12 @@ databaseTest(
             .join("; ");
           const session = await fetch(server.url("/api/auth/get-session"), { headers: { cookie } });
           expect(await session.json()).toMatchObject({ user: { id: DEMO_PEOPLE[role].id } });
+          const landing = await fetch(server.url("/"), { headers: { cookie } });
+          expect(new URL(landing.url).pathname).toBe(
+            role === "manager" ? "/pool" : role === "agent" ? "/queue" : "/accountant",
+          );
+          if (role === "accountant")
+            expect(await landing.text()).toContain("Accountant screens are not built yet");
         }
         const email = DEMO_PEOPLE.manager.email;
         expect(

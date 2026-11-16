@@ -30,9 +30,7 @@ test.describe.serial("lead work journeys", () => {
       .getByRole("radio", { name: "Agent", exact: true })
       .click();
     await expect(page.getByRole("heading", { name: "My queue", exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("button").filter({ has: page.getByText(leadName, { exact: true }) }),
-    ).toBeVisible();
+    await expect(page.getByRole("link", { name: `Open ${leadName}`, exact: true })).toBeVisible();
     await accessibility(page, "queue-light");
   });
   test("an agent records attempts, moves and clears a callback, adds a note and wins an account", async ({
@@ -41,10 +39,7 @@ test.describe.serial("lead work journeys", () => {
     await signIn(page, "agent");
     const beforeQueue = await rpc(page).leads.queue.query({});
     const beforeTotal = Object.values(beforeQueue.counts).reduce((a, b) => a + b, 0);
-    await page
-      .getByRole("button")
-      .filter({ has: page.getByText(leadName, { exact: true }) })
-      .click();
+    await page.getByRole("link", { name: `Open ${leadName}`, exact: true }).click();
     await saveAttempt(page, "No answer", "Rang out. Will try tomorrow.");
     await expect(page.getByLabel("Lead detail")).toContainText("Not contacted");
     await page.getByRole("button", { name: "Set callback", exact: true }).click();
@@ -63,7 +58,9 @@ test.describe.serial("lead work journeys", () => {
     await page.getByRole("button", { name: "Clear callback", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Callback cleared" })).toBeVisible();
     await page.getByRole("button", { name: "Add note", exact: true }).click();
-    await page.getByLabel("Note", { exact: true }).fill("Customer asked for the Tuesday course.");
+    await page
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill("Customer asked for the Tuesday course.");
     await accessibility(page, "note");
     await page.getByRole("button", { name: "Save note", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Note added" })).toBeVisible();
@@ -102,13 +99,15 @@ test("emailed-code sign-in and a refused reused code", async ({ page }) => {
   await page.getByRole("button", { name: "Send me a code", exact: true }).click();
   await page.getByLabel("6-digit code").fill(code);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.locator("[data-slot=alert]")).toContainText("That code did not work");
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText(
+    "That code did not work",
+  );
   await accessibility(page, "code-refused");
 });
 test("queue stays usable in dark, phone, keyboard and reduced-motion views", async ({ page }) => {
   await signIn(page, "agent");
-  await page.getByLabel("Appearance").first().selectOption("dark");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("dark");
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
   await accessibility(page, "queue-dark");
   await page.setViewportSize({ width: 390, height: 844 });
   await accessibility(page, "queue-phone-dark");
@@ -121,12 +120,12 @@ test("queue stays usable in dark, phone, keyboard and reduced-motion views", asy
     "Later",
   ])
     await expect(page.getByRole("heading", { name: title, exact: true })).toBeAttached();
-  await page.getByLabel("Appearance").last().selectOption("light");
+  await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("light");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await accessibility(page, "queue-phone-light");
   await page.keyboard.press("Tab");
-  await expect(page.locator(":focus-visible")).toBeVisible();
-  const call = page.getByRole("button", { name: "Call Hye-jin Park", exact: true });
+  expect(await page.evaluate(() => document.activeElement?.matches(":focus-visible"))).toBe(true);
+  const call = page.getByRole("link", { name: "Call Hye-jin Park", exact: true });
   await call.scrollIntoViewIfNeeded();
   await tabTo(page, call);
   await page.keyboard.press("Enter");

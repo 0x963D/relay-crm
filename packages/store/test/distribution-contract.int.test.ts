@@ -478,3 +478,30 @@ test("cleanup respects the duration stored on each window", async ({ db }) => {
     { key: "short" },
   ]);
 });
+
+test("every submitted lead keeps its previewed owner and team", async ({ db }) => {
+  const w = await world(db);
+  const leadIds = await Promise.all(
+    Array.from({ length: 7 }, (_, index) => w.pool(`plan-${String(index)}@example.com`)),
+  );
+  const preview = await db.store.previewDistribution(w.actor, {
+    leadIds,
+    agents: [w.agent, w.agent2, w.other],
+    excludePreviousOwner: false,
+  });
+  const result = await db.store.submitDistribution(
+    w.actor,
+    {
+      previewId: preview.id,
+      fingerprint: preview.fingerprint,
+      key: "exact-plan",
+    },
+    "00000000-0000-4000-8000-000000000001",
+  );
+  expect(result.items).toEqual(preview.items);
+  for (const item of preview.items) {
+    expect(await db.rows("SELECT owner_id, team_id FROM leads WHERE id=$1", [item.leadId])).toEqual(
+      [{ owner_id: item.to.ownerId, team_id: item.to.teamId }],
+    );
+  }
+});

@@ -10,6 +10,7 @@ import { ThemeSwitch } from "./theme-switch";
 const people = [
   { role: "manager", name: "Priya Raman" },
   { role: "agent", name: "Dele Akinwale" },
+  { role: "accountant", name: "Esther Okafor" },
 ];
 export function SignIn({ demo }: { demo: boolean }) {
   const [step, setStep] = useState<"email" | "code">("email");
@@ -85,18 +86,18 @@ export function SignIn({ demo }: { demo: boolean }) {
     }
   }
   return (
-    <div className="sign-ground h-[100dvh] grid place-items-center bg-shell relative p-pane overflow-auto max-phone:min-h-[100dvh] max-phone:h-auto max-phone:p-[112px_16px_88px]">
-      <header className="sign-brand absolute [inset-block-start:28px] [inset-inline-start:32px] text-shell-foreground max-phone:[inset-inline-start:16px] max-phone:[inset-block-start:24px]">
+    <div className="h-dvh overflow-y-auto bg-sidebar px-4 py-28 sm:grid sm:place-items-center sm:p-8">
+      <header className="absolute start-4 top-6 max-w-64 text-sidebar-foreground sm:start-8 sm:top-7">
         <Brand />
       </header>
       <main
-        className="sheet bg-surface rounded-surface min-w-0 min-h-0 flex flex-col [.shell--live_&]:[grid-row:1] max-phone:m-0 max-phone:[border-radius:14px_14px_0_0] max-phone:flex-1 max-phone:overflow-visible sign-sheet w-[min(var(--sign-width),_100%)] p-[36px_36px_32px] gap-section m-0 overflow-visible [&_h1]:text-(length:--text-display) [&_h1]:leading-[32px] [&_h1]:font-[720] [&_h1]:[font-variation-settings:'wdth'_84] max-phone:p-[28px_24px]"
+        className="mx-auto flex w-full max-w-108 flex-col gap-4 rounded-xl bg-card p-6 text-card-foreground sm:p-9"
         id="main"
       >
         {step === "code" && (
           <Button
             variant="ghost"
-            className="back-email [align-self:flex-start] p-0 justify-start h-auto text-(length:--text-small) leading-[18px] gap-tight"
+            className="self-start justify-start px-0 text-caption"
             onClick={() => {
               setStep("email");
               setError(null);
@@ -107,20 +108,19 @@ export function SignIn({ demo }: { demo: boolean }) {
             Use a different email
           </Button>
         )}
-        <h1>{step === "email" ? "Sign in" : "Enter your code"}</h1>
-        <p className="t2 text-secondary [.alert--refused_&]:text-refused-foreground">
+        <h1 className="text-3xl font-bold">{step === "email" ? "Sign in" : "Enter your code"}</h1>
+        <p className="text-secondary-foreground">
           {step === "email" ? (
             "Enter your work email and we will send you a 6-digit code. There is no password to remember."
           ) : (
             <>
               We sent a 6-digit code to{" "}
-              <span className="b font-[620] sign-email text-foreground">{email}</span>. It works
-              once.
+              <span className="font-semibold text-foreground">{email}</span>. It works once.
             </>
           )}
         </p>
         <form
-          className="col flex flex-col sign-form gap-[18px]"
+          className="flex flex-col gap-4"
           action={
             step === "email"
               ? "/api/auth/email-otp/send-verification-otp"
@@ -132,14 +132,17 @@ export function SignIn({ demo }: { demo: boolean }) {
           }}
         >
           {step === "email" ? (
-            <div className="field flex flex-col gap-compact">
-              <label className="label text-(length:--text-small) font-[600]" htmlFor="email">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-caption font-semibold" htmlFor="email">
                 Work email
               </label>
-              <div className="email-control relative [&_svg]:absolute [&_svg]:[inset-inline-start:10px] [&_svg]:[inset-block-start:14px] [&_input]:ps-[34px]">
-                <Icon name="mail" />
+              <div className="relative">
+                <span className="pointer-events-none absolute start-3 top-3.5">
+                  <Icon name="mail" />
+                </span>
                 <Input
                   id="email"
+                  className="h-11 ps-9"
                   name="email"
                   type="email"
                   required
@@ -157,6 +160,7 @@ export function SignIn({ demo }: { demo: boolean }) {
               <input type="hidden" name="email" value={email} />
               <InputOTP
                 id="otp"
+                containerClassName="grid grid-cols-6 gap-2"
                 name="otp"
                 aria-label="6-digit code"
                 maxLength={6}
@@ -168,7 +172,11 @@ export function SignIn({ demo }: { demo: boolean }) {
                 autoFocus
               >
                 {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <InputOTPSlot key={i} index={i} />
+                  <InputOTPSlot
+                    key={i}
+                    index={i}
+                    className="h-14 w-full rounded-md border text-2xl"
+                  />
                 ))}
               </InputOTP>
             </>
@@ -179,21 +187,22 @@ export function SignIn({ demo }: { demo: boolean }) {
             </Refusal>
           )}
           <Button
-            className="btn--block w-full [.sign-sheet_&]:flex max-phone:[.pool-panel_&]:min-h-[44px]"
+            className="w-full"
             size="lg"
             type="submit"
-            disabled={pending || (step === "code" && code.length !== 6)}
+            busy={pending}
+            disabled={step === "code" && code.length !== 6}
           >
             {pending ? "Please wait…" : step === "email" ? "Send me a code" : "Sign in"}
           </Button>
         </form>
         {step === "code" && (
-          <p className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
+          <p className="text-caption text-secondary-foreground">
             No email yet?{" "}
             <Button
               variant="ghost"
               size="sm"
-              className="resend-code p-0 h-auto text-[length:inherit] leading-[inherit] [text-decoration:underline] [text-underline-offset:3px]"
+              className="h-auto p-0 text-caption underline underline-offset-4"
               onClick={() => {
                 void send();
               }}
@@ -204,11 +213,8 @@ export function SignIn({ demo }: { demo: boolean }) {
           </p>
         )}
         {demo && step === "email" && (
-          <section
-            className="demo-choices [border-block-start:1px_solid_var(--color-rule)] pt-content flex flex-col gap-related max-phone:[.sign-sheet_&]:gap-related"
-            aria-label="Try the demo"
-          >
-            <p className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
+          <section className="flex flex-col gap-2 border-t pt-4" aria-label="Try the demo">
+            <p className="text-caption text-secondary-foreground">
               Try the demo with invented data. It resets every night.
             </p>
             {people.map((person) => (
@@ -221,7 +227,7 @@ export function SignIn({ demo }: { demo: boolean }) {
                 disabled={pending}
               >
                 <span>{person.name}</span>
-                <span className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap">
+                <span className="text-caption font-normal">
                   {person.role[0]?.toUpperCase()}
                   {person.role.slice(1)}
                 </span>
@@ -230,13 +236,10 @@ export function SignIn({ demo }: { demo: boolean }) {
           </section>
         )}
       </main>
-      <aside
-        className="sign-theme absolute [inset-inline-end:32px] [inset-block-start:28px] max-phone:[inset-inline-end:16px] max-phone:[inset-block-start:76px]"
-        aria-label="Appearance settings"
-      >
+      <aside className="absolute end-4 top-20 sm:end-8 sm:top-7" aria-label="Appearance settings">
         <ThemeSwitch />
       </aside>
-      <footer className="sign-footer absolute [inset-block-end:28px] [inset-inline:24px] text-center text-shell-secondary text-(length:--text-small) max-phone:[inset-block-end:24px] max-phone:text-(length:--text-caption)">
+      <footer className="absolute inset-x-6 bottom-6 text-center text-xs text-sidebar-muted">
         Sales and accounts staff only. Ask your manager if you need an account.
       </footer>
     </div>

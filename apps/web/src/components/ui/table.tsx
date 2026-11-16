@@ -1,29 +1,97 @@
-import type { ComponentProps } from "react";
-import { cn } from "@/lib/utils";
-export function Table({ className, ...props }: ComponentProps<"table">) {
+"use client";
+
+import * as React from "react";
+import { cn } from "cn";
+
+function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
-    <table
-      data-slot="table"
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label={`${props["aria-label"] ?? "Table"} scroll area`}
+      data-slot="table-container"
+      className="relative w-full overflow-x-auto"
+    >
+      <table
+        data-slot="table"
+        className={cn("w-full caption-bottom text-sm", className)}
+        {...props}
+      />
+    </div>
+  );
+}
+
+function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
+  return <thead data-slot="table-header" className={cn("[&_tr]:border-b", className)} {...props} />;
+}
+
+function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
+  return (
+    <tbody
+      data-slot="table-body"
+      className={cn("[&_tr:last-child]:border-0", className)}
+      {...props}
+    />
+  );
+}
+
+function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
+  return (
+    <tfoot
+      data-slot="table-footer"
+      className={cn("border-t bg-muted/50 font-medium [&>tr]:last:border-b-0", className)}
+      {...props}
+    />
+  );
+}
+
+function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+  return (
+    <tr
+      data-slot="table-row"
       className={cn(
-        "tbl w-full [border-collapse:collapse] text-(length:--text-body) [&_th]:text-start [&_th]:text-(length:--text-caption) [&_th]:leading-[16px] [&_th]:font-[600] [&_th]:text-tertiary [&_th]:p-[10px_12px] [&_th]:[border-block-end:1px_solid_var(--color-rule)] [&_th]:whitespace-nowrap [&_th]:[font-stretch:94%] [&_td]:p-[0_12px] [&_td]:h-[44px] [&_td]:[border-block-end:1px_solid_var(--color-rule)] [&_td]:whitespace-nowrap [&_tfoot_td]:font-[650] [&_tfoot_td]:[border-block-end:0] [&_tfoot_td]:[border-block-start:1.5px_solid_var(--color-foreground)] [&_tbody_tr:hover]:bg-muted [&_tbody_tr[aria-selected='true']]:bg-selected [.pool-list_&]:text-(length:--text-small) [.pool-list_&_th]:px-control [.pool-list_&_td]:px-control [.pool-list_&_td]:max-w-[180px] [.pool-list_&_td]:whitespace-nowrap [.pool-list_&_td]:overflow-hidden [.pool-list_&_td]:text-ellipsis max-laptop:[.pool-list_&_th]:px-compact max-laptop:[.pool-list_&_td]:px-compact max-phone:[.pool-list_&]:block max-phone:[.pool-list_&]:w-full max-phone:[.pool-list_&_td]:whitespace-normal max-phone:[.pool-list_&_td]:p-[2px_4px]",
+        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
         className,
       )}
       {...props}
     />
   );
 }
-export function TableHeader(props: ComponentProps<"thead">) {
-  return <thead {...props} />;
+
+function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+  return (
+    <th
+      data-slot="table-head"
+      className={cn(
+        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-0.5",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
-export function TableBody(props: ComponentProps<"tbody">) {
-  return <tbody {...props} />;
+
+function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+  return (
+    <td
+      data-slot="table-cell"
+      className={cn(
+        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-0.5",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
-export function TableRow(props: ComponentProps<"tr">) {
-  return <tr {...props} />;
+
+function TableCaption({ className, ...props }: React.ComponentProps<"caption">) {
+  return (
+    <caption
+      data-slot="table-caption"
+      className={cn("mt-4 text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  );
 }
-export function TableHead(props: ComponentProps<"th">) {
-  return <th scope="col" {...props} />;
-}
-export function TableCell(props: ComponentProps<"td">) {
-  return <td {...props} />;
-}
+
+export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption };

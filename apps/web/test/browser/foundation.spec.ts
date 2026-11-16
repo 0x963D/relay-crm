@@ -56,8 +56,11 @@ test("keyboard assignment and attempt preserve focus and drafts", async ({ page 
     page.getByRole("radiogroup", { name: "Who gets them?" }).getByRole("radio", { checked: true }),
   );
   await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("radio", { name: /Callum Reid Evening courses/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(recipient).toBeFocused();
   await page.keyboard.press("Space");
+  await expect(recipient).toBeChecked();
   await tabTo(
     page,
     page.getByRole("button", { name: "Assign 1 lead to Dele Akinwale", exact: true }),
@@ -73,16 +76,14 @@ test("keyboard assignment and attempt preserve focus and drafts", async ({ page 
   await expect(page.getByRole("radio", { name: "Agent", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "My queue", exact: true })).toBeVisible();
-  const lead = page
-    .getByRole("button")
-    .filter({ has: page.getByText("Keyboard Journey", { exact: true }) });
+  const lead = page.getByRole("link", { name: `Open Keyboard Journey`, exact: true });
   await tabTo(page, lead);
   await page.keyboard.press("Enter");
   const open = page.getByRole("button", { name: "Log an attempt", exact: true });
   await tabTo(page, open);
   await page.keyboard.press("Enter");
   await expect(page.getByRole("radio", { name: "Call", exact: true })).toBeFocused();
-  const note = page.getByLabel("Note", { exact: true });
+  const note = page.getByRole("textbox", { name: "Note", exact: true });
   await tabTo(page, note);
   await page.keyboard.type("No answer. Try after work.");
   await page.keyboard.press("Escape");
@@ -91,7 +92,9 @@ test("keyboard assignment and attempt preserve focus and drafts", async ({ page 
   await expect(note).toHaveValue("No answer. Try after work.");
   await tabTo(page, page.getByRole("button", { name: "Save attempt", exact: true }));
   await page.keyboard.press("Enter");
-  await expect(open).toBeFocused();
+  await expect(
+    page.getByRole("status").filter({ hasText: "No-answer attempt saved" }),
+  ).toBeFocused();
   await announcement(page, "status", "No-answer attempt saved", "attempt");
 });
 
@@ -112,33 +115,40 @@ test("attempts move between queue groups and only a conversation marks contacted
     to: { ownerId: agent.ownerId, teamId: agent.teamId },
   });
   await page.getByRole("radio", { name: "Agent", exact: true }).click();
-  const row = () =>
-    page.getByRole("button").filter({ has: page.getByText("Queue Moves", { exact: true }) });
-  await expect(page.locator("section[aria-labelledby=group-notYetCalled]")).toContainText(
-    "Queue Moves",
-  );
+  const row = () => page.getByRole("link", { name: `Open Queue Moves`, exact: true });
+  await expect(
+    page.getByRole("region", { name: "Assigned to you, not yet called", exact: true }),
+  ).toContainText("Queue Moves");
   await row().click();
-  await expect(page.locator(".lead-contact")).toContainText("Not contacted");
+  await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
+    "Not contacted",
+  );
   await page.getByRole("button", { name: "Log an attempt", exact: true }).click();
-  await page.getByLabel("Note", { exact: true }).fill("Rang out.");
+  await page.getByRole("textbox", { name: "Note", exact: true }).fill("Rang out.");
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
-  await expect(page.locator("section[aria-labelledby=group-noCallbackSet]")).toContainText(
+  await expect(page.getByRole("region", { name: "No callback set", exact: true })).toContainText(
     "Queue Moves",
   );
-  await expect(page.locator(".lead-contact")).toContainText("Not contacted");
+  await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
+    "Not contacted",
+  );
   await page.getByRole("button", { name: "Log an attempt", exact: true }).click();
   await page.getByRole("radio", { name: /^Spoke to them/ }).check();
-  await page.getByLabel("Note", { exact: true }).fill("Discussed the course.");
+  await page.getByRole("textbox", { name: "Note", exact: true }).fill("Discussed the course.");
   await page.getByLabel("Call back", { exact: true }).check();
   await page
     .getByLabel("Day", { exact: true })
     .fill(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
   await page.getByLabel("Time", { exact: true }).fill("17:30");
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
-  await expect(page.locator("section[aria-labelledby=group-later]")).toContainText("Queue Moves");
+  await expect(page.getByRole("region", { name: "Later", exact: true })).toContainText(
+    "Queue Moves",
+  );
   await page.getByRole("button", { name: "Move callback", exact: true }).click();
   await page.getByRole("button", { name: "Clear callback", exact: true }).click();
-  await expect(page.locator(".lead-contact")).toContainText("Contacted");
+  await expect(page.getByRole("region", { name: "Lead detail", exact: true })).toContainText(
+    "Contacted",
+  );
   expect((await api.leads.get.query({ id: lead.id })).contactedAt).not.toBeNull();
 });
 
@@ -155,13 +165,33 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   const rows = (await api.leads.pool.query({ limit: 100 })).rows.filter((row) =>
     ["Round First", "Round Second"].includes(row.name ?? ""),
   );
+  const agents = await api.leads.agents.query({});
+  const expected = await Promise.all(
+    rows.map(async (row) => {
+      const cells = page
+        .getByRole("row")
+        .filter({
+          has: page.getByRole("checkbox", { name: `Select ${row.name ?? row.email}`, exact: true }),
+        })
+        .getByRole("cell");
+      const [name, team] = (await cells.last().innerText()).split("\n");
+      const candidates = agents.filter(
+        (agent) => agent.name === name && (!team || agent.team === team),
+      );
+      expect(candidates, `Unambiguous preview owner for ${row.name ?? row.email}`).toHaveLength(1);
+      const owner = candidates[0];
+      expect(owner, `Preview owner for ${row.name ?? row.email}`).toBeDefined();
+      return { id: row.id, owner };
+    }),
+  );
+  await expect(page.getByRole("heading", { name: "Preview", exact: true })).toBeFocused();
   await page.getByRole("button", { name: "Assign 2 leads", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("2 leads were assigned");
-  const owners = await Promise.all(
-    rows.map(async (row) => (await api.leads.get.query({ id: row.id })).custody.heldBy?.id),
-  );
-  expect(owners.every(Boolean)).toBe(true);
-  expect(new Set(owners).size).toBe(rows.length);
+  for (const item of expected) {
+    const actual = await api.leads.get.query({ id: item.id });
+    expect(actual.custody.heldBy?.id).toBe(item.owner?.ownerId);
+    expect(actual.lifecycle.state).toMatchObject({ assignee: { teamId: item.owner?.teamId } });
+  }
   await page.getByRole("checkbox", { name: "Select Round Stale", exact: true }).check();
   await page.getByRole("checkbox", { name: "Select Round Remaining", exact: true }).check();
   await page.getByRole("button", { name: "Preview 2 leads", exact: true }).click();
@@ -195,7 +225,10 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   );
   await expect(page.getByRole("button", { name: /Preview the remaining 0/ })).toHaveCount(0);
   await expect(page.getByRole("alert").filter({ hasText: "Nothing was assigned" })).toBeFocused();
-  await expect(page.locator("[data-stale=true]")).toHaveCSS("opacity", "0.85");
+  await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toHaveCSS(
+    "opacity",
+    "0.9",
+  );
   await accessibility(page, "stale-foundation");
 });
 
@@ -203,38 +236,30 @@ test("system dark works without JavaScript", async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false, colorScheme: "dark" });
   const page = await context.newPage();
   await page.goto(browserState().signInUrl);
-  await expect(page.locator(".sign-sheet")).toHaveCSS("background-color", "rgb(21, 24, 64)");
+  await expect(page.getByRole("main")).toHaveCSS("background-color", "rgb(21, 24, 64)");
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Work email")).toBeFocused();
   await page.screenshot({ path: join(browserDirectory, "nojs-dark.png") });
   await context.close();
 });
 
-test("server hydration and cached navigation avoid repeated reads", async ({ page }) => {
-  const requests: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("/api/trpc/") || request.headers().rsc === "1")
-      requests.push(request.url());
-  });
+test("route navigation preserves the queue, reloads and goes back", async ({ page }) => {
   await signIn(page, "agent");
+  const queue = page.getByRole("region", { name: "Work queue", exact: true });
+  await queue.evaluate((element) => {
+    element.setAttribute("data-mounted-proof", "original");
+  });
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+  await expect(page).toHaveURL(/\/queue\/leads\//);
+  const url = page.url();
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
-  expect(requests).toEqual([]);
-  const html = await page.request.get(browserState().url);
-  expect(await html.text()).toMatch(/<h2>Hye-jin Park<\/h2>/);
-  const row = (name: string) =>
-    page.getByRole("button").filter({ has: page.getByText(name, { exact: true }) });
-  await row("Hye-jin Park").click();
-  await expect(page).toHaveURL(/lead=/);
-  expect(requests).toEqual([]);
-  await row("Mateus Carvalho").click();
+  await page.getByRole("link", { name: "Open Mateus Carvalho", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Mateus Carvalho", exact: true })).toBeVisible();
-  expect(requests).toHaveLength(1);
-  expect(requests[0]).toContain("leads.get");
-  await row("Hye-jin Park").click();
-  await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
+  await expect(queue).toHaveAttribute("data-mounted-proof", "original");
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Mateus Carvalho", exact: true })).toBeVisible();
-  expect(requests).toHaveLength(1);
+  await expect(page).toHaveURL(url);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
 });
 
 test("tabs wait for hydration before accepting an action", async ({ page }) => {

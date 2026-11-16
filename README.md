@@ -30,8 +30,8 @@ Use the same variables with later Compose commands. `RELAY_TIME_ZONE` selects th
 callbacks and reset, and defaults to UTC.
 
 The invented company is Tidewell Language School. The sign-in page offers Priya Raman, manager,
-and Dele Akinwale, agent. The manager opens the lead pool, and the agent
-opens a queue with five groups. Staff can also sign in with an emailed code.
+Dele Akinwale, agent, and Esther Okafor, accountant. The manager opens the lead pool, and the agent
+opens a queue with five groups. The accountant sees a notice that the money screens are not built yet. Staff can also sign in with an emailed code.
 The lead screens support assignment by hand, round-robin previews, attempts, callbacks, notes and
 closing a lead. A rejected preview assigns nothing. Only "Spoke to them" marks a lead contacted.
 Payments, the ledger, the funnel and the accounts list have typed APIs. Their screens are separate work.
@@ -992,10 +992,33 @@ refusal, keyboard focus, reduced motion and the light, dark and phone queues.
 Axe checks WCAG 2 A and AA, WCAG 2.1 A and AA, and its best-practice rules on each tested screen.
 The browser CI job runs these checks and the capture script. A failing check fails the job.
 
-`capture` writes 2x images with the board's frame names. On Windows they are in
-`test-results/relay-crm-screens/built/`. Other systems use `relay-crm-screens/built/` under
-the system temporary directory. Logs, accessibility results and failure traces stay beside them.
-Frames 13 and 15 assemble actual app captures into the board's comparison layout. The payment
-content in those frames is outside this screen task. Counts, names, dates and assignment results
+`capture` writes 2x images under `test-results/evidence/built/`. Set `RELAY_EVIDENCE_DIR` to use another directory. Logs, accessibility results and failure traces stay beside them.
+The role and empty-state captures cover the existing portions of frames 13 and 15. Payment
+screens are not included. Counts, names, dates and assignment results
 come from the seeded API, so they can differ from the illustrative board.
 Both commands stop their servers and drop only their own test database when they finish.
+
+### Routes and data
+
+`/sign-in` handles emailed codes and demo sign-in. `/queue` shows the signed-in agent's work;
+`/queue/leads/[leadId]` opens a lead beside it. Managers and team leads use
+`/agents/[agentId]` and `/agents/[agentId]/leads/[leadId]`. `/pool` handles assignment.
+`/accountant` explains which screens are still to come. `/` redirects to the role's home.
+Links use normal browser navigation, including modified clicks. Queue layouts stay mounted when
+the lead changes. Each route segment has loading and error boundaries.
+
+The server resolves the session once per render, starts independent reads through tRPC's query
+options, and streams their dehydrated promises through Suspense. The browser keeps one QueryClient.
+Components use the same router-generated options and mutation hooks. A completed save invalidates
+the affected record, queue, pool and agent counts. A business refusal also refreshes those reads.
+A transport failure preserves the draft and its request key for a retry.
+
+Controls in `apps/web/src/components/ui` use the standard token names from `components.json`.
+They contain no screen selectors. Status slips use `waiting`, `refused`, `complete`, `fresh`,
+`neutral` and `outline` variants. Pane layouts respond to container width.
+`globals.css` defines the tokens and base layer; controls and screens compose Tailwind utilities.
+
+`pnpm lint` includes the style guard in `scripts/check-styles.mjs`. It rejects arbitrary pixel
+utilities, parent-class overrides and numeric font-weight utilities. The allow-list in
+`scripts/style-allowlist.json` is empty. Any future exception needs a file, exact value and reason.
+Run database-backed verification commands sequentially: they rebuild the same test template.

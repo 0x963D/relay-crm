@@ -1,28 +1,22 @@
 "use client";
-import { useState, type ReactNode } from "react";
-import {
-  HydrationBoundary,
-  QueryClient,
-  QueryClientProvider,
-  type DehydratedState,
-} from "@tanstack/react-query";
-export function DataProvider({ state, children }: { state: DehydratedState; children: ReactNode }) {
-  const [client] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 60_000,
-            retry: false,
-            retryOnMount: false,
-            refetchOnWindowFocus: false,
-          },
-        },
-      }),
-  );
+import { type ReactNode, useState } from "react";
+import { environmentManager, QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import { createApi } from "@/lib/api";
+import { TRPCProvider } from "@/lib/trpc/client";
+import { makeQueryClient } from "@/lib/trpc/query-client";
+let browserClient: QueryClient | undefined;
+function getQueryClient() {
+  if (environmentManager.isServer()) return makeQueryClient();
+  return (browserClient ??= makeQueryClient());
+}
+export function DataProvider({ children }: { children: ReactNode }) {
+  const queryClient = getQueryClient();
+  const [trpcClient] = useState(createApi);
   return (
-    <QueryClientProvider client={client}>
-      <HydrationBoundary state={state}>{children}</HydrationBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+        {children}
+      </TRPCProvider>
     </QueryClientProvider>
   );
 }

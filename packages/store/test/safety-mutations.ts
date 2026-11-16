@@ -25,6 +25,15 @@ const definitions: {
     test: "a replay returns only the first result after scope and role change",
   },
   {
+    name: "submitted-plan",
+    file: assignment,
+    before: "const plan = planDistribution(leads, agents, request.excludePreviousOwner);",
+    after:
+      "const plan = planDistribution(leads, [...agents].reverse(), request.excludePreviousOwner);",
+    test: "every submitted lead keeps its previewed owner and team",
+    testFile: "packages/store/test/distribution-contract.int.test.ts",
+  },
+  {
     name: "preview-owner",
     file: assignment,
     before: "preview?.actorId !== current.userId || preview.fingerprint !== input.fingerprint",

@@ -1,27 +1,90 @@
 "use client";
-import { useSyncExternalStore, type ComponentProps } from "react";
-import { Tabs as Primitive } from "radix-ui";
-import { cn } from "@/lib/utils";
-export const Tabs = Primitive.Root;
-export function TabsList({ className, ...props }: ComponentProps<typeof Primitive.List>) {
+
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "cn";
+import { Tabs as TabsPrimitive } from "radix-ui";
+
+function Tabs({
+  className,
+  orientation = "horizontal",
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Root>) {
   return (
-    <Primitive.List
+    <TabsPrimitive.Root
+      data-slot="tabs"
+      data-orientation={orientation}
+      orientation={orientation}
+      className={cn("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col", className)}
+      {...props}
+    />
+  );
+}
+
+const tabsListVariants = cva(
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-0.75 text-muted-foreground group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col data-[variant=line]:rounded-none",
+  {
+    variants: {
+      variant: {
+        default: "bg-muted",
+        line: "gap-1 bg-transparent",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  },
+);
+
+function TabsList({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.List> & VariantProps<typeof tabsListVariants>) {
+  return (
+    <TabsPrimitive.List
+      data-slot="tabs-list"
+      data-variant={variant}
+      className={cn(tabsListVariants({ variant }), className)}
+      {...props}
+    />
+  );
+}
+
+function TabsTrigger({
+  className,
+  disabled,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  const hydrated = React.useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
+  return (
+    <TabsPrimitive.Trigger
+      data-slot="tabs-trigger"
+      disabled={!hydrated || disabled}
       className={cn(
-        "tabs inline-flex p-[3px] rounded-group bg-muted gap-[2px] [&_button]:h-[30px] [&_button]:px-group [&_button]:border-0 [&_button]:rounded-control [&_button]:bg-transparent [&_button]:text-secondary [&_button]:text-(length:--text-small) [&_button]:font-[600] [&_button]:[cursor:pointer] [&_button]:inline-flex [&_button]:items-center [&_button]:gap-compact [&_button]:whitespace-nowrap [&_button[aria-selected='true']]:bg-surface [&_button[aria-selected='true']]:text-foreground [&_button[aria-selected='true']]:shadow-control [&_button[data-state='active']]:bg-surface [&_button[data-state='active']]:text-foreground [&_button[data-state='active']]:shadow-control max-phone:[&_button]:min-h-[36px]",
+        "relative inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-secondary-foreground transition-all group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 group-data-[variant=default]/tabs-list:data-[state=active]:shadow-sm group-data-[variant=line]/tabs-list:data-[state=active]:shadow-none dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent",
+        "data-[state=active]:bg-background data-[state=active]:text-foreground dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 dark:data-[state=active]:text-foreground",
+        "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:-bottom-1.25 group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100",
         className,
       )}
       {...props}
     />
   );
 }
-const hydration = {
-  subscribe: () => () => undefined,
-  client: () => true,
-  server: () => false,
-};
-export function TabsTrigger({ disabled, ...props }: ComponentProps<typeof Primitive.Trigger>) {
-  // Radix's mouse-down handler must be attached before a tab accepts input.
-  const ready = useSyncExternalStore(hydration.subscribe, hydration.client, hydration.server);
-  return <Primitive.Trigger {...props} disabled={ready ? disabled : true} />;
+
+function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
+  return (
+    <TabsPrimitive.Content
+      data-slot="tabs-content"
+      className={cn("flex-1 outline-none", className)}
+      {...props}
+    />
+  );
 }
-export const TabsContent = Primitive.Content;
+
+export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants };

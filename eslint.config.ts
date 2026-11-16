@@ -136,4 +136,10 @@ export default defineConfig(
     ],
     rules: { "no-restricted-syntax": "off" },
   },
+  {
+    files: ["scripts/*.mjs"],
+    extends: [tseslint.configs.disableTypeChecked],
+    rules: { "no-console": "off" },
+    languageOptions: { globals: { process: "readonly", console: "readonly" } },
+  },
 );

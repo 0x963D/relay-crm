@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 import { Badge } from "./ui/badge";
-import { Alert } from "./ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Icon, type IconName } from "./icons";
+
 export function Avatar({
   name,
   large = false,
@@ -16,28 +18,45 @@ export function Avatar({
   return (
     <span
       aria-hidden="true"
-      data-initials={name
+      className={cn(
+        "inline-grid shrink-0 place-items-center rounded-full text-xs font-semibold",
+        large ? "size-8" : "size-6",
+        carbon
+          ? "bg-sidebar-foreground/15 text-sidebar-foreground"
+          : "bg-muted text-secondary-foreground",
+      )}
+    >
+      {name
         .split(" ")
         .map((part) => part[0])
         .slice(0, 2)
         .join("")}
-      className={cn(
-        `av after:content-[attr(data-initials)] inline-grid place-items-center w-[24px] h-[24px] [border-radius:50%] bg-muted text-secondary [font-size:10.5px] font-[650] flex-none [letter-spacing:0.01em] max-phone:[.qrow_>_&]:hidden max-phone:[.q-select_>_&]:hidden ${large ? "av--lg w-[32px] h-[32px] text-(length:--text-caption)" : ""} ${carbon ? "av--carbon bg-avatar text-shell-foreground" : ""}`,
-      )}
-    />
+    </span>
   );
 }
+const slipVariants = cva("gap-1 rounded-sm px-2 py-0.5 text-xs font-medium", {
+  variants: {
+    kind: {
+      neutral: "border-transparent bg-muted text-secondary-foreground",
+      waiting: "border-waiting-border bg-waiting text-waiting-foreground",
+      refused: "border-refused-border bg-refused text-refused-foreground",
+      complete: "border-complete-border bg-complete text-complete-foreground",
+      fresh: "border-transparent bg-accent text-accent-foreground",
+      outline: "border-input bg-background text-secondary-foreground",
+    },
+  },
+  defaultVariants: { kind: "neutral" },
+});
 export function Slip({
-  kind = "mute",
+  kind,
   icon,
   children,
-}: {
-  kind?: "pink" | "canary" | "green" | "ink" | "mute" | "line";
+}: VariantProps<typeof slipVariants> & {
   icon: IconName;
   children: ReactNode;
 }) {
   return (
-    <Badge variant={kind}>
+    <Badge variant="outline" className={slipVariants({ kind })}>
       <Icon name={icon} size="small" />
       {children}
     </Badge>
@@ -55,21 +74,22 @@ export function Signoff({
   icon?: IconName;
 }) {
   return (
-    <div className={`so min-w-0 ${name ? "" : "so--blank"}`}>
-      <div className="so-line flex items-center gap-related h-[34px] [border-block-end:1.5px_solid_var(--color-foreground)] font-[620] [.so--blank_&]:[border-block-end:1.5px_dashed_var(--color-waiting-foreground)] [.so--blank_&]:text-waiting-foreground [.so--blank_&]:font-[560] [.so--sm_&]:h-[28px] [.so--sm_&]:text-(length:--text-small) max-laptop:h-auto max-laptop:min-h-[34px] max-laptop:flex-wrap">
+    <div className="min-w-0">
+      <div
+        className={cn(
+          "flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 border-b pb-1 font-semibold",
+          name
+            ? "border-foreground"
+            : "border-dashed border-waiting-foreground text-waiting-foreground",
+        )}
+      >
         {icon ? <Icon name={icon} /> : name ? <Avatar name={name} /> : <Icon name="wait" />}
-        <span className="trunc overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
-          {name ?? "Not assigned"}
-        </span>
+        <span className="break-words">{name ?? "Not assigned"}</span>
         {time && (
-          <span className="so-time ms-auto font-[500] text-(length:--text-caption) text-secondary whitespace-nowrap max-laptop:ms-0 max-phone:ms-auto">
-            {time}
-          </span>
+          <span className="ms-auto text-xs font-normal text-secondary-foreground">{time}</span>
         )}
       </div>
-      <div className="so-cap flex items-center gap-[5px] pt-[5px] text-(length:--text-caption) leading-[16px] text-tertiary [font-stretch:94%] [.so--blank_&]:text-waiting-foreground">
-        {caption}
-      </div>
+      <p className="pt-1 text-xs text-muted-foreground">{caption}</p>
     </div>
   );
 }
@@ -86,19 +106,19 @@ export function Refusal({
 }) {
   return (
     <Alert
-      className="alert--refused bg-refused border-refused-border text-refused-foreground"
+      className="border-refused-border bg-refused text-refused-foreground"
       role={announce ? "alert" : undefined}
     >
-      <Icon name="error" size="large" />
-      <div className="form-message text-(length:--text-small) leading-[18px] [&_p_+_p]:mt-compact">
-        <p className="alert-title font-[660]">{title}</p>
-        <div>{children}</div>
+      <Icon name="error" />
+      <AlertTitle className="font-semibold">{title}</AlertTitle>
+      <AlertDescription className="gap-2 text-current">
+        {children}
         {retry && (
           <Button variant="outline" onClick={retry}>
             Try again
           </Button>
         )}
-      </div>
+      </AlertDescription>
     </Alert>
   );
 }
@@ -114,48 +134,61 @@ export function Empty({
   action?: ReactNode;
 }) {
   return (
-    <div className="empty flex flex-col items-center text-center gap-related p-[28px_32px] [&_p]:max-w-[34ch]">
-      <span className="empty-icon w-[44px] h-[44px] [border-radius:50%] bg-muted text-secondary grid place-items-center">
+    <div className="flex flex-col items-center gap-2 px-8 py-7 text-center">
+      <span className="grid size-11 place-items-center rounded-full bg-muted text-secondary-foreground">
         <Icon name={icon} size="large" />
       </span>
-      <h2 className="h2 text-(length:--text-panel) leading-[22px] font-[700] [font-variation-settings:'wdth'_86] [.pool-panel_&]:flex-none">
-        {title}
-      </h2>
-      <p className="sm text-(length:--text-small) leading-[18px] [.demo-choices_&]:font-[400] [.pool-people_&]:ms-auto [.preview-person_&]:[overflow-wrap:anywhere] [.preview-header_>_&]:text-(length:--text-caption) [.preview-header_>_&]:whitespace-nowrap t2 text-secondary [.alert--refused_&]:text-refused-foreground">
-        {children}
-      </p>
+      <h2 className="text-panel font-bold">{title}</h2>
+      <p className="max-w-sm text-caption text-secondary-foreground">{children}</p>
       {action}
     </div>
   );
 }
-export function Loading() {
+export function Loading({ label = "Loading leads" }: { label?: string }) {
   return (
-    <div aria-label="Loading leads" role="status" aria-busy="true">
+    <div role="status" aria-label={label} aria-busy="true" className="space-y-4 p-6">
       {[0, 1, 2].map((i) => (
-        <div className="skeleton-row flex gap-group p-[10px_24px]" key={i}>
-          <span className="sk bg-skeleton rounded-slip [animation:sk_var(--duration-loading)_ease-in-out_infinite] motion-reduce:[animation:none] [.skeleton-lines_&:first-child]:w-[46%] [.skeleton-lines_&:last-child]:w-[72%] skeleton-avatar w-[32px] h-[32px] [border-radius:50%]" />
-          <span className="skeleton-lines flex-1 flex flex-col gap-related">
-            <span className="sk bg-skeleton rounded-slip h-[12px] [animation:sk_var(--duration-loading)_ease-in-out_infinite] motion-reduce:[animation:none] [.skeleton-lines_&:first-child]:w-[46%] [.skeleton-lines_&:last-child]:w-[72%]" />
-            <span className="sk bg-skeleton rounded-slip h-[12px] [animation:sk_var(--duration-loading)_ease-in-out_infinite] motion-reduce:[animation:none] [.skeleton-lines_&:first-child]:w-[46%] [.skeleton-lines_&:last-child]:w-[72%]" />
-          </span>
-          <span className="sk bg-skeleton rounded-slip [animation:sk_var(--duration-loading)_ease-in-out_infinite] motion-reduce:[animation:none] [.skeleton-lines_&:first-child]:w-[46%] [.skeleton-lines_&:last-child]:w-[72%] skeleton-slip w-[64px] h-[22px]" />
+        <div key={i} className="flex gap-3 motion-safe:animate-pulse">
+          <span className="size-8 shrink-0 rounded-full bg-muted" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3 w-1/2 rounded bg-muted" />
+            <div className="h-3 w-3/4 rounded bg-muted" />
+          </div>
         </div>
       ))}
-      <span className="sr-only absolute w-[1px] h-[1px] p-0 m-[-1px] overflow-hidden [clip-path:inset(50%)] whitespace-nowrap border-0">
-        Loading leads
-      </span>
+      <span className="sr-only">{label}</span>
     </div>
+  );
+}
+export function PageHeader({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <header className="flex shrink-0 flex-wrap items-end justify-between gap-3 border-b px-4 py-4 md:px-6">
+      <div className="min-w-0">
+        <h1 className="text-title font-bold">{title}</h1>
+        <div className="mt-1 text-caption text-secondary-foreground">{children}</div>
+      </div>
+      {action}
+    </header>
   );
 }
 export function Brand() {
   return (
-    <div className="org flex items-center gap-control p-[6px_6px_16px] max-phone:[.rail_&]:p-0 max-phone:[.rail_&]:flex-1 [.sign-brand_&]:p-0">
-      <span className="org-mark w-[32px] h-[32px] rounded-group bg-shell-foreground text-brand grid place-items-center flex-none [&_svg]:[stroke-width:2.3] max-phone:[.rail_&]:w-[28px] max-phone:[.rail_&]:h-[28px] max-phone:[.rail_&]:[border-radius:7px]">
+    <div className="flex items-center gap-2.5 text-sidebar-foreground">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-foreground text-sidebar">
         <svg
-          className="i-20 w-[20px] h-[20px] flex-none"
+          className="size-5"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
+          strokeWidth="2"
           strokeLinecap="round"
           aria-hidden="true"
         >
@@ -163,12 +196,8 @@ export function Brand() {
         </svg>
       </span>
       <div>
-        <div className="org-name font-[650] text-(length:--text-body) leading-[17px] [font-stretch:92%] [overflow-wrap:anywhere] [.rail_&]:max-w-[154px] max-phone:[.rail_&]:text-(length:--text-small) max-phone:[.rail_&]:max-w-[none]">
-          Tidewell Language School
-        </div>
-        <div className="org-by text-(length:--text-caption) leading-[15px] text-shell-secondary max-phone:[.rail_&]:hidden">
-          Relay CRM
-        </div>
+        <div className="font-semibold leading-tight">Tidewell Language School</div>
+        <div className="text-xs text-sidebar-muted">Relay CRM</div>
       </div>
     </div>
   );

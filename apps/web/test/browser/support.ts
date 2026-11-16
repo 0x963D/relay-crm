@@ -40,6 +40,9 @@ export async function signIn(page: Page, role: "manager" | "agent") {
   await expect(
     page.getByRole("radio", { name: role === "manager" ? "Manager" : "Agent", exact: true }),
   ).toBeChecked();
+  await expect(
+    page.getByRole("heading", { name: role === "manager" ? "Lead pool" : "My queue", exact: true }),
+  ).toBeVisible();
 }
 export async function settleFrame(page: Page) {
   await page.evaluate(async () => {
@@ -55,7 +58,15 @@ export async function settleFrame(page: Page) {
   });
 }
 export async function accessibility(page: Page, label: string) {
-  await expect(page.locator('[aria-busy="true"]:not([role="status"])')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page
+        .getByRole("button")
+        .evaluateAll((buttons) =>
+          buttons.some((button) => button.getAttribute("aria-busy") === "true"),
+        ),
+    )
+    .toBe(false);
   await settleFrame(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"])
@@ -81,7 +92,7 @@ export async function saveAttempt(
 ) {
   await page.getByRole("button", { name: "Log an attempt", exact: true }).click();
   await page.getByRole("radio", { name: new RegExp(`^${outcome}`) }).check();
-  await page.getByLabel("Note", { exact: true }).fill(note);
+  await page.getByRole("textbox", { name: "Note", exact: true }).fill(note);
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
   await expect(
     page.getByRole("status").filter({

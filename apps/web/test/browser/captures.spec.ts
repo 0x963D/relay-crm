@@ -1,59 +1,21 @@
 import { test, expect, type Page } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { signIn, rpc, settleFrame } from "./support.ts";
-import { browserState, captureDirectory, legacyStyles } from "./paths.ts";
+import { browserState, captureDirectory } from "./paths.ts";
+
+test.use({ deviceScaleFactor: 2 });
 
 async function frameCapture(page: Page) {
   await mkdir(captureDirectory, { recursive: true });
-  const legacy = legacyStyles
-    ? (await readFile(legacyStyles, "utf8")).replace(/@import[^;]+;/g, "")
-    : null;
   await page.clock.setFixedTime(new Date());
   return async (name: string) => {
     for (const theme of ["light", "dark"]) {
-      await page.locator('select[aria-label="Appearance"]:visible').first().selectOption(theme);
+      await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption(theme);
       await settleFrame(page);
-      const metrics = async () =>
-        page
-          .locator(
-            ".theme, .so-time, .lead-title button, .pool-list .check-cell, .pool-list .check-target, .otp-slot",
-          )
-          .evaluateAll((elements) =>
-            elements.map((element) => {
-              const style = getComputedStyle(element);
-              const rect = element.getBoundingClientRect();
-              return {
-                text: element.textContent,
-                className: element.getAttribute("class"),
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height,
-                fontSize: style.fontSize,
-                fontWeight: style.fontWeight,
-                lineHeight: style.lineHeight,
-                padding: style.padding,
-                border: style.border,
-                display: style.display,
-                minWidth: style.minWidth,
-                color: style.color,
-              };
-            }),
-          );
-      const currentMetrics = await metrics();
       await page.screenshot({ path: join(captureDirectory, `${name}-${theme}.png`) });
-      if (legacy) {
-        const style = await page.addStyleTag({ content: legacy });
-        await page.screenshot({ path: join(captureDirectory, `${name}-${theme}.legacy.png`) });
-        await writeFile(
-          join(captureDirectory, `${name}-${theme}.metrics.json`),
-          JSON.stringify({ current: currentMetrics, legacy: await metrics() }, null, 2),
-        );
-        await style.evaluate((element) => element.parentNode?.removeChild(element));
-      }
     }
-    await page.locator('select[aria-label="Appearance"]:visible').first().selectOption("light");
+    await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption("light");
   };
 }
 
@@ -65,44 +27,101 @@ test("@capture every lead-work screen in both themes", async ({ page }) => {
   await page.getByRole("button", { name: "Send me a code", exact: true }).click();
   await page.getByLabel("6-digit code").fill("417");
   await capture("02-code");
+  await page.getByLabel("6-digit code").fill("000000");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "You could not sign in" })).toBeVisible();
+  await capture("15-code-refused");
   await page.context().clearCookies();
   await signIn(page, "manager");
   await page.getByRole("checkbox", { name: "Select Chiara Russo", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select Marek Dvorak", exact: true }).check();
+  await page.getByRole("radio", { name: /Noor Haddad/ }).check();
   await capture("03-pool");
+  await page.getByRole("checkbox", { name: "Select Chiara Russo", exact: true }).uncheck();
+  await page.getByRole("checkbox", { name: "Select Marek Dvorak", exact: true }).uncheck();
+  for (const name of [
+    "Luca Ferraro",
+    "Nadia Rahimi",
+    "Wei Chen",
+    "Zainab Yusuf",
+    "Tunde Bakare",
+    "Diego Salazar",
+    "Ingrid Solberg",
+    "Ravi Menon",
+    "Farah Siddiqui",
+    "Emil Novak",
+    "Oskar Nowak",
+    "Thabo Nkosi",
+  ])
+    await page.getByRole("checkbox", { name: `Select ${name}`, exact: true }).check();
   await page.getByRole("tab", { name: "Round-robin", exact: true }).click();
-  await page.getByRole("button", { name: "Preview 1 lead", exact: true }).click();
+  await page.getByRole("button", { name: "Preview 12 leads", exact: true }).click();
   await expect(page.getByText("Not assigned yet", { exact: true })).toBeVisible();
   await capture("04-preview");
   const agents = await rpc(page).leads.agents.query({});
   const pool = await rpc(page).leads.pool.query({ limit: 100 });
-  const changed = pool.rows.find((row) => row.name === "Chiara Russo");
+  const changed = pool.rows.filter((row) =>
+    ["Wei Chen", "Zainab Yusuf", "Tunde Bakare"].includes(row.name ?? ""),
+  );
   const agent = agents.find((person) => person.name === "Ffion Pryce");
-  if (!changed || !agent) throw new Error("Missing fixture");
+  if (changed.length !== 3 || !agent) throw new Error("Missing fixture");
   await rpc(page).leads.assign.mutate({
-    leadIds: [changed.id],
+    leadIds: changed.map((row) => row.id),
     to: { ownerId: agent.ownerId, teamId: agent.teamId },
   });
-  await page.getByRole("button", { name: "Assign 1 lead", exact: true }).click();
-  await expect(page.locator("[data-slot=alert]")).toContainText("Nothing was assigned");
+  await page.getByRole("button", { name: "Assign 12 leads", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText(
+    "Nothing was assigned",
+  );
   await capture("05-stale");
-  await page.getByRole("radio", { name: "Agent", exact: true }).click();
+  let releaseLead: () => void = () => undefined;
+  const pendingLead = new Promise<void>((resolve) => {
+    releaseLead = resolve;
+  });
+  const leadRequests = /\/queue\/leads\//;
+  await page.route(leadRequests, async (route) => {
+    await pendingLead;
+    await route.continue();
+  });
+  try {
+    await page.getByRole("radio", { name: "Agent", exact: true }).click();
+    await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+    await expect(page.getByRole("status", { name: "Loading lead", exact: true })).toBeVisible();
+    await capture("15-lead-loading");
+  } finally {
+    releaseLead();
+    await page.unroute(leadRequests);
+  }
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
   await capture("06-queue");
+  await capture("16-queue");
   await page.getByRole("button", { name: "Log an attempt", exact: true }).click();
-  await page.getByLabel("Note", { exact: true }).fill("Rang out. Will call after the night shift.");
+  await page
+    .getByRole("textbox", { name: "Note", exact: true })
+    .fill("Rang out. Will call after the night shift.");
+  await page.getByRole("checkbox", { name: "Call back", exact: true }).check();
+  await page
+    .getByLabel("Day", { exact: true })
+    .fill(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  await page.getByLabel("Time", { exact: true }).fill("16:30");
   await capture("07-attempt");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Close lead", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Why was it lost?", exact: true })
+    .fill("Chose a course closer to home.");
   await capture("08-close");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  for (const width of [1440, 1280, 1024, 390]) {
+  for (const width of [1440, 1280, 1024]) {
     await page.setViewportSize({ width, height: 900 });
     await capture(`queue-${String(width)}`);
   }
-  await page
-    .getByRole("button")
-    .filter({ has: page.getByText("Hye-jin Park", { exact: true }) })
-    .click();
+  await page.setViewportSize({ width: 390, height: 1340 });
+  await page.goto(`${browserState().url}/queue`);
+  await expect(page.getByRole("link", { name: "Open Hye-jin Park", exact: true })).toBeVisible();
+  await capture("14-phone");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Hye-jin Park", exact: true })).toBeVisible();
   await capture("lead-390");
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -111,6 +130,13 @@ test("@capture every lead-work screen in both themes", async ({ page }) => {
   for (const width of [1440, 1280, 1024, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await capture(`pool-${String(width)}`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const role of ["Manager", "Agent", "Accountant"]) {
+    await page.getByRole("radio", { name: role, exact: true }).click();
+    await expect(page.getByRole("radio", { name: role, exact: true })).toBeChecked();
+    await expect(page.getByRole("main")).not.toContainText("Loading");
+    await capture(`13-${role.toLowerCase()}`);
   }
 });
 
@@ -124,21 +150,18 @@ test("@capture empty and refused workspaces in both themes", async ({ page }) =>
   const receiving = agents.find((person) => person.name === "Ffion Pryce");
   const inaccessible = pool.rows[0];
   if (!dele || !receiving || !inaccessible) throw new Error("Missing fixture");
-  await page.goto(`${browserState().url}/?view=queue&agent=00000000-0000-7000-8000-000000000101`);
-  await expect(
-    page.getByText("The queue could not be opened", { exact: true }).first(),
-  ).toBeVisible();
+  await page.goto(`${browserState().url}/agents/00000000-0000-7000-8000-000000000101`);
+  await expect(page.getByText("You cannot open this queue", { exact: true }).first()).toBeVisible();
   await capture("15-queue-failed");
   await page.getByRole("radio", { name: "Agent", exact: true }).click();
   await expect(page.getByRole("heading", { name: "My queue", exact: true })).toBeVisible();
-  await page.goto(`${browserState().url}/?view=queue&lead=${inaccessible.id}`);
-  await expect(
-    page.getByRole("heading", { name: "You cannot open this lead", exact: true }),
-  ).toBeVisible();
+  await page.goto(`${browserState().url}/queue/leads/${inaccessible.id}`);
+  await expect(page.getByText("You cannot open this lead", { exact: true })).toBeVisible();
   await capture("15-lead-refused");
-  await page.goto(`${browserState().url}/?view=queue`);
+  await page.goto(`${browserState().url}/queue`);
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
   await page.getByRole("button", { name: "Log an attempt", exact: true }).click();
-  await page.getByLabel("Note", { exact: true }).fill("Keep this draft.");
+  await page.getByRole("textbox", { name: "Note", exact: true }).fill("Keep this draft.");
   await page.route(/\/api\/trpc\/.*leads\.logAttempt/, (route) => route.abort("connectionrefused"));
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "This was not saved" })).toBeVisible();
@@ -172,7 +195,7 @@ test("@capture empty and refused workspaces in both themes", async ({ page }) =>
   await capture("15-queue-empty");
   await page.getByRole("radio", { name: "Manager", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Lead pool", exact: true })).toBeVisible();
-  await page.goto(`${browserState().url}/?view=queue&agent=${dele.ownerId}`);
+  await page.goto(`${browserState().url}/agents/${dele.ownerId}`);
   await expect(
     page.getByRole("heading", { name: "Dele Akinwale has no open leads", exact: true }),
   ).toBeVisible();
@@ -181,17 +204,17 @@ test("@capture empty and refused workspaces in both themes", async ({ page }) =>
     leadIds: pool.rows.map((row) => row.id),
     to: { ownerId: receiving.ownerId, teamId: receiving.teamId },
   });
-  await page.goto(`${browserState().url}/?view=pool`);
-  await expect(
-    page.getByRole("heading", { name: "Every lead has an owner", exact: true }),
-  ).toBeVisible();
+  await page.goto(`${browserState().url}/pool`);
+  await expect(page.getByRole("heading", { name: "The pool is empty", exact: true })).toBeVisible();
   await capture("15-pool-empty");
   const role = await page.request.post(`${browserState().url}/api/auth/demo`, {
     headers: { origin: browserState().url },
     data: { role: "accountant" },
   });
   expect(role.status()).toBe(200);
-  await page.goto(`${browserState().url}/?view=pool`);
-  await expect(page.getByText("The lead pool could not be opened", { exact: true })).toBeVisible();
+  await page.goto(`${browserState().url}/pool`);
+  await expect(
+    page.getByText("Accountant screens are not built yet", { exact: true }),
+  ).toBeVisible();
   await capture("15-pool-failed");
 });

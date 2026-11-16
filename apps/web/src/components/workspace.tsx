@@ -1,22 +1,19 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
-import { workspaceView, isLeadManager } from "@/lib/workspace";
-import { reads } from "@/lib/reads";
-import { failureMessage } from "@/lib/failures";
-import { NativeSelect } from "./ui/native-select";
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { type ReactNode, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTRPC } from "@/lib/trpc/client";
 import type { Outputs } from "@/lib/api";
-import { api } from "@/lib/api";
+import { isLeadManager } from "@/lib/workspace";
 import { authFailure } from "@/lib/failures";
 import { Avatar, Brand, Refusal } from "./pieces";
 import { Icon, type IconName } from "./icons";
 import { Button } from "./ui/button";
+import { NativeSelect } from "./ui/native-select";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
-import { Sidebar, SidebarInset, SidebarProvider } from "./ui/sidebar";
+import { Sidebar } from "./ui/sidebar";
 import { ThemeSwitch } from "./theme-switch";
-import { PoolScreen } from "./pool";
-import { QueueScreen, type Profile } from "./queue";
 const roleNames = {
   owner: "Owner",
   admin: "Admin",
@@ -25,144 +22,108 @@ const roleNames = {
   agent: "Agent",
   accountant: "Accountant",
 };
-interface Nav {
-  id: string;
-  label: string;
-  icon: IconName;
-}
 export function Workspace({
   profile,
-  agents: initialAgents,
   demo,
-  zone,
+  children,
 }: {
-  profile: Profile;
-  agents: Outputs["leads"]["agents"];
+  profile: Outputs["session"]["profile"];
   demo: boolean;
-  zone: string;
+  children: ReactNode;
 }) {
-  const people = useQuery(reads.agents());
-  const agents = people.data ?? initialAgents;
-  const params = useSearchParams();
-  const isManager = isLeadManager(profile.role);
-  const view = workspaceView(profile.role, params.get("view"));
+  const pathname = usePathname();
+  const router = useRouter();
+  const trpc = useTRPC();
+  const client = useQueryClient();
   const [pending, setPending] = useState(false);
-  const [poolTotal, setPoolTotal] = useState<number | null>(null);
-  const [queueTotal, setQueueTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const nav: Nav[] = [
-    ...(isManager
-      ? [
-          { id: "pool", label: "Lead pool", icon: "inbox" as const },
-          { id: "queue", label: "Agent queues", icon: "queue" as const },
-        ]
-      : profile.role === "agent"
-        ? [{ id: "queue", label: "My queue", icon: "queue" as const }]
-        : []),
-  ];
-  async function switchRole(role: string) {
+  const selectTeam = useMutation(
+    trpc.session.selectTeam.mutationOptions({
+      onSuccess: async () => {
+        await client.invalidateQueries();
+        router.refresh();
+      },
+      onError: () => {
+        setError("The team could not be selected. Refresh and try again.");
+      },
+    }),
+  );
+  const nav: { href: string; label: string; icon: IconName }[] = isLeadManager(profile.role)
+    ? [
+        { href: "/pool", label: "Lead pool", icon: "inbox" },
+        { href: "/agents", label: "Agent queues", icon: "queue" },
+      ]
+    : profile.role === "agent"
+      ? [{ href: "/queue", label: "My queue", icon: "queue" }]
+      : [];
+  async function authAction(role?: string) {
+    if (pending) return;
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/demo", {
+      const response = await fetch(role ? "/api/auth/demo" : "/api/auth/sign-out", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-      if (response.ok) {
-        location.assign("/");
-        return;
-      }
-      setError(await authFailure(response, "demo"));
-    } catch {
-      setError(await authFailure(null, "demo"));
-    } finally {
-      setPending(false);
-    }
-  }
-  async function signOut() {
-    setPending(true);
-    try {
-      const response = await fetch("/api/auth/sign-out", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(role ? { role } : {}),
       });
       if (response.ok) location.assign("/");
-      else setError("You could not sign out. Try again.");
+      else
+        setError(role ? await authFailure(response, "demo") : "You could not sign out. Try again.");
     } catch {
-      setError("You could not sign out. Check your connection and try again.");
+      setError("The server could not be reached. Check your connection and try again.");
     } finally {
       setPending(false);
     }
   }
-  const teamName = profile.teams?.find((team) => team.id === profile.team?.id)?.name;
-  function navigation(mobile = false) {
-    return (
-      <nav
-        className={
-          mobile
-            ? "mobile-nav hidden max-phone:flex max-phone:flex-wrap max-phone:gap-related max-phone:p-content max-phone:[border-block-start:1px_solid_var(--color-rule)] max-phone:[&_a]:flex max-phone:[&_a]:items-center max-phone:[&_a]:gap-compact max-phone:[&_a]:p-related max-phone:[&_a]:min-h-[44px] max-phone:[&_a]:[font-size:13px] max-phone:[&_a[aria-current='page']]:text-primary max-phone:[&_a[aria-current='page']]:bg-selected max-phone:[&_a[aria-current='page']]:rounded-control"
-            : "nav flex flex-col gap-[2px] [&_a]:flex [&_a]:items-center [&_a]:gap-control [&_a]:h-[36px] [&_a]:px-control [&_a]:[border-radius:7px] [&_a]:text-shell-secondary [&_a]:[text-decoration:none] [&_a]:text-(length:--text-body) [&_a]:font-[560] [&_a:hover]:bg-shell-hover [&_a:hover]:text-shell-foreground [&_a[aria-current='page']]:bg-surface [&_a[aria-current='page']]:text-primary [&_a[aria-current='page']]:font-[650] dark:[&_a[aria-current='page']]:text-foreground max-phone:[.rail_&]:hidden"
-        }
-        aria-label={mobile ? "Workspace" : "Main"}
-      >
-        {nav.map((item) => (
-          <a
-            key={item.id}
-            href={`/?view=${item.id}`}
-            aria-current={view === item.id ? "page" : undefined}
-            onClick={(event) => {
-              event.preventDefault();
-              window.history.pushState(null, "", `/?view=${item.id}`);
-            }}
-          >
-            <Icon name={item.icon} />
-            <span>{item.label}</span>
-            {!mobile && item.id === "pool" && poolTotal !== null && (
-              <span className="nav-count ms-auto text-(length:--text-caption) font-[600]">
-                {poolTotal}
-              </span>
-            )}
-            {!mobile && item.id === "queue" && profile.role === "agent" && queueTotal !== null && (
-              <span className="nav-count ms-auto text-(length:--text-caption) font-[600]">
-                {queueTotal}
-              </span>
-            )}
-          </a>
-        ))}
-      </nav>
-    );
-  }
+  const navigation = (
+    <nav aria-label="Main" className="flex flex-wrap gap-1 md:flex-col">
+      {nav.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+          className="flex min-h-9 items-center gap-2 rounded-md px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground aria-[current=page]:bg-background aria-[current=page]:text-primary"
+        >
+          <Icon name={item.icon} />
+          <span>{item.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+  const team = profile.teams?.find((value) => value.id === profile.team?.id);
   return (
-    <SidebarProvider
-      className={demo ? "" : "shell--live [grid-template-rows:1fr] pt-control max-phone:pt-0"}
-    >
+    <div className="flex h-dvh flex-col overflow-hidden bg-sidebar">
       <a
-        className="skip fixed [inset-block-start:4px] [inset-inline-start:8px] [z-index:10] [transform:translateY(-200%)] bg-surface text-primary p-related [&:focus]:[transform:none]"
         href="#main"
+        className="fixed start-2 top-1 z-50 -translate-y-20 rounded bg-background p-2 text-primary focus:translate-y-0"
       >
         Skip to content
       </a>
       {demo && (
-        <header className="demo [grid-column:1_/_-1] flex items-center gap-group px-[18px_12px] text-shell-secondary text-(length:--text-small) [&_form]:contents max-phone:min-h-[44px] max-phone:px-[16px_10px] max-phone:gap-compact">
-          <span className="demo-tag inline-flex items-center gap-compact text-shell-foreground font-[600]">
+        <header className="flex min-h-11 shrink-0 flex-wrap items-center gap-3 px-4 text-caption text-sidebar-muted">
+          <span className="flex items-center gap-1.5 font-semibold text-sidebar-foreground">
             <Icon name="eye" size="small" />
             Demo
           </span>
-          <span className="demo-copy max-phone:hidden">Invented data. It resets every night.</span>
-          <span className="demo-sp flex-1" />
-          <span className="demo-copy max-phone:hidden">You are viewing as</span>
+          <span className="hidden sm:inline">Invented data. It resets every night.</span>
+          <span className="flex-1" />
+          <span className="hidden lg:inline">You are viewing as</span>
           <ToggleGroup
             type="single"
             aria-label="View the demo as"
             value={profile.role}
+            className="rounded-lg bg-sidebar-accent p-1"
             onValueChange={(value) => {
-              if (value && value !== profile.role) void switchRole(value);
+              if (value && value !== profile.role) void authAction(value);
             }}
           >
-            {["manager", "agent"].map((role) => (
-              <ToggleGroupItem value={role} key={role} disabled={pending}>
+            {["manager", "agent", "accountant"].map((role) => (
+              <ToggleGroupItem
+                key={role}
+                value={role}
+                disabled={pending}
+                className="h-7 px-2 text-xs text-sidebar-muted data-[state=on]:bg-background data-[state=on]:text-foreground sm:px-3 sm:text-sm"
+              >
                 {role[0]?.toUpperCase()}
                 {role.slice(1)}
               </ToggleGroupItem>
@@ -170,102 +131,88 @@ export function Workspace({
           </ToggleGroup>
         </header>
       )}
-      <Sidebar>
-        <Brand />
-        {navigation()}
-        <div className="rail-end mt-auto max-phone:hidden">
-          <div className="me flex items-center gap-control p-[10px_6px_0] [border-block-start:1px_solid_var(--color-shell-border)] flex-wrap max-phone:[.rail_&]:hidden">
-            <Avatar name={profile.name} large carbon />
-            <div className="me-details flex-1 min-w-0">
-              <div className="me-name font-[600] text-(length:--text-small) leading-[16px]">
-                {profile.name}
+      <section
+        aria-label="Workspace controls"
+        className="flex shrink-0 items-center gap-3 px-4 py-3 md:hidden"
+      >
+        <div className="flex-1">
+          <Brand />
+        </div>
+        <ThemeSwitch />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-sidebar-foreground"
+          aria-label="Sign out"
+          busy={pending}
+          onClick={() => void authAction()}
+        >
+          <Icon name="logout" />
+        </Button>
+      </section>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Sidebar className="hidden w-rail shrink-0 px-3.5 pb-3 pt-3 md:flex">
+          <div className="px-1.5 pb-6">
+            <Brand />
+          </div>
+          {navigation}
+          <div className="mt-auto border-t border-sidebar-border pt-3 text-sidebar-foreground">
+            <div className="flex items-center gap-2">
+              <Avatar name={profile.name} large carbon />
+              <div className="min-w-0 flex-1">
+                <p className="text-caption font-semibold">{profile.name}</p>
+                <p className="whitespace-nowrap text-xs text-sidebar-muted">
+                  {roleNames[profile.role]}
+                  {team ? ` · ${team.name}` : ""}
+                </p>
               </div>
-              <div className="me-role text-(length:--text-caption) leading-[15px] text-shell-secondary">
-                {roleNames[profile.role]}
-                {teamName ? ` · ${teamName}` : ""}
-              </div>
-              <ThemeSwitch />
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              disabled={pending}
-              aria-label="Sign out"
-              onClick={() => {
-                void signOut();
-              }}
-            >
-              <Icon name="logout" />
-            </Button>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <ThemeSwitch />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Sign out"
+                busy={pending}
+                onClick={() => void authAction()}
+              >
+                <Icon name="logout" />
+              </Button>
+            </div>
           </div>
-        </div>
-        <div className="mobile-identity max-phone:flex max-phone:gap-related max-phone:items-center hidden">
-          <ThemeSwitch />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Sign out ${profile.name}`}
-            disabled={pending}
-            onClick={() => {
-              void signOut();
-            }}
-          >
-            <Avatar name={profile.name} large carbon />
-          </Button>
-        </div>
-      </Sidebar>
-      <SidebarInset>
-        {people.isError && (
-          <div className="p-pane">
-            <Refusal title="Agents could not be loaded">
-              {failureMessage(people.error, "read")}
-            </Refusal>
-          </div>
-        )}
-        {error && (
-          <div className="pad p-[18px_24px] max-phone:p-content">
-            <Refusal>{error}</Refusal>
-          </div>
-        )}
-        {profile.teams && profile.teams.length > 1 && (
-          <label className="row flex items-center gap-related max-phone:[.lead-body_&]:flex-wrap max-phone:[.pool-panel_label&]:min-h-[44px] team-selection p-[12px_24px]">
-            <span className="label text-(length:--text-small) font-[600]">Current team</span>
-            <NativeSelect
-              className="input flex items-center gap-related h-[36px] px-control border-[1px] border-solid border-control-border rounded-control bg-surface text-foreground text-(length:--text-body) [.sign-sheet_&]:h-[44px] [.sign-sheet_&]:w-full max-phone:min-h-[44px] [&:focus-visible]:[outline:none] [&:focus-visible]:border-primary [&:focus-visible]:[box-shadow:0_0_0_3px_var(--color-selected)]"
-              value={profile.team?.id ?? ""}
-              onChange={(event) => {
-                void api.session.selectTeam.mutate({ teamId: event.target.value || null }).then(
-                  () => {
-                    location.reload();
-                  },
-                  () => {
-                    setError("The team could not be selected. Refresh and try again.");
-                  },
-                );
-              }}
-            >
-              <option value="">Choose a team</option>
-              {profile.teams.map((team) => (
-                <option value={team.id} key={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-        )}
-        {view === "queue" && (isManager || profile.role === "agent") ? (
-          <QueueScreen
-            key={params.get("agent") ?? profile.userId}
-            profile={profile}
-            agents={agents}
-            zone={zone}
-            onTotalChange={setQueueTotal}
-          />
-        ) : (
-          <PoolScreen initialAgents={agents} zone={zone} onTotalChange={setPoolTotal} />
-        )}
-        {navigation(true)}
-      </SidebarInset>
-    </SidebarProvider>
+        </Sidebar>
+        <main
+          id="main"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-xl bg-background md:me-2.5 md:mb-2.5 md:rounded-xl"
+        >
+          {error && (
+            <div className="p-4">
+              <Refusal>{error}</Refusal>
+            </div>
+          )}
+          {!!profile.teams && profile.teams.length > 1 && (
+            <label className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-2">
+              <span className="text-caption font-semibold">Current team</span>
+              <NativeSelect
+                value={profile.team?.id ?? ""}
+                disabled={selectTeam.isPending}
+                onChange={(event) => {
+                  selectTeam.mutate({ teamId: event.target.value || null });
+                }}
+              >
+                <option value="">Choose a team</option>
+                {profile.teams.map((value) => (
+                  <option value={value.id} key={value.id}>
+                    {value.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          )}
+          {children}
+        </main>
+      </div>
+      {!!nav.length && <div className="shrink-0 px-3 py-1 md:hidden">{navigation}</div>}
+    </div>
   );
 }

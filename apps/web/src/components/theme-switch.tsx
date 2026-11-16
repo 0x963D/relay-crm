@@ -33,7 +33,7 @@ export function ThemeSwitch() {
   const { preference, setPreference } = theme;
   return (
     <NativeSelect
-      className="theme h-[28px] focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 focus-visible:border-shell-border focus-visible:shadow-none text-(length:--text-caption) bg-shell-deep text-shell-foreground border-[1px] border-solid border-shell-border rounded-control p-tight max-w-full min-h-[28px] [.me_&]:mt-related max-phone:[.mobile-identity_&]:w-[70px] max-phone:min-h-[44px]"
+      className="h-9 w-auto rounded-md border-sidebar-border bg-sidebar-accent text-xs text-sidebar-foreground"
       aria-label="Appearance"
       value={preference}
       onChange={(e) => {

@@ -15,24 +15,22 @@ test("visible code-entry text meets the board contrast rule", async ({ page }) =
       await page.getByLabel("6-digit code").fill(state === "sign-in-code" ? "417" : "000000");
       if (state !== "sign-in-code") {
         await page.getByRole("button", { name: "Sign in", exact: true }).click();
-        await expect(page.locator("[data-slot=alert]")).toBeVisible();
+        await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
         await page.getByLabel("6-digit code").fill("417");
       }
       await settleFrame(page);
-      const pairs = await page
-        .locator(".otp-slot, .sign-sheet p, .sign-sheet .alert")
-        .evaluateAll((elements) =>
-          elements.map((element) => {
-            const style = getComputedStyle(element);
-            let parent: Element | null = element;
-            let background = "rgba(0, 0, 0, 0)";
-            while (parent && background === "rgba(0, 0, 0, 0)") {
-              background = getComputedStyle(parent).backgroundColor;
-              parent = parent.parentElement;
-            }
-            return { text: element.textContent, foreground: style.color, background };
-          }),
-        );
+      const pairs = await page.getByRole("main").evaluate((main) =>
+        [...main.querySelectorAll("p, [data-slot=input-otp-slot], [role=alert]")].map((element) => {
+          const style = getComputedStyle(element);
+          let parent: Element | null = element;
+          let background = "rgba(0, 0, 0, 0)";
+          while (parent && background === "rgba(0, 0, 0, 0)") {
+            background = getComputedStyle(parent).backgroundColor;
+            parent = parent.parentElement;
+          }
+          return { text: element.textContent, foreground: style.color, background };
+        }),
+      );
       for (const pair of pairs) {
         const luminance = (rgb: string) => {
           const channels = (rgb.match(/[\d.]+/g) ?? [])

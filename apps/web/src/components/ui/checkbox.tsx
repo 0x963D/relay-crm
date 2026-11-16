@@ -1,21 +1,28 @@
 "use client";
-import type { ComponentProps } from "react";
-import { Checkbox as Primitive } from "radix-ui";
-import { Check } from "lucide-react";
-import { cn } from "@/lib/utils";
-export function Checkbox({ className, ...props }: ComponentProps<typeof Primitive.Root>) {
+
+import * as React from "react";
+import { cn } from "cn";
+import { Icon } from "../icons";
+import { Checkbox as CheckboxPrimitive } from "radix-ui";
+
+function Checkbox({ className, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
   return (
-    <Primitive.Root
+    <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "chk inline-grid place-items-center w-[16px] h-[16px] border-[1.5px] border-solid border-control-border rounded-slip bg-surface text-primary-foreground flex-none p-0 [&[data-state='checked']]:bg-primary [&[data-state='checked']]:border-primary",
+        "peer size-4 shrink-0 rounded-sm border border-input shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:bg-input/30 dark:aria-invalid:ring-destructive/40 dark:data-[state=checked]:bg-primary",
         className,
       )}
       {...props}
     >
-      <Primitive.Indicator>
-        <Check aria-hidden="true" className="i-14 w-[14px] h-[14px] flex-none" />
-      </Primitive.Indicator>
-    </Primitive.Root>
+      <CheckboxPrimitive.Indicator
+        data-slot="checkbox-indicator"
+        className="grid place-content-center text-current transition-none"
+      >
+        <Icon name="check" className="size-3.5" />
+      </CheckboxPrimitive.Indicator>
+    </CheckboxPrimitive.Root>
   );
 }
+
+export { Checkbox };

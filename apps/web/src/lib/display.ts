@@ -128,3 +128,13 @@ export function formatMoney(money: Money): string {
     parts.map((part) => (part.type === "fraction" ? fraction : part.value)).join("")
   );
 }
+export function overdueLabel(at: Date, zone: string, now = new Date()): string {
+  if (now.getTime() - at.getTime() < 86400000) return `Overdue ${overdueBy(at, now)}`;
+  const when = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: zone,
+  }).format(at);
+  return `Overdue since ${when}`;
+}
