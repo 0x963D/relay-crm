@@ -82,6 +82,18 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
       onSuccess: () => saved("Note added to the timeline."),
     }),
   );
+  const linkAttempt = useMutation(
+    trpc.leads.logAttempt.mutationOptions({
+      onError: failed,
+      onSuccess: async () => {
+        await refresh();
+        setMessage({
+          kind: "success",
+          text: "Link attempt saved. This does not mark the lead as contacted.",
+        });
+      },
+    }),
+  );
   const callback = useMutation(
     trpc.leads.setCallback.mutationOptions({
       onError: failed,
@@ -104,7 +116,12 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
         ),
     }),
   );
-  const busy = attempt.isPending || note.isPending || callback.isPending || close.isPending;
+  const busy =
+    attempt.isPending ||
+    linkAttempt.isPending ||
+    note.isPending ||
+    callback.isPending ||
+    close.isPending;
   function open(next: ComposerMode, nextChannel = channel) {
     if (busy) return;
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -279,6 +296,16 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
               zone={zone}
               busy={busy}
               onCancel={cancel}
+              onLaunch={(channel) => {
+                setMessage(null);
+                linkAttempt.mutate({
+                  id,
+                  key: crypto.randomUUID(),
+                  channel,
+                  outcome: "noAnswer",
+                  note: `Opened the ${channel === "call" ? "dialler" : "WhatsApp"} link. No conversation recorded.`,
+                });
+              }}
               onInvalid={(text) => {
                 setMessage({ kind: "error", text });
               }}

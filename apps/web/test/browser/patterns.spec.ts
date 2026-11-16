@@ -3,6 +3,38 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("dial and WhatsApp links record attempts without claiming contact", async ({ page }) => {
+  await signIn(page, "agent");
+  await page.getByRole("link", { name: "Open Bashir Karimi", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Bashir Karimi", exact: true })).toBeVisible();
+  const id = page.url().split("/").at(-1);
+  if (!id) throw new Error("Missing lead ID");
+  await page.evaluate(() => {
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('a[href^="tel:"], a[href^="https://wa.me/"]'))
+        event.preventDefault();
+    });
+  });
+  await page.getByRole("button", { name: "Call", exact: true }).click();
+  const dial = page.getByRole("link", { name: "Open dialler", exact: true });
+  await expect(dial).toHaveAttribute("href", /^tel:\+/);
+  await dial.click();
+  await expect(page.getByRole("status").filter({ hasText: "Link attempt saved" })).toBeFocused();
+  await page.getByRole("radio", { name: "WhatsApp", exact: true }).click();
+  const whatsapp = page.getByRole("link", { name: "Open WhatsApp", exact: true });
+  await expect(whatsapp).toHaveAttribute("href", /^https:\/\/wa.me\/\d+$/);
+  await whatsapp.click();
+  await expect(page.getByRole("status").filter({ hasText: "Link attempt saved" })).toBeFocused();
+  const lead = await rpc(page).leads.get.query({ id });
+  expect(lead.contactedAt).toBeNull();
+  expect(
+    lead.timeline
+      .filter((entry) => entry.summary?.kind === "attempt")
+      .map((entry) => entry.summary?.channel),
+  ).toEqual(["whatsApp", "call"]);
+});
+
 test("an offline save fails immediately, keeps the draft and never replays on reconnect", async ({
   page,
 }) => {

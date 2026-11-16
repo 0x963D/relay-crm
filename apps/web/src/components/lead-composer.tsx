@@ -28,6 +28,7 @@ export function LeadComposer({
   busy,
   onSubmit,
   onCancel,
+  onLaunch,
   onInvalid,
 }: {
   active: boolean;
@@ -38,6 +39,7 @@ export function LeadComposer({
   busy: boolean;
   onSubmit: (command: Command) => void;
   onCancel: () => void;
+  onLaunch: (channel: "call" | "whatsApp") => void;
   onInvalid: (text: string) => void;
 }) {
   const state = lead.lifecycle.state;
@@ -193,6 +195,35 @@ export function LeadComposer({
           >
             {mode === "attempt" && (
               <>
+                {lead.phone && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button asChild variant="outline" busy={busy}>
+                      <a
+                        href={
+                          channel === "call"
+                            ? `tel:${lead.phone.replace(/[^+\d]/g, "")}`
+                            : `https://wa.me/${lead.phone.replace(/\D/g, "")}`
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => {
+                          if (busy) {
+                            event.preventDefault();
+                            return;
+                          }
+                          if (!navigator.onLine) event.preventDefault();
+                          onLaunch(channel);
+                        }}
+                      >
+                        <Icon name={channel === "call" ? "call" : "whatsapp"} />
+                        {channel === "call" ? "Open dialler" : "Open WhatsApp"}
+                      </a>
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Opening the link logs an attempt, not a conversation.
+                    </p>
+                  </div>
+                )}
                 <fieldset className="space-y-2">
                   <legend className="text-caption font-semibold">What happened?</legend>
                   <RadioGroup
