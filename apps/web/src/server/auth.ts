@@ -118,6 +118,29 @@ export function createAuthentication(
     const request = await boundedRequest(incoming);
     if (request === null) return new Response(null, { status: 413 });
     const path = new URL(request.url).pathname.replace(/^\/api\/auth/, "");
+    if (
+      request.method === "POST" &&
+      request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded")
+    ) {
+      if (request.headers.get("origin") !== new URL(env.baseUrl).origin)
+        return new Response(null, { status: 403 });
+      const fields = new URLSearchParams(await request.text());
+      const headers = new Headers(request.headers);
+      headers.set("content-type", "application/json");
+      headers.delete("content-length");
+      const response = await handle(
+        new Request(request.url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(Object.fromEntries(fields)),
+        }),
+      );
+      if (!response.ok) return response;
+      const resultHeaders = new Headers(response.headers);
+      resultHeaders.set("location", "/");
+      resultHeaders.delete("content-type");
+      return new Response(null, { status: 303, headers: resultHeaders });
+    }
     if (path === "/demo") {
       if (!demo || request.method !== "POST") return new Response(null, { status: 404 });
       if (request.headers.get("origin") !== new URL(env.baseUrl).origin)

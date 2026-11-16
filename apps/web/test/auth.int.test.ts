@@ -1,3 +1,4 @@
+import { seedDemo } from "@relay/store/demo";
 import { expect, describe, vi } from "vitest";
 import { test } from "@relay/store/testing";
 import { connections } from "../src/server/client-address.ts";
@@ -443,4 +444,76 @@ test("auth rejects an oversized JSON body before parsing it", async ({ db }) => 
   );
   expect(response.status).toBe(413);
   expect(await db.rows("SELECT key FROM auth_request_limits")).toEqual([]);
+});
+
+test("plain demo forms start each session and redirect to the leads", async ({ db }) => {
+  await seedDemo({
+    ownerUrl: db.ownerConnectionString,
+    appUrl: db.connectionString,
+    today: new Date(),
+    deliver: () => Promise.resolve({ state: "sent" }),
+  });
+  const auth = createAuthentication(
+    db.store,
+    config,
+    () => Promise.resolve(),
+    () => undefined,
+    true,
+  );
+  const handle = (request: Request) => connections.run("127.0.0.1", () => auth.handle(request));
+  for (const role of ["manager", "agent", "accountant"]) {
+    const response = await handle(
+      new Request(`${origin}/api/auth/demo`, {
+        method: "POST",
+        headers: { origin },
+        body: new URLSearchParams({ role }),
+      }),
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/");
+    expect(response.headers.getSetCookie().join()).toContain("relay.session_token=");
+  }
+  const refused = await handle(
+    new Request(`${origin}/api/auth/demo`, {
+      method: "POST",
+      headers: { origin: "https://outside.example" },
+      body: new URLSearchParams({ role: "agent" }),
+    }),
+  );
+  expect(refused.status).toBe(403);
+});
+
+test("plain emailed-code forms send a code and sign in", async ({ db }) => {
+  const user = await db.seedUser("agent");
+  const [person] = await db.rows("SELECT email FROM users WHERE id=$1", [user]);
+  const email = String(person?.email);
+  const sent: { email: string; code: string }[] = [];
+  const auth = createAuthentication(
+    db.store,
+    config,
+    (message) => {
+      sent.push(message);
+      return Promise.resolve();
+    },
+    (task) => {
+      void task();
+    },
+  );
+  const handle = (request: Request) => connections.run("127.0.0.1", () => auth.handle(request));
+  const post = (path: string, body: Record<string, string>) =>
+    handle(
+      new Request(`${origin}/api/auth${path}`, {
+        method: "POST",
+        headers: { origin },
+        body: new URLSearchParams(body),
+      }),
+    );
+  expect((await post("/email-otp/send-verification-otp", { email, type: "sign-in" })).status).toBe(
+    303,
+  );
+  const otp = sent[0]?.code;
+  if (!otp) throw new Error("No emailed code");
+  const response = await post("/sign-in/email-otp", { email, otp });
+  expect(response.status).toBe(303);
+  expect(response.headers.getSetCookie().join()).toContain("relay.session_token=");
 });
