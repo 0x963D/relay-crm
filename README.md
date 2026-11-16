@@ -27,11 +27,12 @@ run `COMPOSE_PROJECT_NAME=relay-second RELAY_HTTP_PORT=3117 RELAY_INBOX_PORT=813
 Use the same variables with later Compose commands. `RELAY_TIME_ZONE` selects the local day for
 callbacks and reset, and defaults to UTC.
 
-The invented company is Tidewell Language School. The first page offers plain sign-in buttons for
-Priya Raman, manager, Dele Akinwale, agent, and Esther Okafor, accountant. Each starts a session and
-opens the lead list. The current interface is an unstyled scaffold. Journey screens are separate work.
-Emailed-code sign-in works alongside demo sign-in. Outside demo mode, the first page offers the
-emailed-code forms.
+The invented company is Tidewell Language School. The sign-in page offers Priya Raman, manager,
+Dele Akinwale, agent, and Esther Okafor, accountant. The manager opens the lead pool, and the agent
+opens a queue with five groups. Staff can also sign in with an emailed code.
+The lead screens support assignment by hand, round-robin previews, attempts, callbacks, notes and
+closing a lead. A rejected preview assigns nothing. Only "Spoke to them" marks a lead contacted.
+Payments, the ledger, the funnel and the accounts list have typed APIs. Their screens are separate work.
 
 The data is invented and resets at the start of the next local day.
 The demo's logins are shared, so one visitor can give a manual payment both approvals.
@@ -963,3 +964,36 @@ for detail fields, scoped group totals, completion provenance and query counts w
 | `receipt_attempts.finished_at` | `UPDATE`             |
 | `receipt_attempts.reason`      | `UPDATE`             |
 | `receipt_attempts.state`       | `UPDATE`             |
+
+## Lead screens and browser checks
+
+The screens use the approved carbon-blue shell, copy-paper state colours and ruled custody lines.
+Light follows the board. Appearance follows your system until you choose Light or Dark.
+Archivo is a variable font with weight and width axes. Next.js serves the font from this app.
+Its [SIL Open Font License 1.1](apps/web/src/app/fonts/OFL.txt) permits embedding and redistribution.
+The font comes from [Google Fonts' Archivo files](https://github.com/google/fonts/tree/main/ofl/archivo).
+The app sends no font request to another host.
+
+After the development database is available, run these commands from the repository.
+
+```sh
+pnpm exec playwright install chromium
+pnpm build
+pnpm test:browser
+pnpm capture
+```
+
+`test:browser` runs the production build against a fresh, seeded database on the configured PostgreSQL
+server. It submits a public enquiry, assigns it from the pool, records attempts, sets, moves and
+clears a callback, adds a note and wins an account. It also checks emailed-code sign-in, code
+refusal, keyboard focus, reduced motion and the light, dark and phone queues.
+Axe checks WCAG 2 A and AA, WCAG 2.1 A and AA, and its best-practice rules on each tested screen.
+The browser CI job runs these checks and the capture script. A failing check fails the job.
+
+`capture` writes 2x images with the board's frame names. On Windows they are in
+`test-results/relay-crm-screens/built/`. Other systems use `relay-crm-screens/built/` under
+the system temporary directory. Logs, accessibility results and failure traces stay beside them.
+Frames 13 and 15 assemble actual app captures into the board's comparison layout. The payment
+content in those frames is outside this screen task. Counts, names, dates and assignment results
+come from the seeded API, so they can differ from the illustrative board.
+Both commands stop their servers and drop only their own test database when they finish.

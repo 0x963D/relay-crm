@@ -76,3 +76,44 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm test:int
       - run: pnpm test:prod
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17@sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac
+        env:
+          POSTGRES_USER: relay
+          POSTGRES_PASSWORD: relay
+          POSTGRES_DB: relay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username relay"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://relay_app:fake-local-app-password@localhost:5432/relay
+      MIGRATION_DATABASE_URL: postgresql://relay_owner:fake-local-owner-password@localhost:5432/relay
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: psql postgresql://relay:relay@localhost:5432/relay -v owner_password=fake-local-owner-password -v app_password=fake-local-app-password -f packages/store/scripts/setup-roles.sql
+      - run: pnpm db:migrate
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: pnpm test:browser
+      - run: pnpm capture
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: browser-evidence
+          path: /tmp/relay-crm-screens

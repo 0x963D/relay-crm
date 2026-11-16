@@ -1,3 +1,4 @@
+import { serve } from "./support/production-server.ts";
 import { submissionExample } from "@relay/domain/testing";
 import { seedDemo } from "@relay/store/demo";
 import { DEMO_PEOPLE } from "@relay/store";
@@ -9,17 +10,10 @@ import { z } from "zod";
 import { setTimeout as sleep } from "node:timers/promises";
 import { test as databaseTest } from "@relay/store/testing";
 import { openSmtpInbox } from "./support/smtp.ts";
-import { spawn, exec } from "node:child_process";
+import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { once } from "node:events";
-import { createRequire } from "node:module";
-import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-
-const APP = fileURLToPath(new URL("..", import.meta.url));
-const NEXT = createRequire(import.meta.url).resolve("next/dist/bin/next");
-const UNREACHABLE_DATABASE = "postgresql://nobody:nobody@127.0.0.1:9/unreachable";
 
 databaseTest(
   "a production build exposes only the three demo identities when RELAY_DEMO=1 and keeps emailed sign-in",
@@ -59,7 +53,7 @@ databaseTest(
           for (const person of Object.values(DEMO_PEOPLE)) expect(firstPage).toContain(person.name);
         } else {
           expect(firstPage).toContain("/api/auth/email-otp/send-verification-otp");
-          expect(firstPage).toContain("/api/auth/sign-in/email-otp");
+          expect(firstPage).toContain("Send me a code");
         }
         if (!demo) {
           for (const role of ["manager", "agent", "accountant"])
@@ -508,86 +502,13 @@ databaseTest(
   },
 );
 
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  probe.listen(0, "127.0.0.1");
-  await once(probe, "listening");
-  const address = probe.address();
-  probe.close();
-  await once(probe, "close");
-  if (address === null || typeof address === "string") throw new Error("No TCP port was bound");
-  return address.port;
-}
-
-/**
- * NODE_ENV is left for Next to set, so the server runs as production and not as the test runner's
- * "test".
- */
-async function serve(
-  variables:
-    Readonly<Record<string, string>> | ((origin: string) => Readonly<Record<string, string>>),
-  databaseUrl = UNREACHABLE_DATABASE,
-  rawNext = false,
-) {
-  const port = await freePort();
-  const origin = `http://127.0.0.1:${String(port)}`;
-  const configured = typeof variables === "function" ? variables(origin) : variables;
-  const inherited = Object.entries(process.env).filter(
-    ([name]) =>
-      name !== "NODE_ENV" &&
-      name !== "DATABASE_URL" &&
-      name !== "MIGRATION_DATABASE_URL" &&
-      !/^(META|RELAY|AUTH|SMTP)_/.test(name),
-  );
-  const server = spawn(
-    process.execPath,
-    rawNext ? [NEXT, "start", "--port", String(port)] : ["scripts/serve.ts"],
-    {
-      cwd: APP,
-      env: {
-        ...Object.fromEntries(inherited),
-        DATABASE_URL: databaseUrl,
-        PORT: String(port),
-        ...configured,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-
-  let output = "";
-  await new Promise<void>((resolve, reject) => {
-    server.stdout.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
-      if (output.includes("Ready in") && rawNext) resolve();
-    });
-    server.stderr.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
-      if (output.includes("server.ready")) resolve();
-    });
-    server.on("exit", (code) => {
-      reject(new Error(`next start exited with ${String(code)} before it was ready:\n${output}`));
-    });
-  });
-
-  return {
-    output: () => output,
-    url: (path: string) => `http://127.0.0.1:${String(port)}${path}`,
-    stop: async () => {
-      if (server.exitCode !== null || server.signalCode !== null) return;
-      const exited = once(server, "exit");
-      server.kill();
-      await exited;
-    },
-  };
-}
-
 describe("the production server with no session", () => {
   test("answers the lead list and RPC with 401 without a session", async () => {
     const server = await serve({});
     try {
       const response = await fetch(server.url("/"));
       expect(response.status).toBe(401);
-      expect(await response.text()).toContain("Sign in to Relay CRM");
+      expect(await response.text()).toContain("Send me a code");
       expect(
         (await fetch(server.url("/api/trpc/leads.list?input=%7B%22json%22%3A%7B%7D%7D"))).status,
       ).toBe(401);

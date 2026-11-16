@@ -30,7 +30,9 @@
     "outbox": "dotenv -- tsx apps/web/scripts/outbox.ts",
     "reconcile": "dotenv -- tsx apps/web/scripts/reconcile.ts",
     "import:csv": "dotenv -- tsx apps/web/scripts/import-csv.ts",
-    "test:mutations": "tsx packages/store/test/safety-mutations.ts"
+    "test:mutations": "tsx packages/store/test/safety-mutations.ts",
+    "test:browser": "dotenv -- playwright test --grep-invert @capture",
+    "capture": "dotenv -- playwright test --grep @capture"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
