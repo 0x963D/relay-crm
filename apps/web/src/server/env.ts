@@ -4,6 +4,13 @@ import { z } from "zod";
 const EXAMPLE_AUTH_SECRET = "example-only-do-not-use-this-secret";
 
 const Variables = z.object({
+  RELAY_SANDBOX: z.literal("1").optional(),
+  RELAY_SANDBOX_URL: z.url().optional(),
+  RELAY_PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
+  RELAY_RECONCILE_SECRET: z.string().min(32).optional(),
+  RELAY_RECONCILE_FIRST_MS: z.coerce.number().int().min(0).max(86400000).default(900000),
+  RELAY_RECONCILE_INTERVAL_MS: z.coerce.number().int().min(1000).max(86400000).default(300000),
+  RELAY_SANDBOX_LATE_MS: z.coerce.number().int().min(0).max(60000).default(30000),
   AUTH_SECRET: z
     .string()
     .min(32)
@@ -49,7 +56,17 @@ export interface AuthEnv {
     | { readonly kind: "developmentConsole" };
 }
 
+export interface PaymentEnv {
+  readonly baseUrl: string;
+  readonly webhookSecret: string;
+  readonly reconcileSecret: string;
+  readonly firstCheckMs: number;
+  readonly intervalMs: number;
+  readonly lateMs: number;
+}
+
 export interface Env {
+  readonly payments: PaymentEnv | null;
   readonly trustedProxyCount: number;
   readonly auth: AuthEnv | null;
   readonly databaseUrl: string;
@@ -142,6 +159,7 @@ export function parseEnv(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
   return {
+    payments: paymentEnv(parsed.data),
     trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,
     auth: authEnv(parsed.data),
     databaseUrl: DATABASE_URL,
@@ -167,4 +185,30 @@ export function serverOptions() {
   const dev = process.argv.includes("--dev");
   Object.assign(process.env, { NODE_ENV: dev ? "development" : "production" });
   return { port, dev };
+}
+
+function paymentEnv(v: z.infer<typeof Variables>): PaymentEnv | null {
+  if (!v.RELAY_SANDBOX) return null;
+  if (!v.RELAY_SANDBOX_URL || !v.RELAY_PAYMENT_WEBHOOK_SECRET || !v.RELAY_RECONCILE_SECRET)
+    throw new EnvError(
+      "Sandbox payments need RELAY_SANDBOX_URL, RELAY_PAYMENT_WEBHOOK_SECRET and RELAY_RECONCILE_SECRET.",
+    );
+  const url = new URL(v.RELAY_SANDBOX_URL);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  )
+    throw new EnvError("RELAY_SANDBOX_URL must be an HTTP origin.");
+  return {
+    baseUrl: url.origin,
+    webhookSecret: v.RELAY_PAYMENT_WEBHOOK_SECRET,
+    reconcileSecret: v.RELAY_RECONCILE_SECRET,
+    firstCheckMs: v.RELAY_RECONCILE_FIRST_MS,
+    intervalMs: v.RELAY_RECONCILE_INTERVAL_MS,
+    lateMs: v.RELAY_SANDBOX_LATE_MS,
+  };
 }

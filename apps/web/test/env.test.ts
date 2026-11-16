@@ -13,6 +13,7 @@ const META = {
 describe("parseEnv", () => {
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
+      payments: null,
       trustedProxyCount: 0,
       auth: null,
       databaseUrl: DATABASE_URL,
@@ -126,4 +127,33 @@ it("accepts a sufficiently varied fake test secret", () => {
     NODE_ENV: "development",
   });
   expect(env.auth).not.toBeNull();
+});
+
+it("keeps payments off until enabled and checks the reconciliation timing defaults", () => {
+  expect(parseEnv({ DATABASE_URL }).payments).toBeNull();
+  expect(() => parseEnv({ DATABASE_URL, RELAY_SANDBOX: "1" })).toThrow(EnvError);
+  const values = {
+    DATABASE_URL,
+    RELAY_SANDBOX: "1",
+    RELAY_SANDBOX_URL: "http://127.0.0.1:3000",
+    RELAY_PAYMENT_WEBHOOK_SECRET: "fake-sandbox-signature-secret-for-tests",
+    RELAY_RECONCILE_SECRET: "fake-reconciler-authentication-secret-for-tests",
+  };
+  expect(parseEnv(values).payments).toMatchObject({
+    firstCheckMs: 900000,
+    intervalMs: 300000,
+    lateMs: 30000,
+  });
+  expect(
+    parseEnv({
+      ...values,
+      RELAY_RECONCILE_FIRST_MS: "0",
+      RELAY_RECONCILE_INTERVAL_MS: "1000",
+      RELAY_SANDBOX_LATE_MS: "2500",
+    }).payments,
+  ).toMatchObject({ firstCheckMs: 0, intervalMs: 1000, lateMs: 2500 });
+  expect(() => parseEnv({ ...values, RELAY_RECONCILE_INTERVAL_MS: "0" })).toThrow(EnvError);
+  expect(() => parseEnv({ ...values, RELAY_SANDBOX_URL: "https://example.com/untrusted" })).toThrow(
+    EnvError,
+  );
 });

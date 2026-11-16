@@ -8,7 +8,14 @@ function handle(request: Request) {
     const origin = new URL(app.env.auth?.baseUrl ?? request.url).origin;
     return handleRpc(
       request,
-      async () => ({ store: app.store, principal: await resolvePrincipal(app, request.headers) }),
+      async () => ({
+        store: app.store,
+        payments:
+          app.payments && app.env.payments
+            ? { provider: app.payments.provider, firstCheckMs: app.env.payments.firstCheckMs }
+            : null,
+        principal: await resolvePrincipal(app, request.headers),
+      }),
       origin,
     );
   });

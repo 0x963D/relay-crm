@@ -1,3 +1,5 @@
+import superjson from "superjson";
+import { z } from "zod";
 import { setTimeout as sleep } from "node:timers/promises";
 import { test as databaseTest } from "@relay/store/testing";
 import { openSmtpInbox } from "./support/smtp.ts";
@@ -332,5 +334,188 @@ databaseTest(
       ).rejects.toThrow(/AUTH_SECRET/);
     }
     expect(await db.rows("SELECT email FROM users")).toEqual([]);
+  },
+);
+
+databaseTest(
+  "live sandbox payments reconcile late delivery, duplicate delivery and a mismatched amount",
+  async ({ db }) => {
+    const userId = await db.seedUser("agent");
+    await db.seedUser("accountant");
+    const accountId = await db.seedAccount();
+    await db.rows("UPDATE accounts SET owner_id=$1 WHERE id=$2", [userId, accountId]);
+    const inbox = await openSmtpInbox();
+    const reconcileSecret = "fake-live-reconcile-secret-for-production-tests";
+    const server = await serve(
+      (origin) => ({
+        AUTH_URL: origin,
+        AUTH_SECRET: "fake-production-payment-auth-secret-for-tests",
+        SMTP_URL: inbox.url,
+        SMTP_FROM: "relay@sender.example",
+        RELAY_SANDBOX: "1",
+        RELAY_SANDBOX_URL: origin,
+        RELAY_PAYMENT_WEBHOOK_SECRET: "fake-production-webhook-secret-for-tests",
+        RELAY_RECONCILE_SECRET: reconcileSecret,
+        RELAY_RECONCILE_FIRST_MS: "0",
+        RELAY_RECONCILE_INTERVAL_MS: "1000",
+        RELAY_SANDBOX_LATE_MS: "2500",
+      }),
+      db.connectionString,
+    );
+    try {
+      const origin = new URL(server.url("/")).origin;
+      const post = (path: string, body: unknown, cookie = "") =>
+        fetch(server.url(path), {
+          method: "POST",
+          headers: { origin, "content-type": "application/json", cookie },
+          body: JSON.stringify(body),
+        });
+      const signIn = async (email: string) => {
+        const count = inbox.messages.length;
+        expect(
+          (await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" }))
+            .status,
+        ).toBe(200);
+        for (let i = 0; i < 100 && inbox.messages.length === count; i += 1) await sleep(50);
+        const otp = inbox.messages[count]?.match(/Your sign-in code is (\d{6})/)?.[1];
+        if (!otp) throw new Error("No sign-in code arrived");
+        const response = await post("/api/auth/sign-in/email-otp", { email, otp });
+        expect(response.status).toBe(200);
+        const cookie = response.headers
+          .getSetCookie()
+          .find((v) => v.includes("relay.session_token="))
+          ?.split(";")[0];
+        if (!cookie) throw new Error("No session cookie");
+        return cookie;
+      };
+      const agent = await signIn("user-1@team.example");
+      const accountant = await signIn("user-2@team.example");
+      const rpc = async (
+        path: string,
+        input: unknown,
+        cookie: string,
+        mutation = false,
+      ): Promise<unknown> => {
+        const response = mutation
+          ? await post(`/api/trpc/${path}`, { json: input }, cookie)
+          : await fetch(
+              server.url(
+                `/api/trpc/${path}?input=${encodeURIComponent(JSON.stringify({ json: input }))}`,
+              ),
+              { headers: { cookie } },
+            );
+        const raw: unknown = await response.json();
+        expect(response.status, JSON.stringify(raw)).toBe(200);
+        const envelope = z.object({ result: z.object({ data: z.unknown() }) }).parse(raw);
+        return superjson.parse(JSON.stringify(envelope.result.data));
+      };
+      const Detail = z.object({
+        id: z.string(),
+        state: z.object({ status: z.string() }),
+        events: z.array(
+          z.object({
+            sequence: z.bigint(),
+            kind: z.string(),
+            at: z.date(),
+            detail: z.record(z.string(), z.unknown()),
+          }),
+        ),
+        posting: z
+          .object({
+            id: z.string(),
+            lines: z.array(
+              z.object({
+                amount: z.bigint(),
+                account: z.object({ kind: z.string(), currency: z.string() }),
+              }),
+            ),
+          })
+          .nullable(),
+      });
+      const Ledger = z.object({
+        balances: z.array(z.object({ currency: z.string(), balance: z.bigint() })),
+      });
+      expect((await fetch(server.url("/api/payments/reconcile"), { method: "POST" })).status).toBe(
+        401,
+      );
+      let expectedBalance = 0n;
+      for (const mode of ["late", "twice", "differentAmount"] as const) {
+        const created = z
+          .object({ paymentId: z.string(), checkout: z.object({ url: z.string() }) })
+          .parse(
+            await rpc(
+              "payments.createCheckout",
+              { key: mode, accountId, amount: "39500", currency: "GBP", kind: "repeat", mode },
+              agent,
+              true,
+            ),
+          );
+        const page = await fetch(created.checkout.url);
+        const html = await page.text();
+        expect(page.status).toBe(200);
+        expect(html).toContain("Sandbox checkout");
+        expect(html).toContain("Pay in sandbox");
+        const paid = await fetch(created.checkout.url, {
+          method: "POST",
+          headers: { origin },
+          redirect: "manual",
+        });
+        expect(paid.status).toBe(303);
+        if (mode === "late") {
+          const before = Detail.parse(
+            await rpc("payments.get", { id: created.paymentId }, accountant),
+          );
+          expect(before.state.status).toBe("checkoutCreated");
+          expect(before.posting).toBeNull();
+          const run = await fetch(server.url("/api/payments/reconcile"), {
+            method: "POST",
+            headers: { authorization: `Bearer ${reconcileSecret}` },
+          });
+          expect(run.status).toBe(200);
+          expect(await run.json()).toEqual([
+            { id: created.paymentId, status: "completed", changed: true },
+          ]);
+        }
+        let detail = Detail.parse(await rpc("payments.get", { id: created.paymentId }, accountant));
+        const deliveries = mode === "twice" ? 2 : 1;
+        for (
+          let i = 0;
+          i < 100 && detail.events.filter((e) => e.kind === "webhookDelivery").length < deliveries;
+          i += 1
+        ) {
+          await sleep(50);
+          detail = Detail.parse(await rpc("payments.get", { id: created.paymentId }, accountant));
+        }
+        expect(detail.events.filter((e) => e.kind === "webhookDelivery")).toHaveLength(deliveries);
+        expect(detail.state.status).toBe(mode === "differentAmount" ? "needsReview" : "completed");
+        if (mode === "differentAmount") expect(detail.posting).toBeNull();
+        else {
+          expectedBalance += 39500n;
+          expect(detail.posting?.lines.map((l) => l.amount)).toEqual([39500n, -39500n]);
+        }
+        if (mode === "late") {
+          expect(detail.events.find((e) => e.kind === "settlement")?.detail.by).toBe("reconciler");
+          expect(detail.events.find((e) => e.kind === "webhookDelivery")?.detail).toMatchObject({
+            late: true,
+            changed: false,
+          });
+        }
+        if (mode === "twice")
+          expect(
+            detail.events.filter((e) => e.kind === "webhookDelivery")[1]?.detail,
+          ).toMatchObject({ duplicate: true, changed: false });
+        const own = Detail.parse(await rpc("payments.get", { id: created.paymentId }, agent));
+        expect(own.posting).toBeNull();
+        const ledger = Ledger.parse(await rpc("accounts.ledger", { id: accountId }, accountant));
+        expect(ledger.balances).toEqual([{ currency: "GBP", balance: expectedBalance }]);
+        process.stdout.write(
+          `LIVE_PAYMENT ${JSON.stringify({ mode, detail, ledger }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
+        );
+      }
+      expect(await db.rows("SELECT count(*)::int AS n FROM outbox")).toEqual([{ n: 2 }]);
+    } finally {
+      await server.stop();
+      await inbox.close();
+    }
   },
 );

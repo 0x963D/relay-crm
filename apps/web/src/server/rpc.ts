@@ -1,4 +1,8 @@
 import {
+  PaymentId,
+  SANDBOX_MODES,
+  isCurrencyCode,
+  type PaymentProvider,
   AccountId,
   LeadId,
   TeamId,
@@ -17,6 +21,7 @@ import { reportFailure } from "./errors.ts";
 
 export interface RpcContext {
   readonly store: Store;
+  readonly payments?: { readonly provider: PaymentProvider; readonly firstCheckMs: number } | null;
   readonly principal: SessionPrincipal | null;
 }
 const t = initTRPC.context<RpcContext>().create({
@@ -76,6 +81,63 @@ const LeadIds = z
 const Page = z.object({ limit: z.int().min(1).max(100).default(100) }).strict();
 
 export const appRouter = t.router({
+  payments: t.router({
+    list: authenticated
+      .input(Page)
+      .query(({ ctx, input }) => ctx.store.listPayments(ctx.actor, input.limit)),
+    get: authenticated
+      .input(z.object({ id: identifier(PaymentId) }).strict())
+      .query(async ({ ctx, input }) => ({
+        ...(await ctx.store.getPayment(ctx.actor, input.id)),
+        checkoutPath: `/sandbox/checkout/${input.id}`,
+      })),
+    closeReview: authenticated
+      .input(
+        z
+          .object({ id: identifier(PaymentId), reason: z.string().trim().min(1).max(2000) })
+          .strict(),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.store.closePaymentReview(ctx.actor, input.id, input.reason),
+      ),
+    createCheckout: authenticated
+      .input(
+        z
+          .object({
+            key: z.string().min(1).max(200),
+            accountId: identifier(AccountId),
+            amount: z
+              .string()
+              .regex(/^[1-9]\d{0,18}$/)
+              .refine((v) => BigInt(v) <= 9223372036854775806n),
+            currency: z.string().refine(isCurrencyCode),
+            kind: z.enum(["first", "repeat"]),
+            mode: z.enum(SANDBOX_MODES).default("normal"),
+          })
+          .strict(),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.payments)
+          throw new TRPCError({ code: "NOT_FOUND", message: "Sandbox payments are disabled." });
+        if (!isCurrencyCode(input.currency)) throw new TRPCError({ code: "BAD_REQUEST" });
+        const created = await ctx.store.createPayment(
+          ctx.actor,
+          {
+            key: input.key,
+            accountId: input.accountId,
+            money: { minor: BigInt(input.amount), currency: input.currency },
+            kind: input.kind,
+            mode: input.mode,
+          },
+          ctx.payments.firstCheckMs,
+        );
+        const terms = await ctx.store.checkoutTerms(ctx.actor, created.id);
+        return {
+          paymentId: created.id,
+          checkout: await ctx.payments.provider.createCheckout(terms),
+        };
+      }),
+  }),
   leads: t.router({
     list: authenticated
       .input(Page)
@@ -107,6 +169,9 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ctx.store.reassignLead(ctx.actor, input.leadId, input.to)),
   }),
   accounts: t.router({
+    ledger: authenticated
+      .input(z.object({ id: identifier(AccountId) }).strict())
+      .query(({ ctx, input }) => ctx.store.accountLedger(ctx.actor, input.id)),
     list: authenticated
       .input(Page)
       .query(({ ctx, input }) => ctx.store.listAccounts(ctx.actor, input)),

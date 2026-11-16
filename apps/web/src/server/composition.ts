@@ -1,3 +1,5 @@
+import { sandboxProvider, sandboxCheckout } from "./payments/sandbox.ts";
+import { paymentWebhook } from "./payments/webhook.ts";
 import { after } from "next/server";
 import { createAuthentication, type Authentication } from "./auth.ts";
 import { createMailer } from "./mailer.ts";
@@ -10,6 +12,11 @@ import { logToConsole } from "./log.ts";
 
 /** Every long-lived object the application has. This file is the only one that builds any. */
 export interface Composition {
+  readonly payments: {
+    readonly provider: ReturnType<typeof sandboxProvider>;
+    readonly webhook: ReturnType<typeof paymentWebhook>;
+    readonly checkout: ReturnType<typeof sandboxCheckout>;
+  } | null;
   readonly auth: Authentication | null;
   readonly env: Env;
   readonly store: Store;
@@ -25,6 +32,15 @@ function compose(env: Env): Composition {
   return {
     env,
     store,
+    payments: env.payments
+      ? {
+          provider: sandboxProvider(store, env.payments),
+          webhook: paymentWebhook(store, env.payments.webhookSecret),
+          checkout: sandboxCheckout(store, env.payments, (task) => {
+            after(task);
+          }),
+        }
+      : null,
     auth:
       env.auth === null
         ? null
