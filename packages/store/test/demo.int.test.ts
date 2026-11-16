@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { AccountId, UserId, PaymentId } from "@relay/domain";
+import { AccountId, UserId, PaymentId, parseExternalId } from "@relay/domain";
 import { seedDemo, resetDemo } from "../src/demo.ts";
 import { DEMO_PEOPLE } from "../src/demo-state.ts";
 import { test, type TestDatabase } from "../src/testing/index.ts";
@@ -77,11 +77,13 @@ test("the operation-built demo covers the board, balances its postings and seeds
     await db.rows("SELECT count(*)::int AS count FROM payments WHERE completed_by='reconciler'"),
   ).toEqual([{ count: 1 }]);
   const before = await db.counts();
+  const leases = await db.rows("SELECT * FROM job_leases ORDER BY route");
   const audit = await db.ownerRows("SELECT count(*)::int AS count FROM audit_log");
   expect(await seedDemo({ ...options(db), today: new Date("2033-02-01") })).toMatchObject({
     changed: false,
   });
   expect(await db.counts()).toEqual(before);
+  expect(await db.rows("SELECT * FROM job_leases ORDER BY route")).toEqual(leases);
   expect(await db.ownerRows("SELECT count(*)::int AS count FROM audit_log")).toEqual(audit);
   await expect(db.rows("UPDATE demo_seed SET state='building'")).rejects.toMatchObject({
     code: "42501",
@@ -92,6 +94,7 @@ test("reset requires demo mode and an owner marker, deletes visitor payments and
   db,
 }) => {
   await expect(resetDemo({ ...options(db), demo: true })).rejects.toThrow("not created");
+  expect(await db.rows("SELECT * FROM job_leases")).toEqual([]);
   await seedDemo(options(db));
   await expect(async () => resetDemo({ ...options(db), demo: false })).rejects.toThrow(
     "RELAY_DEMO=1",
@@ -129,6 +132,24 @@ test("reset requires demo mode and an owner marker, deletes visitor payments and
 
 test("seeding refuses an unmarked database that already has people", async ({ db }) => {
   await db.seedUser("manager");
+  await expect(seedDemo(options(db))).rejects.toThrow("empty database");
+  expect(await db.rows("SELECT * FROM demo_seed")).toEqual([]);
+});
+
+test("seeding also refuses intake history without a lead", async ({ db }) => {
+  const externalId = parseExternalId("rejected-demo");
+  if (!externalId) throw new Error("Invalid fixture");
+  await db.store.intake({
+    source: "csv",
+    externalId,
+    email: null,
+    name: null,
+    phone: null,
+    attribution: { campaign: null, form: null, ad: null, adSet: null },
+    submittedAt: null,
+    receivedAt: today,
+    raw: null,
+  });
   await expect(seedDemo(options(db))).rejects.toThrow("empty database");
   expect(await db.rows("SELECT * FROM demo_seed")).toEqual([]);
 });

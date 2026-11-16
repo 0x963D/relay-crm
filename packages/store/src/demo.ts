@@ -18,7 +18,7 @@ import { openStore } from "./index.ts";
 import { DEMO_COMPANY, DEMO_KEY, DEMO_PEOPLE } from "./demo-state.ts";
 import { assignPool } from "./distribution.ts";
 import { workLead } from "./work.ts";
-import { connect, transact, type Db } from "./tx.ts";
+import { connect, transact, type Db, type Tx } from "./tx.ts";
 import { exclusiveJob } from "./jobs.ts";
 import type { ReceiptDelivery } from "./outbox.ts";
 
@@ -80,12 +80,16 @@ async function connections<T>(options: DemoOptions, run: (owner: Db, app: Db) =>
     const [appRole] = await app.$queryRaw<{ role: string }[]>`SELECT current_user AS role`;
     if (ownerRole?.role !== "relay_owner" || appRole?.role !== "relay_app")
       throw new Error("Demo setup needs relay_owner and relay_app connections.");
-    const lease = await exclusiveJob(owner, "demo", () => run(owner, app));
-    if (!lease.ran) throw new Error("Demo setup or reset is already running.");
-    return lease.result;
+    return await run(owner, app);
   } finally {
     await Promise.all([owner.$disconnect(), app.$disconnect()]);
   }
+}
+
+async function demoLease<T>(owner: Db, run: () => Promise<T>) {
+  const lease = await exclusiveJob(owner, "demo", run);
+  if (!lease.ran) throw new Error("Demo setup or reset is already running.");
+  return lease.result;
 }
 
 async function marker(owner: Db) {
@@ -97,13 +101,21 @@ async function marker(owner: Db) {
   return row;
 }
 
+async function demoTables(tx: Tx) {
+  const tables = await tx.$queryRaw<{ name: string }[]>`
+    SELECT tablename AS name FROM pg_tables WHERE schemaname='public'
+    AND tablename NOT IN ('_prisma_migrations','demo_seed','job_leases') ORDER BY tablename`;
+  return tables.map(({ name }) => `public."${name.replaceAll('"', '""')}"`);
+}
+
 async function seed(owner: Db, app: Db, options: DemoOptions) {
   await transact(owner, async (tx) => {
-    const [count] = await tx.$queryRaw<{ count: bigint }[]>`
-      SELECT (SELECT count(*) FROM users) + (SELECT count(*) FROM leads) +
-        (SELECT count(*) FROM accounts) + (SELECT count(*) FROM audit_log) +
-        (SELECT count(*) FROM teams) + (SELECT count(*) FROM payments) AS count`;
-    if (count?.count !== 0n) throw new Error("Seed requires an empty database.");
+    for (const table of await demoTables(tx)) {
+      const [row] = await tx.$queryRawUnsafe<{ occupied: boolean }[]>(
+        `SELECT EXISTS(SELECT 1 FROM ${table}) AS occupied`,
+      );
+      if (row?.occupied !== false) throw new Error("Seed requires an empty database.");
+    }
     await tx.$executeRaw`INSERT INTO demo_seed(key,company,state,seeded_at)
       VALUES(${DEMO_KEY},${DEMO_COMPANY},'building',${options.today})
       ON CONFLICT(key) DO UPDATE SET state='building',seeded_at=EXCLUDED.seeded_at`;
@@ -412,7 +424,8 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     await store.paySandboxCheckout(mismatch.token);
     await observe(mismatch.id, { minor: 35900n, currency: "GBP" });
     const late = await card("Tariq Aziz", 48000n, "first", "drop", noor, true);
-    await observe(late.id, late.money, "expired");
+    const expiryCheck = required(await store.claimPaymentCheck(late.id, new Date(), 60000));
+    await store.finishPaymentCheck(late.id, expiryCheck, { status: "expired", money: late.money });
     await observe(late.id, late.money);
     const expired = await card("Tariq Aziz", 48000n, "first", "drop", noor, true);
     await observe(expired.id, expired.money, "expired");
@@ -484,7 +497,7 @@ export function seedDemo(options: DemoOptions) {
         throw new Error("Demo seed is incomplete. Run demo:reset in demo mode.");
       return { changed: false, company: DEMO_COMPANY };
     }
-    return seed(owner, app, options);
+    return demoLease(owner, () => seed(owner, app, options));
   });
 }
 
@@ -492,23 +505,30 @@ export function resetDemo(options: DemoOptions & { readonly demo: boolean }) {
   if (!options.demo) throw new Error("Demo reset requires RELAY_DEMO=1.");
   return connections(options, async (owner, app) => {
     await marker(owner);
-    await transact(
-      owner,
-      async (tx) => {
-        await tx.$executeRaw`UPDATE demo_seed SET state='building' WHERE key=${DEMO_KEY}`;
-        const tables = await tx.$queryRaw<{ name: string }[]>`
-        SELECT tablename AS name FROM pg_tables WHERE schemaname='public'
-        AND tablename NOT IN ('_prisma_migrations','demo_seed','job_leases') ORDER BY tablename`;
-        const names = tables.map(({ name }) => `public."${name.replaceAll('"', '""')}"`);
-        // Immutable history is discarded only inside this owner transaction on a marked demo database.
-        for (const name of names)
-          await tx.$executeRawUnsafe(`ALTER TABLE ${name} DISABLE TRIGGER USER`);
-        await tx.$executeRawUnsafe(`TRUNCATE ${names.join(",")} RESTART IDENTITY`);
-        for (const name of names)
-          await tx.$executeRawUnsafe(`ALTER TABLE ${name} ENABLE TRIGGER USER`);
-      },
-      { timeoutMs: 30000, maxAttempts: 1 },
-    );
-    return seed(owner, app, options);
+    return demoLease(owner, async () => {
+      const reconcile = await exclusiveJob(owner, "reconcile", async () => {
+        const outbox = await exclusiveJob(owner, "outbox", async () => {
+          await transact(
+            owner,
+            async (tx) => {
+              await tx.$executeRaw`UPDATE demo_seed SET state='building' WHERE key=${DEMO_KEY}`;
+              const names = await demoTables(tx);
+              // Immutable history is discarded only inside this owner transaction on a marked demo database.
+              for (const name of names)
+                await tx.$executeRawUnsafe(`ALTER TABLE ${name} DISABLE TRIGGER USER`);
+              await tx.$executeRawUnsafe(`TRUNCATE ${names.join(",")} RESTART IDENTITY`);
+              for (const name of names)
+                await tx.$executeRawUnsafe(`ALTER TABLE ${name} ENABLE TRIGGER USER`);
+            },
+            { timeoutMs: 30000, maxAttempts: 1 },
+          );
+          return seed(owner, app, options);
+        });
+        if (!outbox.ran) throw new Error("Receipt delivery is running. Retry the reset.");
+        return outbox.result;
+      });
+      if (!reconcile.ran) throw new Error("Reconciliation is running. Retry the reset.");
+      return reconcile.result;
+    });
   });
 }
