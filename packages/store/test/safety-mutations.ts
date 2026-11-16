@@ -118,8 +118,8 @@ const definitions: {
   {
     name: "receipt-lease-lifetime",
     file: "packages/store/src/outbox.ts",
-    before: "AND attempts < ${lifetimeAttemptLimit}\n      AND next_attempt_at",
-    after: "AND next_attempt_at",
+    before: "AND attempts < ${lifetimeAttemptLimit}\n      AND next_attempt_at <= ${at}",
+    after: "AND next_attempt_at <= ${at}",
     test: "leasing directly enforces the lifetime attempt limit",
     testFile: "packages/store/test/outbox.int.test.ts",
   },
@@ -393,8 +393,8 @@ definitions.push(
   {
     name: "receipt-database-clock",
     file: "packages/store/src/outbox.ts",
-    before: "lease_until <= now()",
-    after: "lease_until <= ${at}",
+    before: "AND next_attempt_at <= ${at} AND (lease_until IS NULL OR lease_until <= now())",
+    after: "AND next_attempt_at <= ${at} AND (lease_until IS NULL OR lease_until <= ${at})",
     test: "receipt leases use the database clock",
     testFile: "packages/store/test/outbox.int.test.ts",
   },
@@ -451,6 +451,11 @@ async function run(name: string, selected?: { test: string; testFile?: string })
   return { status: result.status, output };
 }
 
+for (const mutation of mutations) {
+  const source = await readFile(mutation.file, "utf8");
+  if (source.split(mutation.before).length !== 2)
+    throw new Error(`Expected one replacement for ${mutation.name}`);
+}
 const baseline = await run("baseline");
 if (baseline.status !== 0) throw new Error("The baseline failed. No mutation ran.");
 const results = [];
