@@ -5,6 +5,7 @@ import { Brand, Refusal } from "./pieces";
 import { Icon } from "./icons";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Field } from "./ui/field";
 import { InputOTP, InputOTPSlot } from "./ui/input-otp";
 import { ThemeSwitch } from "./theme-switch";
 const people = [
@@ -132,29 +133,30 @@ export function SignIn({ demo }: { demo: boolean }) {
           }}
         >
           {step === "email" ? (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-caption font-semibold" htmlFor="email">
-                Work email
-              </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute start-3 top-3.5">
-                  <Icon name="mail" />
-                </span>
-                <Input
-                  id="email"
-                  className="h-11 ps-9"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                  }}
-                />
-              </div>
-              <input type="hidden" name="type" value="sign-in" />
-            </div>
+            <Field label="Work email">
+              {(control) => (
+                <>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute start-3 top-3.5">
+                      <Icon name="mail" />
+                    </span>
+                    <Input
+                      {...control}
+                      className="h-11 ps-9"
+                      name="email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                      }}
+                    />
+                  </div>
+                  <input type="hidden" name="type" value="sign-in" />
+                </>
+              )}
+            </Field>
           ) : (
             <>
               <input type="hidden" name="email" value={email} />

@@ -11,6 +11,7 @@ import { Avatar, Brand, Refusal } from "./pieces";
 import { Icon, type IconName } from "./icons";
 import { Button } from "./ui/button";
 import { NativeSelect } from "./ui/native-select";
+import { Field } from "./ui/field";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Sidebar } from "./ui/sidebar";
 import { ThemeSwitch } from "./theme-switch";
@@ -191,23 +192,28 @@ export function Workspace({
             </div>
           )}
           {!!profile.teams && profile.teams.length > 1 && (
-            <label className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-2">
-              <span className="text-caption font-semibold">Current team</span>
-              <NativeSelect
-                value={profile.team?.id ?? ""}
-                disabled={selectTeam.isPending}
-                onChange={(event) => {
-                  selectTeam.mutate({ teamId: event.target.value || null });
-                }}
-              >
-                <option value="">Choose a team</option>
-                {profile.teams.map((value) => (
-                  <option value={value.id} key={value.id}>
-                    {value.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
+            <Field
+              label="Current team"
+              className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-2"
+            >
+              {(control) => (
+                <NativeSelect
+                  {...control}
+                  value={profile.team?.id ?? ""}
+                  disabled={selectTeam.isPending}
+                  onChange={(event) => {
+                    selectTeam.mutate({ teamId: event.target.value || null });
+                  }}
+                >
+                  <option value="">Choose a team</option>
+                  {profile.teams?.map((value) => (
+                    <option value={value.id} key={value.id}>
+                      {value.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              )}
+            </Field>
           )}
           {children}
         </main>

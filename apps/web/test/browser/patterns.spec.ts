@@ -3,6 +3,15 @@ import { randomUUID } from "node:crypto";
 import { rpc, signIn } from "./support.ts";
 import { browserState } from "./paths.ts";
 
+test("field hints describe the control that owns them", async ({ page }) => {
+  await signIn(page, "agent");
+  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
+  await page.getByRole("button", { name: "Close lead", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Why was it lost?", exact: true }),
+  ).toHaveAccessibleDescription(/Required, in your own words/);
+});
+
 test("returning to a tab refreshes its open lead and list", async ({ page }) => {
   await signIn(page, "agent");
   await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();

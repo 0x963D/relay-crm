@@ -77,6 +77,20 @@ export default defineConfig(
     },
   },
   {
+    files: ["apps/web/src/components/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            STORE_TESTING,
+            { name: "cn", message: "Import cn from @/lib/utils, the shared control utility path." },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["apps/web/src/app/**"],
     rules: {
       "no-restricted-imports": [

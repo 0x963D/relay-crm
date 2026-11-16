@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Field } from "./ui/field";
 import { Textarea } from "./ui/textarea";
 import { NativeSelect } from "./ui/native-select";
 import { Checkbox } from "./ui/checkbox";
@@ -282,38 +283,35 @@ export function LeadComposer({
                 )}
                 {(mode === "callback" || callback) && (
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1">
-                      <span className="text-caption font-semibold">Day</span>
-                      <Input
-                        type="date"
-                        aria-label="Day"
-                        aria-describedby="callback-day-label"
-                        required
-                        value={day}
-                        onChange={(event) => {
-                          setDay(event.target.value);
-                        }}
-                      />
-                      <span id="callback-day-label" className="block text-xs text-muted-foreground">
-                        {selectedDay ? dayLabel(selectedDay, zone) : "Choose a day"}
-                      </span>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-caption font-semibold">Time</span>
-                      <Input
-                        type="time"
-                        aria-label="Time"
-                        aria-describedby="callback-time-zone"
-                        required
-                        value={time}
-                        onChange={(event) => {
-                          setTime(event.target.value);
-                        }}
-                      />
-                      <span id="callback-time-zone" className="block text-xs text-muted-foreground">
-                        {zone}
-                      </span>
-                    </label>
+                    <Field
+                      label="Day"
+                      hint={selectedDay ? dayLabel(selectedDay, zone) : "Choose a day"}
+                    >
+                      {(control) => (
+                        <Input
+                          {...control}
+                          type="date"
+                          required
+                          value={day}
+                          onChange={(event) => {
+                            setDay(event.target.value);
+                          }}
+                        />
+                      )}
+                    </Field>
+                    <Field label="Time" hint={zone}>
+                      {(control) => (
+                        <Input
+                          {...control}
+                          type="time"
+                          required
+                          value={time}
+                          onChange={(event) => {
+                            setTime(event.target.value);
+                          }}
+                        />
+                      )}
+                    </Field>
                   </div>
                 )}
               </div>
@@ -321,46 +319,48 @@ export function LeadComposer({
             {(mode === "attempt" ||
               mode === "note" ||
               (mode === "close" && closing === "lost")) && (
-              <label className="block space-y-1">
-                <span className="text-caption font-semibold">
-                  {mode === "close" ? "Why was it lost?" : "Note"}
-                </span>
-                <Textarea
-                  aria-label={mode === "close" ? "Why was it lost?" : "Note"}
-                  required
-                  value={note}
-                  onChange={(event) => {
-                    setNote(event.target.value);
-                  }}
-                  rows={1}
-                  className="min-h-10"
-                />
-                {mode === "close" && (
-                  <span className="block text-xs text-muted-foreground">
-                    Required, in your own words. There are no categories to pick. The reason is
-                    saved on the timeline with your name.
-                  </span>
+              <Field
+                label={mode === "close" ? "Why was it lost?" : "Note"}
+                hint={
+                  mode === "close"
+                    ? "Required, in your own words. There are no categories to pick. The reason is saved on the timeline with your name."
+                    : undefined
+                }
+              >
+                {(control) => (
+                  <Textarea
+                    {...control}
+                    required
+                    value={note}
+                    onChange={(event) => {
+                      setNote(event.target.value);
+                    }}
+                    rows={1}
+                    className="min-h-10"
+                  />
                 )}
-              </label>
+              </Field>
             )}
             {mode === "close" && closing === "dead" && (
-              <label className="block space-y-1">
-                <span className="text-caption font-semibold">Why is this lead dead?</span>
-                <NativeSelect
-                  value={deadReason}
-                  onChange={(event) => {
-                    const reason = DEAD_REASONS.find((value) => value === event.target.value);
-                    if (reason) setDeadReason(reason);
-                  }}
-                >
-                  <option value="duplicate">Duplicate</option>
-                  <option value="wrongNumber">Wrong number</option>
-                  <option value="doNotContact">Do not contact</option>
-                </NativeSelect>
-                <span className="block text-xs text-muted-foreground">
-                  Wrong number needs an attempt in this assignment first.
-                </span>
-              </label>
+              <Field
+                label="Why is this lead dead?"
+                hint="Wrong number needs an attempt in this assignment first."
+              >
+                {(control) => (
+                  <NativeSelect
+                    {...control}
+                    value={deadReason}
+                    onChange={(event) => {
+                      const reason = DEAD_REASONS.find((value) => value === event.target.value);
+                      if (reason) setDeadReason(reason);
+                    }}
+                  >
+                    <option value="duplicate">Duplicate</option>
+                    <option value="wrongNumber">Wrong number</option>
+                    <option value="doNotContact">Do not contact</option>
+                  </NativeSelect>
+                )}
+              </Field>
             )}
             {mode === "close" && (
               <dl className="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-caption @lg/detail:grid-cols-label-value">
