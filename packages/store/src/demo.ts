@@ -439,6 +439,18 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       { actor: callum, remaining: 12 },
       { actor: noor, remaining: 7 },
     ];
+    const poolNames = [
+      "Dalia Mansour",
+      "Nico Valente",
+      "Esme Halvorsen",
+      "Adil Benali",
+      "Lucia Varela",
+      "Emeka Adeoye",
+      "Mina Sato",
+      "Rana Yilmaz",
+      "Benoit Morel",
+    ];
+    let waitingPerson = 0;
     let generated = 0;
     for (const [course, source, received, unassigned, contacted, won] of targets) {
       const row = existing.rows.find(
@@ -451,7 +463,10 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         throw new Error("Named demo stories exceed the campaign totals.");
       for (let n = row?.received ?? 0; n < received; n++) {
         const number = generated++;
-        const name = `${required(firstNames[number % firstNames.length])} ${required(surnames[Math.floor(number / firstNames.length)])}`;
+        const name =
+          waiting > 0
+            ? required(poolNames[waitingPerson++])
+            : `${required(firstNames[number % firstNames.length])} ${required(surnames[(number * 7 + Math.floor(number / firstNames.length)) % surnames.length])}`;
         const id = await lead(name, course, source);
         if (waiting > 0) {
           waiting--;
