@@ -1,3 +1,5 @@
+import { clientAddress } from "./client-address.ts";
+import { equalSecret } from "./payments/webhook.ts";
 import { createHash } from "node:crypto";
 import type { Store } from "@relay/store";
 
@@ -25,4 +27,18 @@ export function rateLimited(): Response {
       headers: { "retry-after": String(RATE_WINDOW_SECONDS) },
     },
   );
+}
+
+export async function authorizeJob(
+  store: Pick<Store, "takeRequestLimit">,
+  request: Request,
+  route: string,
+  secret: string,
+  trustedProxyCount: number,
+): Promise<Response | null> {
+  if (equalSecret(request.headers.get("authorization") ?? "", `Bearer ${secret}`)) return null;
+  const allowed = await allowRequest(store, [
+    { key: limitKey(`job:${route}:failed`, clientAddress(request, trustedProxyCount)), max: 5 },
+  ]);
+  return allowed ? new Response(null, { status: 401 }) : rateLimited();
 }

@@ -97,18 +97,22 @@ function report(outcome: TransactionReport): void {
  * collision on a race constraint all mean "my snapshot went stale", and running the whole body
  * again on a fresh snapshot converges. After the last attempt the original error propagates.
  */
-export async function transact<T>(db: Db, body: (tx: Tx) => Promise<T>): Promise<T> {
+export async function transact<T>(
+  db: Db,
+  body: (tx: Tx) => Promise<T>,
+  options?: { readonly timeoutMs: number; readonly maxAttempts: number },
+): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
     try {
       const result = await db.$transaction(body, {
         isolationLevel: "Serializable",
         maxWait: 2_000,
-        timeout: 5_000,
+        timeout: options?.timeoutMs ?? 5_000,
       });
       report({ attempts: attempt, committed: true });
       return result;
     } catch (error) {
-      if (attempt === MAX_ATTEMPTS || !isStaleSnapshot(error)) {
+      if (attempt === (options?.maxAttempts ?? MAX_ATTEMPTS) || !isStaleSnapshot(error)) {
         report({ attempts: attempt, committed: false });
         throw error;
       }

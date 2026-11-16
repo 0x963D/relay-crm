@@ -66,6 +66,7 @@ import {
 } from "./sandbox.ts";
 import { workLead, workQueue, leadDetail as getLead, campaignFunnel } from "./work.ts";
 import type { UserId, LeadWork } from "@relay/domain";
+import { exclusiveJob } from "./jobs.ts";
 import { connect } from "./tx.ts";
 
 export type { LeadListItem };
@@ -78,6 +79,8 @@ export function openStore(config: {
 }) {
   const db = connect(config.connectionString);
   return {
+    exclusiveJob: <T>(route: "outbox" | "reconcile", run: () => Promise<T>) =>
+      exclusiveJob(db, route, run),
     runOutbox: (deliver: ReceiptDelivery, options?: OutboxOptions) =>
       runOutbox(db, deliver, { ...config.receipts, ...options }),
     leaseReceipt: (id: string, at: Date, leaseMs: number) =>
