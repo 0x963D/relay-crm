@@ -363,3 +363,43 @@ test("completion independently refuses an editor approval inserted without the i
     ),
   ).rejects.toMatchObject({ code: "23514", constraint: "manual_approvals_required" });
 });
+
+test("makers may not reject and only the recorder may cancel", async ({ db }) => {
+  const w = await setup(db);
+  await expect(
+    db.store.decideManualPayment(
+      w.recorder,
+      { ...w.input, decision: "reject", reason: "Wrong" },
+      requestId,
+    ),
+  ).rejects.toMatchObject({ code: "accessDenied" });
+  await db.store.editManualPayment(
+    w.b,
+    { ...w.input, money, receiptHash: w.terms.receiptHash, reference: null },
+    requestId,
+  );
+  const input = { ...w.input, version: 1 };
+  await expect(
+    db.store.decideManualPayment(w.b, { ...input, decision: "reject", reason: "Wrong" }, requestId),
+  ).rejects.toMatchObject({ code: "accessDenied" });
+  await expect(
+    db.store.decideManualPayment(w.a, { ...input, decision: "cancel", reason: "Wrong" }, requestId),
+  ).rejects.toMatchObject({ code: "accessDenied" });
+  expect((await db.store.getPayment(w.b, w.id)).actions).toMatchObject({
+    reject: false,
+    cancel: false,
+  });
+  expect((await db.store.getPayment(w.recorder, w.id)).actions).toMatchObject({
+    reject: false,
+    cancel: true,
+  });
+  expect((await db.store.getPayment(w.a, w.id)).actions).toMatchObject({
+    reject: true,
+    cancel: false,
+  });
+  await db.store.decideManualPayment(
+    w.recorder,
+    { ...input, decision: "cancel", reason: "Wrong" },
+    requestId,
+  );
+});

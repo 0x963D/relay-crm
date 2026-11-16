@@ -869,8 +869,11 @@ export async function decideManualPayment(
     const current = await currentActor(tx, actor);
     const row = await waitingPayment(tx, current, input);
     if (
-      row.recordedById !== current.userId &&
-      recordScope(current, "payment", "approve").kind !== "all"
+      input.decision === "cancel"
+        ? row.recordedById !== current.userId
+        : row.recordedById === current.userId ||
+          row.termsSetById === current.userId ||
+          recordScope(current, "payment", "approve").kind !== "all"
     )
       throw new AccessError("accessDenied");
     const at = new Date();
@@ -988,8 +991,8 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
             : row.status !== "pendingApproval"
               ? "refreshConflict"
               : null;
-  const mayDecide =
-    row.status === "pendingApproval" && (row.recordedById === actor.userId || mayApprove);
+  const waiting = row.status === "pendingApproval";
+  const maker = row.recordedById === actor.userId || row.termsSetById === actor.userId;
   const receipt = await receiptDetail(tx, row.id);
   const editable =
     row.status === "pendingApproval" &&
@@ -1032,8 +1035,8 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
         !receipt.processing,
       approve: row.method === "manual" && refusal === null,
       approvalRefusal: refusal,
-      reject: mayDecide,
-      cancel: mayDecide,
+      reject: waiting && mayApprove && !maker,
+      cancel: waiting && row.recordedById === actor.userId,
       roleVersion: ownUser.roleVersion,
     },
   };
