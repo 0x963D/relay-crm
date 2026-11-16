@@ -5,7 +5,7 @@ It is a local build. Nothing has been published. The name is a working title.
 
 ## Run the demo
 
-The seeded queue shows all five groups from 00:00 until 18:30 in the configured local time zone, with two due-today callbacks before 17:30.
+The seeded queue shows all five groups from 00:00 until 22:00 in the configured local time zone, with two due-today callbacks before 20:00.
 
 Install Docker and Docker Compose, then run this command in the repository.
 

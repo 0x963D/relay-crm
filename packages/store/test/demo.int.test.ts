@@ -34,6 +34,15 @@ test("the operation-built demo covers the board, balances its postings and seeds
     "later",
   ] as const)
     expect(queue[key]).toHaveLength(2);
+  for (const lead of queue.notYetCalled) {
+    expect(lead.assignedAt).not.toBeNull();
+    expect(today.getTime() - (lead.assignedAt?.getTime() ?? 0)).toBeLessThan(86400000);
+  }
+  const arrivals = await db.rows(
+    "SELECT created_at FROM leads WHERE status='new' ORDER BY created_at DESC LIMIT 12",
+  );
+  const minutes = arrivals.map((row) => new Date(String(row.created_at)).getUTCMinutes());
+  expect(new Set(minutes).size).toBeGreaterThan(5);
   expect(
     await db.rows("SELECT DISTINCT status,reason FROM payments ORDER BY status,reason"),
   ).toEqual([
@@ -208,7 +217,7 @@ test.for([
     await seedDemo({ ...options(db), today: midnight, timeZone });
     const userId = UserId.parse(DEMO_PEOPLE.agent.id);
     if (!userId) throw new Error("Missing agent");
-    for (const minutes of [1, 720, 1049, 1050, 1051, 1109, 1110, 1111, 1439]) {
+    for (const minutes of [1, 720, 1199, 1200, 1201, 1319, 1320, 1321, 1439]) {
       const queue = await db.store.workQueue(
         { userId, role: "agent", team: null },
         {
@@ -219,8 +228,8 @@ test.for([
         },
       );
       expect(queue.counts).toEqual({
-        overdueCallbacks: 2 + (minutes > 1050 ? 1 : 0) + (minutes > 1110 ? 1 : 0),
-        dueToday: 2 - (minutes > 1050 ? 1 : 0) - (minutes > 1110 ? 1 : 0),
+        overdueCallbacks: 2 + (minutes > 1200 ? 1 : 0) + (minutes > 1320 ? 1 : 0),
+        dueToday: 2 - (minutes > 1200 ? 1 : 0) - (minutes > 1320 ? 1 : 0),
         noCallbackSet: 2,
         notYetCalled: 2,
         later: 2,

@@ -136,11 +136,18 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       data: { email: "leila.farouk@example.com", reason: "Invented demo suppression" },
     });
   });
-  const [bounds] = await owner.$queryRaw<{ end: Date; firstCall: Date; secondCall: Date }[]>`
+  const [bounds] = await owner.$queryRaw<
+    { end: Date; firstCall: Date; secondCall: Date; recent: Date }[]
+  >`
     SELECT (date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
         + interval '1 day') AT TIME ZONE ${options.timeZone ?? "UTC"} AS end,
-      (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date + time '17:30') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS "firstCall",
-      (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date + time '18:30') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS "secondCall"`;
+      (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date + time '20:00') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS "firstCall",
+      (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date + time '22:00') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS "secondCall",
+      (CASE WHEN (${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::time < time '10:00'
+        THEN date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"}) - interval '1 day' + interval '17 hours'
+        ELSE LEAST(${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"} - interval '30 minutes',
+          date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"}) + interval '17 hours')
+      END AT TIME ZONE ${options.timeZone ?? "UTC"}) AS recent`;
   const nextDay = required(bounds).end;
   const history = await owner.$queryRaw<{ at: Date }[]>`
     SELECT (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date
@@ -327,13 +334,25 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
   ] as const;
   try {
     for (const item of queue) {
-      const id = await lead(item.name, item.course, "source" in item ? item.source : "metaLeadAds");
+      const id = await lead(
+        item.name,
+        item.course,
+        "source" in item ? item.source : "metaLeadAds",
+        undefined,
+        "note" in item
+          ? undefined
+          : new Date(
+              required(bounds).recent.getTime() - (item.name === "Samir Fadel" ? 35 : 25) * 60000,
+            ),
+      );
       await assign(id);
       if ("note" in item) {
         if ("twice" in item) await attempt(id, "No answer", false);
         await attempt(id, item.note, item.spoke, "callback" in item ? item.callback : undefined);
       }
     }
+    const arrivalMinutes = [8, 19, 23, 30, 46, 58, 72, 80, 87, 99, 105, 118, 2400, 2426];
+    let arrival = 0;
     for (const [name, course, source, previous] of [
       ["Luca Ferraro", "Spanish beginners", "metaLeadAds"],
       ["Nadia Rahimi", "IELTS evening", "metaLeadAds"],
@@ -355,7 +374,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         course,
         source,
         previous,
-        new Date(options.today.getTime() - (2 + (leadNumber % 14)) * 3600000),
+        new Date(options.today.getTime() - required(arrivalMinutes[arrival++]) * 60000),
       );
     const accountIds = new Map<string, AccountId>();
     const accountOpenedAt = new Map<string, Date>();
