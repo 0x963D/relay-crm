@@ -72,6 +72,7 @@ function compose(env: Env): Composition {
       },
     ),
     webForm: createWebFormEndpoint({
+      enabled: env.publicForm,
       intake: store.intake,
       limits: store,
       trustedProxyCount: env.trustedProxyCount,

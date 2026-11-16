@@ -19,6 +19,7 @@ import { readBody, status } from "../http.ts";
 import type { Log } from "../log.ts";
 
 export interface WebFormDeps {
+  readonly enabled?: boolean;
   readonly intake: Intake;
   readonly limits: Pick<Store, "takeRequestLimit">;
   readonly trustedProxyCount: number;
@@ -88,6 +89,7 @@ function invalid(errors: Readonly<Record<string, string>>): Response {
  * `submissionId` again is safe.
  */
 export function createWebFormEndpoint({
+  enabled = true,
   intake,
   limits,
   trustedProxyCount,
@@ -97,6 +99,7 @@ export function createWebFormEndpoint({
   return {
     POST: (request) =>
       protectHttp("webForm.failed", async () => {
+        if (!enabled) return status(404);
         if (
           !(await allowRequest(limits, [
             { key: limitKey("form:client", clientAddress(request, trustedProxyCount)), max: 10 },

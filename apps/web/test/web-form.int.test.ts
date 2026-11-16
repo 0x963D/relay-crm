@@ -6,6 +6,22 @@ import { createWebFormEndpoint } from "../src/server/intake/web-form.ts";
 
 const FORM_URL = "https://crm.example/api/intake/form";
 
+test("a disabled public form answers 404 without storing data or consuming a budget", async ({
+  db,
+}) => {
+  const form = createWebFormEndpoint({
+    enabled: false,
+    intake: db.store.intake,
+    limits: db.store,
+    trustedProxyCount: 0,
+    now: () => new Date(),
+    log: () => undefined,
+  });
+  expect((await form.POST(submit({ email: "disabled@example.com" }))).status).toBe(404);
+  expect(await db.counts()).toEqual({ leads: 0, intakeEvents: 0, activities: 0 });
+  expect(await db.rows("SELECT * FROM auth_request_limits")).toEqual([]);
+});
+
 test("an intake database error logs its class, code and request ID without the submitted row", async ({
   db,
 }) => {

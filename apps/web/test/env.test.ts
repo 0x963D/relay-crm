@@ -23,6 +23,7 @@ describe("parseEnv", () => {
   it("reads the database URL, with Meta and the dev user off when their variables are unset", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
       smtp: null,
+      publicForm: true,
       timeZone: "UTC",
       demo: false,
       outboxSecret: null,

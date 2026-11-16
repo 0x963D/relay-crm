@@ -68,6 +68,8 @@ including forced races and catalog checks for unique indexes, grants and trigger
 named test to fail, restores the source in `finally`, and reruns the unchanged tests.
 
 The public form accepts anonymous submissions, including submissions from other origins.
+Set `RELAY_PUBLIC_FORM=0` to turn the form route off with a 404 response. It defaults to on.
+Run `pnpm exec dotenv -- vitest run --project integration apps/web/test/web-form.int.test.ts` to check the disabled route.
 By design, a new enquiry for a lost lead returns it to the pool and removes its owner.
 The intake system actor audits that change. No intake source reopens a dead lead, regardless
 of whether its reason is duplicate, wrong number or do not contact.

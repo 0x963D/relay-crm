@@ -16,6 +16,7 @@ const Secret = z
   .refine((value) => value !== EXAMPLE_AUTH_SECRET, "must not use the secret from .env.example");
 
 const Variables = z.object({
+  RELAY_PUBLIC_FORM: z.enum(["0", "1"]).default("1"),
   RELAY_RECEIPT_LIFETIME_ATTEMPTS: z.coerce
     .number()
     .int()
@@ -101,6 +102,7 @@ export interface PaymentEnv {
 }
 
 export interface Env {
+  readonly publicForm: boolean;
   readonly smtp: Extract<AuthEnv["delivery"], { kind: "smtp" }> | null;
   readonly timeZone: string;
   readonly demo: boolean;
@@ -219,6 +221,7 @@ export function parseEnv(
   const smtp = smtpEnv(parsed.data);
   return {
     smtp,
+    publicForm: parsed.data.RELAY_PUBLIC_FORM === "1",
     timeZone: parsed.data.RELAY_TIME_ZONE,
     demo: parsed.data.RELAY_DEMO === "1",
     receipts: {
