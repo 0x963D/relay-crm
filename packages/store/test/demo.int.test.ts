@@ -14,6 +14,68 @@ const options = (db: TestDatabase) => ({
   deliver: () => Promise.resolve({ state: "sent" as const }),
 });
 
+test("seeded checkouts obey their lifetime and receipt examples survive a successful worker", async ({
+  db,
+}) => {
+  await seedDemo(options(db));
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS count FROM sandbox_checkouts c JOIN payments p ON p.id=c.payment_id WHERE c.expires_at<>p.created_at+interval '24 hours'",
+    ),
+  ).toEqual([{ count: 0 }]);
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS count FROM payment_events e JOIN sandbox_checkouts c ON c.payment_id=e.payment_id WHERE e.detail->>'providerStatus'='expired' AND e.at<c.expires_at",
+    ),
+  ).toEqual([{ count: 0 }]);
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS count FROM payments p JOIN sandbox_checkouts c ON c.payment_id=p.id WHERE p.status='checkoutCreated' AND (c.expires_at<=$1 OR p.created_at>$1)",
+      [today],
+    ),
+  ).toEqual([{ count: 0 }]);
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS count FROM receipt_attempts a JOIN outbox o ON o.id=a.outbox_id JOIN payments p ON p.id=o.payment_id WHERE a.started_at<p.decided_at OR a.started_at>p.decided_at+interval '3 hours'",
+    ),
+  ).toEqual([{ count: 0 }]);
+  const before = await db.rows(
+    "SELECT payment_id,state,attempts FROM outbox WHERE state<>'sent' ORDER BY payment_id",
+  );
+  await db.store.runOutbox(() => Promise.resolve({ state: "sent" }), { at: today });
+  expect(
+    await db.rows(
+      "SELECT payment_id,state,attempts FROM outbox WHERE state<>'sent' ORDER BY payment_id",
+    ),
+  ).toEqual(before);
+});
+
+test.for([0, 1, 2, 3, 4, 5, 6])(
+  "demo payment groups have a believable row on weekday offset %s",
+  async (offset, { db }) => {
+    const at = new Date(Date.UTC(2031, 6, 14 + offset, 0, 0));
+    await seedDemo({ ...options(db), today: at });
+    const groups = await db.rows(
+      "SELECT status,count(*)::int AS count FROM payments WHERE status IN ('pendingApproval','checkoutCreated','needsReview') OR decided_at>=date_trunc('week',$1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' GROUP BY status",
+      [at],
+    );
+    for (const status of ["pendingApproval", "checkoutCreated", "needsReview", "rejected"])
+      expect(groups.find((row) => row.status === status)?.count).toBeGreaterThan(0);
+    expect(
+      await db.rows(
+        "SELECT count(*)::int AS count FROM payments WHERE created_at>$1 OR decided_at>$1",
+        [at],
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      await db.rows(
+        "WITH ordered AS (SELECT account_id, lag(account_id) OVER (PARTITION BY status ORDER BY created_at DESC,id DESC) AS previous FROM payments WHERE status IN ('pendingApproval','checkoutCreated','needsReview') OR decided_at>=date_trunc('week',$1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') SELECT count(*)::int AS count FROM ordered WHERE account_id=previous",
+        [at],
+      ),
+    ).toEqual([{ count: 0 }]);
+  },
+);
+
 test("the operation-built demo covers the board, balances its postings and seeds only once", async ({
   db,
 }) => {
@@ -266,7 +328,7 @@ test.for(["Asia/Tokyo", "America/Los_Angeles"])(
       expect(at.getTime()).toBeLessThan(today.getTime());
     }
     const working = await db.rows(
-      "SELECT at FROM activities WHERE kind IN ('attempt','note','callback','closure','assignment') UNION ALL SELECT created_at AS at FROM payments UNION ALL SELECT at FROM payment_approvals UNION ALL SELECT at FROM ledger_transactions UNION ALL SELECT started_at AS at FROM receipt_attempts",
+      "SELECT at FROM activities WHERE kind IN ('attempt','note','callback','closure','assignment') UNION ALL SELECT created_at AS at FROM payments WHERE method='manual' UNION ALL SELECT at FROM payment_approvals",
     );
     for (const row of working) {
       const at = new Date(String(row.at));
@@ -418,17 +480,14 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
   }
 });
 
-test("demo keeps an exhausted receipt failed and schedules a separate retry later today", async ({
-  db,
-}) => {
+test("demo keeps failed and capped receipts visible until an explicit retry", async ({ db }) => {
   await seedDemo(options(db));
   const failed = await db.rows(
     "SELECT payment_id,attempts,next_attempt_at FROM outbox WHERE state='failed' ORDER BY attempts DESC",
   );
   expect(failed).toHaveLength(2);
   expect(failed[0]).toMatchObject({ attempts: 12, next_attempt_at: null });
-  expect(failed[1]).toMatchObject({ attempts: 1 });
-  expect(new Date(String(failed[1]?.next_attempt_at)).getTime()).toBeGreaterThan(today.getTime());
+  expect(failed[1]).toMatchObject({ attempts: 4, next_attempt_at: null });
   expect(
     await db.store.runOutbox(() => Promise.resolve({ state: "sent" }), {
       at: new Date(today.getTime() + 300000),

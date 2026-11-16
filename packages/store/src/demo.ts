@@ -156,9 +156,9 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
   let paymentTime = required(history[7]).at;
   const clock = () => paymentTime;
   const paymentTimes = new Map<PaymentId, Date>();
-  const advance = (id: PaymentId) => {
+  const advance = (id: PaymentId, milliseconds = 1200000) => {
     signal.throwIfAborted();
-    paymentTime = new Date(required(paymentTimes.get(id)).getTime() + 1200000);
+    paymentTime = new Date(required(paymentTimes.get(id)).getTime() + milliseconds);
     paymentTimes.set(id, paymentTime);
   };
   const stories = new Map<LeadId, Date>();
@@ -277,7 +277,6 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         ...(callbackAt ? { callback: { kind: "set", at: callbackAt } } : {}),
       },
     });
-  const dueToday = new Date(nextDay.getTime() - 1);
   const queue = [
     {
       name: "Hye-jin Park",
@@ -618,9 +617,10 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       kind: "first" | "repeat",
       mode: SandboxMode,
       by = manager,
-      expired = false,
+      createdAt?: Date,
     ) {
       startPayment(name);
+      if (createdAt) paymentTime = createdAt;
       const money = { minor: amount, currency: "GBP" } as const;
       const payment = await store.createPayment(
         by,
@@ -629,12 +629,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         randomUUID(),
       );
       const terms = await store.checkoutTerms(by, payment.id);
-      const checkout = await store.createSandboxCheckout({
-        ...terms,
-        expiresAt: expired
-          ? new Date(paymentTime.getTime() + 300000)
-          : new Date(nextDay.getTime() + day),
-      });
+      const checkout = await store.createSandboxCheckout(terms);
       paymentTimes.set(payment.id, paymentTime);
       return { id: payment.id, money, token: required(checkout.token) };
     }
@@ -642,8 +637,9 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       id: PaymentId,
       money: { readonly minor: bigint; readonly currency: "GBP" },
       status: "completed" | "expired" = "completed",
+      milliseconds = 1200000,
     ) {
-      advance(id);
+      advance(id, milliseconds);
       return store.receivePaymentWebhook({
         paymentId: id,
         eventId: randomUUID(),
@@ -654,16 +650,23 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
     const retrying = await completedManual("Jonas Weber", 39500n, "first");
     deliveryStates.set(retrying, "failed");
     await completedManual("Jonas Weber", 39500n, "repeat", true);
-    const recovered = await card("Jonas Weber", 39500n, "repeat", "drop");
+    const recovered = await card(
+      "Jonas Weber",
+      39500n,
+      "repeat",
+      "drop",
+      manager,
+      required(bounds).recent,
+    );
     await store.paySandboxCheckout(recovered.token);
-    advance(recovered.id);
+    advance(recovered.id, options.today.getTime() - 120000 - paymentTime.getTime());
     const token = required(await store.claimPaymentCheck(recovered.id, clock(), 60000));
     const paid = required(await store.getSandboxCheckout(recovered.id));
     await store.finishPaymentCheck(recovered.id, token, {
       status: "completed",
       money: { minor: paid.amount, currency: "GBP" },
     });
-    await observe(recovered.id, recovered.money);
+    await observe(recovered.id, recovered.money, "completed", 60000);
     const duplicate = await card("Hana Kobayashi", 39500n, "first", "twice");
     await store.paySandboxCheckout(duplicate.token);
     const event = {
@@ -686,18 +689,32 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
     const suppressed = await card("Leila Farouk", 72000n, "first", "normal");
     await store.paySandboxCheckout(suppressed.token);
     await observe(suppressed.id, suppressed.money);
-    const mismatch = await card("Jonas Weber", 39500n, "repeat", "normal");
+    const mismatch = await card(
+      "Jonas Weber",
+      39500n,
+      "repeat",
+      "normal",
+      manager,
+      new Date(options.today.getTime() - 30000),
+    );
     await store.paySandboxCheckout(mismatch.token);
-    await observe(mismatch.id, { minor: 35900n, currency: "GBP" });
-    const late = await card("Tariq Aziz", 48000n, "first", "drop", noor, true);
-    advance(late.id);
+    await observe(mismatch.id, { minor: 35900n, currency: "GBP" }, "completed", 10000);
+    const late = await card("Tariq Aziz", 48000n, "first", "drop", noor);
+    advance(late.id, day + 1200000);
     const expiryCheck = required(await store.claimPaymentCheck(late.id, clock(), 60000));
     await store.finishPaymentCheck(late.id, expiryCheck, { status: "expired", money: late.money });
     await observe(late.id, late.money);
-    const expired = await card("Tariq Aziz", 48000n, "first", "drop", noor, true);
-    await observe(expired.id, expired.money, "expired");
-    await card("Marek Novak", 48000n, "first", "normal", agent);
-    await card("Chiara Bianchi", 24000n, "repeat", "normal", ffion);
+    const expired = await card("Leila Farouk", 72000n, "repeat", "drop", agent);
+    await observe(expired.id, expired.money, "expired", day + 1200000);
+    await card("Marek Novak", 48000n, "first", "normal", agent, required(bounds).recent);
+    await card(
+      "Chiara Bianchi",
+      24000n,
+      "repeat",
+      "normal",
+      ffion,
+      new Date(required(bounds).recent.getTime() - 60000),
+    );
     const yusuf = await manual("Yusuf Demir", 47900n, "first", actor("Tomasz Zielinski"));
     advance(yusuf.id);
     await store.editManualPayment(
@@ -715,7 +732,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
     await manual("Isabela Duarte", 115000n, "first");
     const mireille = await manual("Mireille Dubois", 39500n, "repeat", noor);
     const pedro = await manual("Pedro Alves", 24000n, "repeat");
-    advance(pedro.id);
+    advance(pedro.id, options.today.getTime() - paymentTime.getTime());
     await store.decideManualPayment(
       accountant,
       {
@@ -740,20 +757,26 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
           }
         : options.deliver(message, signal);
     };
-    const receiptStart = new Date(required(history[13]).at.getTime() + 6 * 3600000);
-    await store.runOutbox(delivery, { at: receiptStart, signal });
-    await transact(app, (tx) =>
-      tx.outbox.update({ where: { paymentId: retrying }, data: { nextAttemptAt: dueToday } }),
-    );
-    for (let cycle = 0; cycle < 3; cycle++) {
-      const cycleStart = receiptStart.getTime() + cycle * 45 * 60000;
-      if (cycle > 0) {
-        paymentTime = new Date(cycleStart);
-        await store.requeueReceipt(manager, exhausted, randomUUID());
-        await store.runOutbox(delivery, { at: paymentTime, signal });
-      }
-      for (const minutes of [5, 15, 35])
-        await store.runOutbox(delivery, { at: new Date(cycleStart + minutes * 60000), signal });
+    const completed = await app.payment.findMany({
+      where: { status: "completed" },
+      select: { id: true, decidedAt: true },
+    });
+    const receiptJobs = completed
+      .flatMap((payment) => {
+        const cycles = payment.id === exhausted ? [0, 45, 90] : [0];
+        return cycles.flatMap((cycle) =>
+          [0, 5, 15, 35].map((minutes) => ({
+            at: new Date(required(payment.decidedAt).getTime() + (1 + cycle + minutes) * 60000),
+            requeue: cycle > 0 && minutes === 0,
+          })),
+        );
+      })
+      .sort((a, b) => a.at.getTime() - b.at.getTime());
+    for (const job of receiptJobs) {
+      if (job.at > options.today) continue;
+      paymentTime = job.at;
+      if (job.requeue) await store.requeueReceipt(manager, exhausted, randomUUID());
+      await store.runOutbox(delivery, { at: paymentTime, signal });
     }
     await transact(owner, async (tx) => {
       const team = await tx.team.create({ data: { name: "Evening courses", kind: "sales" } });
