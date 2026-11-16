@@ -26,12 +26,6 @@ function digest(value: unknown): string {
 }
 
 async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
-  const member = await tx.membership.findUnique({
-    where: { userId_teamId: { userId: to.ownerId, teamId: to.teamId } },
-    include: { user: true, team: true },
-  });
-  if (member?.user.role !== "agent" || member.team.kind !== "sales")
-    throw new AccessError("invalidAgent");
   const scope = recordScope(actor, "lead", "assign");
   if (
     scope.kind === "none" ||
@@ -39,6 +33,12 @@ async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
   ) {
     throw new AccessError("accessDenied");
   }
+  const member = await tx.membership.findUnique({
+    where: { userId_teamId: { userId: to.ownerId, teamId: to.teamId } },
+    include: { user: true, team: true },
+  });
+  if (member?.user.role !== "agent" || member.team.kind !== "sales")
+    throw new AccessError("invalidAgent");
 }
 
 export async function getLead(db: Db, actor: Actor, id: LeadId): Promise<Lead> {

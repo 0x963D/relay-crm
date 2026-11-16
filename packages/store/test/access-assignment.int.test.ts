@@ -388,3 +388,12 @@ test("a replay returns only the first result after scope and role change", async
   await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
   expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
 });
+
+test("foreign target membership and non-membership have the same refusal", async ({ db }) => {
+  const w = await world(db, "teamLead");
+  for (const to of [w.other, { ownerId: w.agent.ownerId, teamId: w.other.teamId }]) {
+    await expect(db.store.assignPool(w.actor, [w.pool], to)).rejects.toMatchObject({
+      code: "accessDenied",
+    });
+  }
+});
