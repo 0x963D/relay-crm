@@ -266,7 +266,7 @@ export function LeadComposer({
               <div
                 className={cn(
                   "grid items-start gap-3",
-                  mode === "attempt" && "@lg/detail:grid-cols-[auto_1fr]",
+                  mode === "attempt" && "@lg/detail:grid-cols-label-value",
                 )}
               >
                 {mode === "attempt" && (
@@ -363,7 +363,7 @@ export function LeadComposer({
               </label>
             )}
             {mode === "close" && (
-              <dl className="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-caption @lg/detail:grid-cols-[auto_1fr]">
+              <dl className="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-caption @lg/detail:grid-cols-label-value">
                 <dt className="font-semibold">Won</dt>
                 <dd>Creates an account and keeps this history. Final.</dd>
                 <dt className="font-semibold">Lost</dt>

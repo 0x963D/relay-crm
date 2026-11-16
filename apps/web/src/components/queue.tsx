@@ -231,7 +231,7 @@ export function QueueScreen({
                       <span className="hidden @md/queue:block">
                         <Avatar name={item.name ?? "Unknown"} large />
                       </span>
-                      <div className="grid min-w-0 flex-1 gap-1 @md/queue:grid-cols-[1fr_auto]">
+                      <div className="grid min-w-0 flex-1 gap-1 @md/queue:grid-cols-value-action">
                         <Link
                           href={`${basePath}/leads/${item.id}`}
                           scroll={false}

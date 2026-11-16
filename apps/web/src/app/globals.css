@@ -70,6 +70,8 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 @theme {
+  --color-canvas: Canvas;
+  --color-canvas-foreground: CanvasText;
   --color-waiting: light-dark(#fff3b0, #3b3205);
   --color-waiting-foreground: light-dark(#5c4700, #ffe682);
   --color-waiting-border: light-dark(#e6d067, #6e5e12);
@@ -88,6 +90,18 @@
   --text-title--line-height: 1.875rem;
   --spacing-rail: 14.5rem;
   --spacing-queue: 30.5rem;
+}
+@utility grid-cols-label-value {
+  grid-template-columns: auto 1fr;
+}
+@utility grid-cols-value-action {
+  grid-template-columns: 1fr auto;
+}
+@utility grid-cols-alert {
+  grid-template-columns: 0 1fr;
+}
+@utility grid-cols-alert-icon {
+  grid-template-columns: calc(var(--spacing) * 4) 1fr;
 }
 @layer base {
   * {

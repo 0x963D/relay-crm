@@ -2,6 +2,8 @@ import { cn } from "@/lib/utils";
 import {
   AlarmClock,
   ChevronDown,
+  ChevronUp,
+  X,
   Circle,
   Minus,
   ArrowLeft,
@@ -38,6 +40,8 @@ import {
 const icons = {
   alarm: AlarmClock,
   down: ChevronDown,
+  up: ChevronUp,
+  close: X,
   circle: Circle,
   minus: Minus,
   back: ArrowLeft,

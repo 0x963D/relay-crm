@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "file": "apps/web/src/components/ui/dialog.tsx",
+    "value": "max-w-[calc(100%-2rem)]",
+    "reason": "The unmodified registry dialog keeps a one-rem gutter on either side of a phone. This exact width formula is the only literal layout exception."
+  }
+]
