@@ -31,6 +31,7 @@ export interface DistributionLead {
 export const ACCESS_FAILURES = [
   "accessDenied",
   "conflict",
+  "idempotencyConflict",
   "stalePreview",
   "invalidAgent",
   "noEligibleAgent",

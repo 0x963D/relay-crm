@@ -4,7 +4,9 @@ export class AccessError extends Error {
   override readonly name = "AccessError";
   readonly code: AccessFailure;
   constructor(code: AccessFailure) {
-    super(code);
+    super(
+      code === "idempotencyConflict" ? "The key was already used for a different request." : code,
+    );
     this.code = code;
   }
 }

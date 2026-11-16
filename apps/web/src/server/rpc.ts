@@ -40,10 +40,12 @@ const authenticated = t.procedure.use(async ({ ctx, next }) => {
     const code =
       cause.code === "accessDenied"
         ? "FORBIDDEN"
-        : cause.code === "conflict" || cause.code === "stalePreview"
+        : cause.code === "conflict" ||
+            cause.code === "stalePreview" ||
+            cause.code === "idempotencyConflict"
           ? "CONFLICT"
           : "BAD_REQUEST";
-    throw new TRPCError({ code, message: cause.code, cause });
+    throw new TRPCError({ code, message: cause.message, cause });
   }
 });
 

@@ -155,13 +155,17 @@ describe("assignment under contention", () => {
     }
     const [first, second] = await pending;
     expect(first).toEqual(second);
-    expect(
-      await db.store.submitDistribution(w.actor, {
+    expect(await db.store.submitDistribution(w.actor, input)).toEqual(first);
+    await expect(
+      db.store.submitDistribution(w.actor, {
         ...input,
         previewId: crypto.randomUUID(),
         fingerprint: "changed",
       }),
-    ).toEqual(first);
+    ).rejects.toMatchObject({
+      code: "idempotencyConflict",
+      message: "The key was already used for a different request.",
+    });
     expect(await auditCount(db)).toEqual([{ activities: 1, audit: 1, distributions: 1 }]);
   });
 

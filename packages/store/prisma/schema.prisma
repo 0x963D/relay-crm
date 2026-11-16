@@ -305,6 +305,7 @@ model DistributionPreview {
 }
 
 model Distribution {
+  requestHash String? @map("request_hash")
   id        String   @id @default(uuid(7)) @db.Uuid
   actorId   String   @map("actor_id") @db.Uuid
   key       String

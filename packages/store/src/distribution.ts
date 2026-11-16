@@ -215,6 +215,10 @@ export async function submitDistribution(
       where: { actorId_key: { actorId: current.userId, key: input.key } },
     });
     if (prior) {
+      if (
+        prior.requestHash !== digest({ fingerprint: input.fingerprint, previewId: input.previewId })
+      )
+        throw new AccessError("idempotencyConflict");
       const items = storedItems(prior.result);
       for (const item of items) await scopedLead(tx, current, item.leadId, "assign");
       return { items };
@@ -259,6 +263,7 @@ export async function submitDistribution(
       data: {
         actorId: current.userId,
         key: input.key,
+        requestHash: digest({ fingerprint: input.fingerprint, previewId: input.previewId }),
         result: plan.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
       },
     });
