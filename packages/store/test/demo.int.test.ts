@@ -317,6 +317,27 @@ test("demo matches the funnel totals and keeps the board's named pool and accoun
   expect(
     await db.rows("SELECT count(*)::int AS count FROM payments WHERE status='pendingApproval'"),
   ).toEqual([{ count: 4 }]);
+  expect(
+    await db.rows(
+      "SELECT name,previous_owner_id FROM leads WHERE name IN ('Ravi Menon','Tunde Bakare') ORDER BY name",
+    ),
+  ).toEqual([
+    { name: "Ravi Menon", previous_owner_id: "00000000-0000-7000-8000-000000000107" },
+    { name: "Tunde Bakare", previous_owner_id: "00000000-0000-7000-8000-000000000106" },
+  ]);
+  for (const [person, count] of [
+    ["00000000-0000-7000-8000-000000000105", 9],
+    ["00000000-0000-7000-8000-000000000107", 12],
+    ["00000000-0000-7000-8000-000000000106", 7],
+  ] as const) {
+    const agentId = UserId.parse(person);
+    if (!agentId) throw new Error("Missing queue person");
+    const queue = await db.store.workQueue(
+      { userId, role: "manager", team: null },
+      { agentId, at: today, timeZone: "UTC", limit: 100 },
+    );
+    expect(Object.values(queue.counts).reduce((sum, count) => sum + count, 0)).toBe(count);
+  }
 });
 
 test("demo keeps an exhausted receipt failed and schedules a separate retry later today", async ({

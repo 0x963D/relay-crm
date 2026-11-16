@@ -174,6 +174,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
   const accountant = actor("Esther Okafor");
   const noor = actor("Noor Haddad");
   const ffion = actor("Ffion Pryce");
+  const callum = actor("Callum Reid");
   const early = required(history[0]).at;
   const nameEmail = (name: string) => name.toLowerCase().replaceAll(" ", ".").replaceAll("-", "");
   const courses: Readonly<Record<string, string>> = {
@@ -184,33 +185,65 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
     "Summer school": "Summer school · early bird",
   };
   let phone = 140;
-  async function lead(name: string, course: string, source: IntakeSource = "metaLeadAds") {
+  async function lead(
+    name: string,
+    course: string,
+    source: IntakeSource = "metaLeadAds",
+    previous?: Actor,
+  ) {
     signal.throwIfAborted();
     phone++;
     const number = leadNumber++;
     const createdAt = new Date(required(history[number % 7]).at.getTime() + (number % 12) * 900000);
     const email = parseEmail(`${nameEmail(name)}@example.com`);
     if (!email.ok) throw new Error("Invalid invented email.");
-    const result = await store.intake({
-      source,
-      externalId: required(parseExternalId(`demo:${name}`)),
-      email: email.value,
-      name,
-      phone: `+44 7700 900${String(phone)}`,
-      attribution: normalizeAttribution({
-        campaign: course === "No campaign" ? null : (courses[course] ?? course),
-        form: course === "IELTS evening" ? "IELTS enquiry" : "Course enquiry",
-        adSet: course === "IELTS evening" ? "London, age 25 to 40" : null,
-        ad: course === "IELTS evening" ? "Band 7 in 8 weeks, video" : null,
-      }),
-      submittedAt: createdAt,
-      receivedAt: createdAt,
-      raw: { demo: true },
-    });
+    const leadPhone = `+44 7700 900${String(phone)}`;
+    const submit = (externalId: string, at: Date) =>
+      store.intake({
+        source,
+        externalId: required(parseExternalId(externalId)),
+        email: email.value,
+        name,
+        phone: leadPhone,
+        attribution: normalizeAttribution({
+          campaign: course === "No campaign" ? null : (courses[course] ?? course),
+          form: course === "IELTS evening" ? "IELTS enquiry" : "Course enquiry",
+          adSet: course === "IELTS evening" ? "London, age 25 to 40" : null,
+          ad: course === "IELTS evening" ? "Band 7 in 8 weeks, video" : null,
+        }),
+        submittedAt: at,
+        receivedAt: at,
+        raw: { demo: true },
+      });
+    const result = await submit(`demo:${name}`, createdAt);
     if (result.outcome.kind !== "leadCreated")
       throw new Error("Seed intake did not create a lead.");
-    stories.set(result.outcome.leadId, createdAt);
-    return result.outcome.leadId;
+    const id = result.outcome.leadId;
+    stories.set(id, createdAt);
+    if (previous) {
+      await assign(id, previous);
+      await work(
+        id,
+        {
+          kind: "attempt",
+          attempt: {
+            channel: "call",
+            outcome: "noAnswer",
+            note: "No answer to the earlier enquiry.",
+          },
+        },
+        previous,
+      );
+      await work(
+        id,
+        { kind: "close", closing: { kind: "lost", note: "The earlier course date did not work." } },
+        previous,
+      );
+      const reopened = await submit(`demo:reopen:${name}`, storyTime(id));
+      if (reopened.outcome.kind !== "leadReopened")
+        throw new Error("Demo enquiry did not reopen the lost lead.");
+    }
+    return id;
   }
   async function assign(id: LeadId, to = agent) {
     signal.throwIfAborted();
@@ -301,15 +334,15 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         await attempt(id, item.note, item.spoke, "callback" in item ? item.callback : undefined);
       }
     }
-    for (const [name, course, source] of [
+    for (const [name, course, source, previous] of [
       ["Luca Ferraro", "Spanish beginners", "metaLeadAds"],
       ["Nadia Rahimi", "IELTS evening", "metaLeadAds"],
       ["Wei Chen", "IELTS evening", "metaLeadAds"],
       ["Zainab Yusuf", "Summer school", "metaLeadAds"],
-      ["Tunde Bakare", "Summer school", "metaLeadAds"],
+      ["Tunde Bakare", "Summer school", "metaLeadAds", noor],
       ["Diego Salazar", "Spanish beginners", "metaLeadAds"],
       ["Ingrid Solberg", "German A1", "metaLeadAds"],
-      ["Ravi Menon", "Summer school", "metaLeadAds"],
+      ["Ravi Menon", "Summer school", "metaLeadAds", callum],
       ["Farah Siddiqui", "IELTS evening", "metaLeadAds"],
       ["Emil Novak", "IELTS evening", "metaLeadAds"],
       ["Oskar Nowak", "German A1", "metaLeadAds"],
@@ -317,7 +350,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       ["Chiara Russo", "Summer school", "metaLeadAds"],
       ["Marek Dvorak", "Summer school", "metaLeadAds"],
     ] as const)
-      await lead(name, course, source);
+      await lead(name, course, source, previous);
     const accountIds = new Map<string, AccountId>();
     for (const [name, course, owner] of [
       ["Jonas Weber", "Business English", agent],
@@ -403,6 +436,11 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
       "Silva",
       "Torres",
     ];
+    const openQueues = [
+      { actor: ffion, remaining: 9 },
+      { actor: callum, remaining: 12 },
+      { actor: noor, remaining: 7 },
+    ];
     let generated = 0;
     for (const [course, source, received, unassigned, contacted, won] of targets) {
       const row = existing.rows.find(
@@ -417,9 +455,18 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
         const number = generated++;
         const name = `${required(firstNames[number % firstNames.length])} ${required(surnames[Math.floor(number / firstNames.length)])}`;
         const id = await lead(name, course, source);
-        if (waiting-- > 0) continue;
-        await assign(id, ffion);
-        const spoke = conversations-- > 0;
+        if (waiting > 0) {
+          waiting--;
+          continue;
+        }
+        const isWin = wins > 0;
+        if (isWin) wins--;
+        const open = isWin ? undefined : openQueues.find((queue) => queue.remaining > 0);
+        if (open) open.remaining--;
+        const owner = open?.actor ?? ffion;
+        await assign(id, owner);
+        const spoke = conversations > 0;
+        if (spoke) conversations--;
         await work(
           id,
           {
@@ -432,18 +479,18 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
                 : "No answer after the course enquiry.",
             },
           },
-          ffion,
+          owner,
         );
+        if (open) continue;
         await work(
           id,
           {
             kind: "close",
-            closing:
-              wins-- > 0
-                ? { kind: "won" }
-                : { kind: "lost", note: "Chose a different course date." },
+            closing: isWin
+              ? { kind: "won" }
+              : { kind: "lost", note: "Chose a different course date." },
           },
-          ffion,
+          owner,
         );
       }
     }
