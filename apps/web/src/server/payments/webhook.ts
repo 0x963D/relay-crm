@@ -70,6 +70,8 @@ export function paymentWebhook(store: Store, secret: string) {
       });
       return Response.json({ recorded: true });
     } catch (error) {
+      if (error instanceof AccessError && error.code === "accessDenied")
+        return new Response(null, { status: 400 });
       if (error instanceof AccessError && error.code === "conflict")
         return new Response(null, { status: 409 });
       const failure = reportFailure("paymentWebhook.failed", error);

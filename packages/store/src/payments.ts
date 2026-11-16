@@ -420,7 +420,8 @@ export async function receivePaymentWebhook(db: Db, event: ProviderEvent) {
     const prior = await tx.webhookInbox.findUnique({ where: { eventId: event.eventId } });
     if (prior && (prior.paymentId !== event.paymentId || prior.payloadHash !== event.payloadHash))
       throw new AccessError("conflict");
-    const row = required(await tx.payment.findUnique({ where: { id: event.paymentId } }));
+    const row = await tx.payment.findUnique({ where: { id: event.paymentId } });
+    if (row?.method !== "card") throw new AccessError("accessDenied");
     const late = row.status !== "checkoutCreated";
     const recordDelivery = async (outcome: SettlementResult) => {
       await tx.paymentEvent.create({

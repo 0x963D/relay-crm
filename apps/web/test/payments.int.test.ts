@@ -86,7 +86,7 @@ test("the receiver rejects forged and stale signatures, replays event IDs, and r
   expect(
     (await receiver(request(timestamp, signPaymentBody(secret, timestamp, missing), missing)))
       .status,
-  ).toBe(500);
+  ).toBe(400);
   expect(await db.rows("SELECT * FROM webhook_inbox")).toHaveLength(1);
   expect((await receiver(request(timestamp, "0".repeat(64), new Uint8Array(100001)))).status).toBe(
     413,
@@ -595,5 +595,52 @@ test("closing an already paid checkout returns review and an explanation in the 
   expect(closed).toMatchObject({
     message: "The checkout was already paid. The payment needs review; nothing was credited.",
   });
+  expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
+});
+
+test("a signed report for a manual payment is refused without recording an inbox or posting", async ({
+  db,
+}) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const { id } = await db.store.recordManualPayment(
+    actor,
+    {
+      key: "manual-webhook",
+      accountId: await db.seedAccount(),
+      money: { minor: 100n, currency: "GBP" },
+      kind: "first",
+      receiptHash: "b".repeat(64),
+      reference: null,
+    },
+    randomUUID(),
+  );
+  const body = new TextEncoder().encode(
+    JSON.stringify({
+      eventId: "fake-manual-report",
+      paymentId: id,
+      status: "completed",
+      amount: "100",
+      currency: "GBP",
+    }),
+  );
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const response = await paymentWebhook(
+    db.store,
+    secret,
+  )(
+    new Request("http://localhost/api/payments/webhook", {
+      method: "POST",
+      body,
+      headers: {
+        "x-sandbox-timestamp": timestamp,
+        "x-sandbox-signature": signPaymentBody(secret, timestamp, body),
+      },
+    }),
+  );
+  expect(response.status).toBe(400);
+  expect(await db.rows("SELECT * FROM webhook_inbox")).toHaveLength(0);
+  expect(await db.rows("SELECT * FROM payment_events WHERE kind='webhookDelivery'")).toHaveLength(
+    0,
+  );
   expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
 });
