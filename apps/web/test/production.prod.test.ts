@@ -3,7 +3,7 @@ import { z } from "zod";
 import { setTimeout as sleep } from "node:timers/promises";
 import { test as databaseTest } from "@relay/store/testing";
 import { openSmtpInbox } from "./support/smtp.ts";
-import { spawn, execFile } from "node:child_process";
+import { spawn, exec } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
 import { createRequire } from "node:module";
@@ -648,9 +648,8 @@ databaseTest(
         { currency: "GBP", balance: expectedBalance + 48000n },
       ]);
       log("completed", { payment: completed, ledger: manualLedger });
-      const cli = await promisify(execFile)("pnpm", ["outbox"], {
+      const cli = await promisify(exec)("pnpm outbox", {
         cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-        shell: process.platform === "win32",
         timeout: 20_000,
         env: {
           ...process.env,
