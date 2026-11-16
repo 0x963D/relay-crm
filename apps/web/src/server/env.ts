@@ -46,6 +46,7 @@ const Variables = z.object({
   RELAY_DEMO: z.literal("1").optional(),
   RELAY_SANDBOX: z.literal("1").optional(),
   RELAY_SANDBOX_URL: z.url().optional(),
+  RELAY_SANDBOX_DELIVERY_URL: z.url().optional(),
   RELAY_PAYMENT_WEBHOOK_SECRET: Secret.optional(),
   RELAY_RECONCILE_SECRET: Secret.optional(),
   RELAY_RECONCILE_FIRST_MS: z.coerce.number().int().min(0).max(86400000).default(900000),
@@ -94,6 +95,7 @@ export interface AuthEnv {
 
 export interface PaymentEnv {
   readonly baseUrl: string;
+  readonly deliveryUrl?: string;
   readonly webhookSecret: string;
   readonly reconcileSecret: string;
   readonly firstCheckMs: number;
@@ -281,18 +283,22 @@ function paymentEnv(v: z.infer<typeof Variables>): PaymentEnv | null {
     throw new EnvError(
       "Sandbox payments need RELAY_SANDBOX_URL, RELAY_PAYMENT_WEBHOOK_SECRET and RELAY_RECONCILE_SECRET.",
     );
-  const url = new URL(v.RELAY_SANDBOX_URL);
-  if (
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.username ||
-    url.password ||
-    url.pathname !== "/" ||
-    url.search ||
-    url.hash
-  )
-    throw new EnvError("RELAY_SANDBOX_URL must be an HTTP origin.");
+  const origin = (value: string) => {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    )
+      throw new EnvError("Sandbox URLs must be HTTP origins.");
+    return url.origin;
+  };
   return {
-    baseUrl: url.origin,
+    baseUrl: origin(v.RELAY_SANDBOX_URL),
+    deliveryUrl: origin(v.RELAY_SANDBOX_DELIVERY_URL ?? v.RELAY_SANDBOX_URL),
     webhookSecret: v.RELAY_PAYMENT_WEBHOOK_SECRET,
     reconcileSecret: v.RELAY_RECONCILE_SECRET,
     firstCheckMs: v.RELAY_RECONCILE_FIRST_MS,

@@ -288,6 +288,44 @@ async function check() {
   assert.equal(health.status, 200);
   const unauthorized = await fetch(`${origin}/api/demo/reset`, { method: "POST" });
   assert.equal(unauthorized.status, 404);
+  const normal = z
+    .object({ paymentId: z.string(), checkout: z.object({ url: z.url() }) })
+    .parse(
+      await rpc(
+        "payments.createCheckout",
+        {
+          key: randomUUID(),
+          accountId: account.id,
+          amount: "100",
+          currency: "GBP",
+          kind: "repeat",
+        },
+        manager.cookie,
+        true,
+      ),
+    );
+  const delivery = await fetch(normal.checkout.url, {
+    method: "POST",
+    headers: { origin },
+    body: "mode=normal",
+    redirect: "manual",
+  });
+  assert.equal(delivery.status, 303);
+  const webhookDeadline = performance.now() + 15000;
+  let webhookArrived = false;
+  while (performance.now() < webhookDeadline) {
+    const payment = z
+      .object({ events: z.array(z.object({ kind: z.string() })), postingCount: z.number() })
+      .parse(await rpc("payments.get", { id: normal.paymentId }, accountant.cookie));
+    if (payment.events.some((event) => event.kind === "webhookDelivery")) {
+      assert.equal(payment.postingCount, 1);
+      webhookArrived = true;
+      break;
+    }
+    await sleep(250);
+  }
+  assert(webhookArrived, "The sandbox webhook did not arrive at the app on this published port.");
+  record("LIVE_WEBHOOK", { port: appPort, paymentId: normal.paymentId, postingCount: 1 });
   const checkout = z.object({ paymentId: z.string(), checkout: z.object({ url: z.url() }) }).parse(
     await rpc(
       "payments.createCheckout",

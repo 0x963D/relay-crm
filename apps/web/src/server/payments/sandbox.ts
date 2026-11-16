@@ -80,16 +80,19 @@ export function sandboxCheckout(
           for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
               const timestamp = Math.floor(Date.now() / 1000).toString();
-              const response = await fetch(`${env.baseUrl}/api/payments/webhook`, {
-                method: "POST",
-                body,
-                headers: {
-                  "content-type": "application/json",
-                  "x-sandbox-timestamp": timestamp,
-                  "x-sandbox-signature": signPaymentBody(env.webhookSecret, timestamp, body),
+              const response = await fetch(
+                `${env.deliveryUrl ?? env.baseUrl}/api/payments/webhook`,
+                {
+                  method: "POST",
+                  body,
+                  headers: {
+                    "content-type": "application/json",
+                    "x-sandbox-timestamp": timestamp,
+                    "x-sandbox-signature": signPaymentBody(env.webhookSecret, timestamp, body),
+                  },
+                  signal: AbortSignal.timeout(5000),
                 },
-                signal: AbortSignal.timeout(5000),
-              });
+              );
               if (response.ok) break;
               if (response.status < 500) throw new Error("Sandbox webhook was refused");
             } catch (error) {

@@ -16,6 +16,7 @@ import { appRouter } from "../src/server/rpc.ts";
 const secret = "fake-sandbox-webhook-secret-for-tests-only";
 const env = {
   baseUrl: "http://127.0.0.1:1",
+  deliveryUrl: "http://app:3107",
   webhookSecret: secret,
   reconcileSecret: "fake-reconcile-secret-for-tests-only",
   firstCheckMs: 0,
@@ -69,6 +70,18 @@ test("sandbox choices are applied on the provider page only in demo mode", async
     expect(response.status).toBe(303);
     expect((await db.store.getSandboxCheckout(created.id))?.amount).toBe(demo ? 101n : 100n);
     expect(tasks).toHaveLength(demo ? 1 : 0);
+    if (demo) {
+      const deliver = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null));
+      try {
+        await tasks[0]!();
+        expect(deliver).toHaveBeenCalledWith(
+          "http://app:3107/api/payments/webhook",
+          expect.objectContaining({ method: "POST" }),
+        );
+      } finally {
+        deliver.mockRestore();
+      }
+    }
   }
 });
 

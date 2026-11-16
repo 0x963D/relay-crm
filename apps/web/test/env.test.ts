@@ -3,6 +3,21 @@ import { describe, expect, it } from "vitest";
 import { EnvError, parseEnv, serverOptions } from "../src/server/env.ts";
 
 const DATABASE_URL = "postgresql://relay:relay@localhost:5432/relay";
+it("sandbox delivery can reach the app independently of its published checkout address", () => {
+  const env = parseEnv({
+    DATABASE_URL,
+    RELAY_DEMO: "1",
+    RELAY_SANDBOX: "1",
+    RELAY_SANDBOX_URL: "http://127.0.0.1:3197",
+    RELAY_SANDBOX_DELIVERY_URL: "http://app:3107",
+    RELAY_PAYMENT_WEBHOOK_SECRET: "fake-sandbox-signature-secret-for-tests",
+    RELAY_RECONCILE_SECRET: "fake-reconciler-authentication-secret-for-tests",
+  });
+  expect(env.payments).toMatchObject({
+    baseUrl: "http://127.0.0.1:3197",
+    deliveryUrl: "http://app:3107",
+  });
+});
 const META = {
   META_VERIFY_TOKEN: "verify",
   META_APP_SECRET: "secret",
