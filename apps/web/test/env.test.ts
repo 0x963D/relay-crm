@@ -89,3 +89,9 @@ it.each(["-1", "1.5", "33", "not-a-count"])("refuses invalid proxy count %s", (c
 it("reads an explicit trusted proxy count", () => {
   expect(parseEnv({ DATABASE_URL, RELAY_TRUSTED_PROXY_COUNT: "2" }).trustedProxyCount).toBe(2);
 });
+
+it.each(["0", "20", "1.5", "1000001"])("refuses invalid auth circuit breaker %s", (limit) => {
+  expect(() => parseEnv({ DATABASE_URL, RELAY_AUTH_GLOBAL_LIMIT: limit })).toThrow(
+    /RELAY_AUTH_GLOBAL_LIMIT/,
+  );
+});

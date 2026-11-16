@@ -4,6 +4,7 @@ import { z } from "zod";
 const Variables = z.object({
   AUTH_SECRET: z.string().min(32).optional(),
   AUTH_URL: z.url().optional(),
+  RELAY_AUTH_GLOBAL_LIMIT: z.coerce.number().int().min(21).max(1_000_000).default(10_000),
   SMTP_URL: z.url().optional(),
   SMTP_FROM: z.email().optional(),
   DATABASE_URL: z.string({ error: "is required, such as postgresql://user:pass@localhost/relay" }),
@@ -32,6 +33,8 @@ export interface MetaEnv {
 }
 
 export interface AuthEnv {
+  readonly trustedProxyCount: number;
+  readonly globalLimit: number;
   readonly secret: string;
   readonly baseUrl: string;
   readonly delivery:
@@ -110,6 +113,8 @@ function authEnv(v: z.infer<typeof Variables>): AuthEnv | null {
   if (!smtp && v.NODE_ENV !== "development")
     throw new EnvError("Sign-in outside development needs SMTP.");
   return {
+    trustedProxyCount: v.RELAY_TRUSTED_PROXY_COUNT,
+    globalLimit: v.RELAY_AUTH_GLOBAL_LIMIT,
     secret: v.AUTH_SECRET,
     baseUrl: v.AUTH_URL,
     delivery: smtp ?? { kind: "developmentConsole" },

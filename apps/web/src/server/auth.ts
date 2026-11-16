@@ -1,10 +1,12 @@
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseEmail } from "@relay/domain";
 import type { Store } from "@relay/store";
 import { betterAuth } from "better-auth";
 import { emailOTP } from "better-auth/plugins";
 import { z } from "zod";
+import { clientAddress } from "./client-address.ts";
+import { allowRequest, limitKey, rateLimited } from "./rate-limit.ts";
 import type { AuthEnv } from "./env.ts";
 import type { Mailer } from "./mailer.ts";
 
@@ -89,20 +91,16 @@ export function createAuthentication(
     const parsed = (sending ? SendCode : SignIn).safeParse(body);
     if (!parsed.success)
       return Response.json({ error: "Invalid sign-in request." }, { status: 400 });
-    const key = createHash("sha256").update(parsed.data.email).digest("hex");
     const minimum = performance.now() + 300 + randomInt(0, 50);
     try {
-      const globalAllowed = await store.takeRequestLimit("auth:global", 100, 60);
-      const addressAllowed = await store.takeRequestLimit(
-        `${sending ? "send" : "verify"}:${key}`,
-        sending ? 3 : 10,
-        60,
-      );
-      if (!globalAllowed || !addressAllowed)
-        return Response.json(
-          { error: "Try again later." },
-          { status: 429, headers: { "retry-after": "60" } },
-        );
+      if (
+        !(await allowRequest(store, [
+          { key: limitKey("auth:client", clientAddress(request, env.trustedProxyCount)), max: 20 },
+          { key: limitKey(sending ? "send" : "verify", parsed.data.email), max: sending ? 3 : 10 },
+          { key: "auth:global", max: env.globalLimit },
+        ]))
+      )
+        return rateLimited();
       const response = await auth.handler(
         new Request(request.url, {
           method: "POST",

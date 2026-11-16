@@ -299,3 +299,19 @@ Other work not built:
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Sign-in request limits
+
+`pnpm test:int -- apps/web/test/auth.int.test.ts` verifies these PostgreSQL budgets.
+All use 60-second fixed windows and return the same 429 body and `Retry-After: 60` for known
+and unknown email addresses. Timing padding also applies to a refused request.
+
+The client address has 20 requests across code issuance and verification. Code issuance has
+3 requests per normalized email address. Verification has 10 per normalized email address.
+Client identity follows `RELAY_TRUSTED_PROXY_COUNT`, just as the form does.
+The client budget is checked first, then the email budget, then the global circuit breaker.
+A refusal stops those checks, so it cannot consume the later budgets.
+
+`RELAY_AUTH_GLOBAL_LIMIT` defaults to 10,000 requests per window across both operations.
+`pnpm test -- apps/web/test/env.test.ts` verifies that its configured value is an integer from
+21 to 1,000,000. Its minimum stays above a single client's budget.

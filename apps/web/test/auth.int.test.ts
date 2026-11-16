@@ -1,11 +1,14 @@
 import { expect, describe } from "vitest";
 import { test } from "@relay/store/testing";
+import { connections } from "../src/server/client-address.ts";
 import { appRouter } from "../src/server/rpc.ts";
 import { createAuthentication } from "../src/server/auth.ts";
 import type { AuthEnv } from "../src/server/env.ts";
 
 const origin = "http://localhost:3401";
 const config: AuthEnv = {
+  trustedProxyCount: 0,
+  globalLimit: 10_000,
   secret: "fake-test-secret-that-is-at-least-thirty-two-characters",
   baseUrl: origin,
   delivery: { kind: "developmentConsole" },
@@ -297,4 +300,74 @@ test("a completed request replays through a valid session after role revocation 
     principal: await auth.principal(headers),
   });
   await expect(expired.distribution.submit(input)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+});
+
+test("one client cannot exhaust sign-in for a second client", async ({ db }) => {
+  await db.seedUser("agent");
+  const first = setup(db.store);
+  for (let i = 0; i < 20; i += 1) {
+    const result = await connections.run("192.0.2.1", () =>
+      first.post("/email-otp/send-verification-otp", {
+        email: `unknown-${String(i)}@example.com`,
+        type: "sign-in",
+      }),
+    );
+    expect(result.response.status).toBe(200);
+  }
+  const refused = [];
+  for (const email of ["user-1@team.example", "unknown@example.com"]) {
+    const result = await connections.run("192.0.2.1", () =>
+      setup(db.store).post("/email-otp/send-verification-otp", { email, type: "sign-in" }),
+    );
+    expect(result.response.status).toBe(429);
+    expect(result.response.headers.get("retry-after")).toBe("60");
+    refused.push(await result.response.json());
+  }
+  expect(refused[0]).toEqual(refused[1]);
+  const second = setup(db.store);
+  const requested = await connections.run("192.0.2.2", () =>
+    second.post("/email-otp/send-verification-otp", {
+      email: "user-1@team.example",
+      type: "sign-in",
+    }),
+  );
+  expect(requested.response.status).toBe(200);
+  const signed = await connections.run("192.0.2.2", () =>
+    second.post("/sign-in/email-otp", { email: "user-1@team.example", otp: second.sent[0]?.code }),
+  );
+  expect(await cookieOf(signed.response)).toContain("relay.session_token=");
+  expect(await db.rows("SELECT count FROM auth_request_limits WHERE key='auth:global'")).toEqual([
+    { count: 22 },
+  ]);
+});
+
+test("the default global circuit breaker permits more than the former shared sign-in budget", async ({
+  db,
+}) => {
+  await db.rows(
+    "INSERT INTO auth_request_limits(key,count,started_at) VALUES ('auth:global',100,now())",
+  );
+  const result = await setup(db.store).post("/email-otp/send-verification-otp", {
+    email: "unknown@example.com",
+    type: "sign-in",
+  });
+  expect(result.response.status).toBe(200);
+});
+
+test("known and unknown emails have identical refusals at the global circuit breaker", async ({
+  db,
+}) => {
+  await db.seedUser("agent");
+  await db.rows(
+    "INSERT INTO auth_request_limits(key,count,started_at) VALUES ('auth:global',10000,now())",
+  );
+  const { post } = setup(db.store);
+  const responses = [];
+  for (const email of ["user-1@team.example", "unknown@example.com"]) {
+    const { response } = await post("/email-otp/send-verification-otp", { email, type: "sign-in" });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    responses.push(await response.json());
+  }
+  expect(responses[0]).toEqual(responses[1]);
 });

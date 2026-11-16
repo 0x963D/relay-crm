@@ -119,7 +119,7 @@ describe("the production server with no session", () => {
 });
 
 databaseTest(
-  "a page-created store returns typed scope errors through the production API",
+  "a second client signs in while the first is limited, and typed scope errors survive production",
   async ({ db }) => {
     const userId = await db.seedUser("agent");
     const otherId = await db.seedUser("agent");
@@ -135,6 +135,7 @@ databaseTest(
     const inbox = await openSmtpInbox();
     const server = await serve(
       (origin) => ({
+        RELAY_TRUSTED_PROXY_COUNT: "1",
         AUTH_URL: origin,
         AUTH_SECRET: "fake-production-test-secret-at-least-thirty-two-characters",
         SMTP_URL: inbox.url,
@@ -145,12 +146,39 @@ databaseTest(
     try {
       expect((await fetch(server.url("/"))).status).toBe(401);
       const origin = new URL(server.url("/")).origin;
-      const post = (path: string, body: unknown, cookie = "") =>
+      const post = (path: string, body: unknown, cookie = "", client = "192.0.2.2") =>
         fetch(server.url(path), {
           method: "POST",
-          headers: { origin, "content-type": "application/json", cookie },
+          headers: {
+            origin,
+            "content-type": "application/json",
+            cookie,
+            "x-forwarded-for": client,
+          },
           body: JSON.stringify(body),
         });
+      for (let i = 0; i < 20; i += 1) {
+        const result = await post(
+          "/api/auth/email-otp/send-verification-otp",
+          { email: `attacker-${String(i)}@example.com`, type: "sign-in" },
+          "",
+          "192.0.2.1",
+        );
+        expect(result.status).toBe(200);
+      }
+      const refusals = [];
+      for (const email of ["user-1@team.example", "unknown@example.com"]) {
+        const refused = await post(
+          "/api/auth/email-otp/send-verification-otp",
+          { email, type: "sign-in" },
+          "",
+          "192.0.2.1",
+        );
+        expect(refused.status).toBe(429);
+        expect(refused.headers.get("retry-after")).toBe("60");
+        refusals.push(await refused.json());
+      }
+      expect(refusals[0]).toEqual(refusals[1]);
       expect(
         (
           await post("/api/auth/email-otp/send-verification-otp", {
