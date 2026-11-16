@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { signPaymentBody } from "../src/server/payments/webhook.ts";
 import superjson from "superjson";
 import { z } from "zod";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -41,7 +43,10 @@ async function serve(
   const configured = typeof variables === "function" ? variables(origin) : variables;
   const inherited = Object.entries(process.env).filter(
     ([name]) =>
-      name !== "NODE_ENV" && name !== "DATABASE_URL" && !/^(META|RELAY|AUTH|SMTP)_/.test(name),
+      name !== "NODE_ENV" &&
+      name !== "DATABASE_URL" &&
+      name !== "MIGRATION_DATABASE_URL" &&
+      !/^(META|RELAY|AUTH|SMTP)_/.test(name),
   );
   const server = spawn(
     process.execPath,
@@ -238,7 +243,7 @@ databaseTest(
           previousOwnerId: null,
         },
       });
-      await db.rows(`CREATE FUNCTION force_internal_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'database password leaked in this message'; END $$;
+      await db.ownerRows(`CREATE FUNCTION force_internal_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'database password leaked in this message'; END $$;
         CREATE TRIGGER force_edit_failure BEFORE UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION force_internal_failure();`);
       const broken = await post(
         "/api/trpc/leads.edit",
@@ -253,7 +258,7 @@ databaseTest(
       if (!requestId) throw new Error("Internal error returned no request ID");
       expect(server.output()).toContain(requestId);
       expect(server.output()).toContain("database password leaked in this message");
-      await db.rows(
+      await db.ownerRows(
         "CREATE TRIGGER force_limit_failure BEFORE INSERT OR UPDATE ON auth_request_limits FOR EACH ROW EXECUTE FUNCTION force_internal_failure()",
       );
       for (const path of ["/api/auth/email-otp/send-verification-otp", "/api/intake/form"]) {
@@ -428,8 +433,9 @@ databaseTest(
         return superjson.parse(JSON.stringify(envelope.result.data));
       };
       const Detail = z.object({
+        demo: z.literal(true),
         id: z.string(),
-        state: z.object({ status: z.string() }),
+        state: z.object({ status: z.string(), reason: z.string().optional() }),
         events: z.array(
           z.object({
             sequence: z.bigint(),
@@ -443,6 +449,7 @@ databaseTest(
             id: z.string(),
             lines: z.array(
               z.object({
+                side: z.enum(["credit", "debit"]),
                 amount: z.bigint(),
                 account: z.object({ kind: z.string(), currency: z.string() }),
               }),
@@ -468,6 +475,12 @@ databaseTest(
               true,
             ),
           );
+        const anonymous = await fetch(server.url(`/sandbox/checkout/${created.paymentId}`), {
+          method: "POST",
+          headers: { origin },
+          redirect: "manual",
+        });
+        expect(anonymous.status).toBe(404);
         const page = await fetch(created.checkout.url);
         const html = await page.text();
         expect(page.status).toBe(200);
@@ -510,6 +523,12 @@ databaseTest(
           expect(detail.posting?.lines.map((l) => l.amount)).toEqual([39500n, 39500n]);
         }
         if (mode === "late") {
+          expect(detail.events.map((e) => e.kind)).toEqual([
+            "checkoutCreated",
+            "reconcilerCheck",
+            "settlement",
+            "webhookDelivery",
+          ]);
           expect(detail.events.find((e) => e.kind === "settlement")?.detail.by).toBe("reconciler");
           expect(detail.events.find((e) => e.kind === "webhookDelivery")?.detail).toMatchObject({
             late: true,
@@ -520,7 +539,9 @@ databaseTest(
           expect(
             detail.events.filter((e) => e.kind === "webhookDelivery")[1]?.detail,
           ).toMatchObject({ duplicate: true, changed: false });
-        const own = Detail.parse(await rpc("payments.get", { id: created.paymentId }, agent));
+        const ownResponse = await rpc("payments.get", { id: created.paymentId }, agent);
+        expect(ownResponse).not.toHaveProperty("checkoutPath");
+        const own = Detail.parse(ownResponse);
         expect(own.posting).toBeNull();
         const ledger = Ledger.parse(await rpc("accounts.ledger", { id: accountId }, accountant));
         expect(ledger.balances).toEqual([{ currency: "GBP", balance: expectedBalance }]);
@@ -528,6 +549,86 @@ databaseTest(
           `LIVE_PAYMENT ${JSON.stringify({ mode, detail, ledger }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
         );
       }
+      const checkout = async (key: string) =>
+        z
+          .object({
+            demo: z.literal(true),
+            paymentId: z.string(),
+            checkout: z.object({ url: z.string() }),
+          })
+          .parse(
+            await rpc(
+              "payments.createCheckout",
+              { key, accountId, amount: "100", currency: "GBP", kind: "repeat", mode: "drop" },
+              agent,
+              true,
+            ),
+          );
+      const closed = await checkout("expired-before-paid");
+      const report = async (status: "expired" | "completed") => {
+        const body = new TextEncoder().encode(
+          JSON.stringify({
+            eventId: randomUUID(),
+            paymentId: closed.paymentId,
+            status,
+            amount: "100",
+            currency: "GBP",
+          }),
+        );
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const response = await fetch(server.url("/api/payments/webhook"), {
+          method: "POST",
+          body,
+          headers: {
+            "x-sandbox-timestamp": timestamp,
+            "x-sandbox-signature": signPaymentBody(
+              "fake-production-webhook-secret-for-tests",
+              timestamp,
+              body,
+            ),
+          },
+        });
+        expect(response.status).toBe(200);
+      };
+      await report("expired");
+      expect(
+        Detail.parse(await rpc("payments.get", { id: closed.paymentId }, accountant)).state.status,
+      ).toBe("expired");
+      await report("completed");
+      const review = Detail.parse(await rpc("payments.get", { id: closed.paymentId }, accountant));
+      expect(review.state).toEqual({ status: "needsReview", reason: "paid after close" });
+      expect(review.posting).toBeNull();
+      expect(
+        Ledger.parse(await rpc("accounts.ledger", { id: accountId }, accountant)).balances,
+      ).toEqual([{ currency: "GBP", balance: expectedBalance }]);
+      process.stdout.write(
+        `LIVE_LIFECYCLE ${JSON.stringify({ scenario: "paid after expiry", payment: review }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
+      );
+      await rpc(
+        "payments.closeReview",
+        { id: closed.paymentId, reason: "Assigned for handling outside this demo" },
+        manager,
+        true,
+      );
+      expect(
+        Detail.parse(await rpc("payments.get", { id: closed.paymentId }, accountant)).state.status,
+      ).toBe("failed");
+      const waitingCheckout = await checkout("staff-close");
+      await rpc(
+        "payments.closeCheckout",
+        { id: waitingCheckout.paymentId, reason: "Customer ended checkout" },
+        agent,
+        true,
+      );
+      const staffClosed = Detail.parse(
+        await rpc("payments.get", { id: waitingCheckout.paymentId }, accountant),
+      );
+      expect(staffClosed.state).toEqual({ status: "failed", reason: "Customer ended checkout" });
+      expect(staffClosed.posting).toBeNull();
+      expect(await (await fetch(waitingCheckout.checkout.url)).text()).toContain("Status: failed");
+      process.stdout.write(
+        `LIVE_LIFECYCLE ${JSON.stringify({ scenario: "staff closure", payment: staffClosed }, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value))}\n`,
+      );
       expect(await db.rows("SELECT count(*)::int AS n FROM outbox")).toEqual([{ n: 2 }]);
       const Receipt = z.object({
         id: z.string(),

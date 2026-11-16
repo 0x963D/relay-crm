@@ -274,15 +274,15 @@ describe("assignment under contention", () => {
     expect((await db.store.getLead(w.actor, w.teammate)).lifecycle.previousOwnerId).toBe(
       w.agent.ownerId,
     );
-    await expect(db.rows("UPDATE audit_log SET action='leadReopened'")).rejects.toThrow(
-      "append-only",
-    );
-    await expect(db.rows("DELETE FROM audit_log")).rejects.toThrow("append-only");
+    await expect(db.rows("UPDATE audit_log SET action='leadReopened'")).rejects.toMatchObject({
+      code: "42501",
+    });
+    await expect(db.rows("DELETE FROM audit_log")).rejects.toMatchObject({ code: "42501" });
   });
 
   test("a failed audit write rolls back both ownership and activity", async ({ db }) => {
     const w = await world(db);
-    await db.rows(
+    await db.ownerRows(
       "CREATE FUNCTION fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$; CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION fail_audit()",
     );
     await expect(
@@ -551,7 +551,7 @@ test("intake reopening records the removed owner under its system actor", async 
 test("an unavailable reopen audit rolls back intake and ownership together", async ({ db }) => {
   const w = await world(db);
   await db.rows("UPDATE leads SET status='lost',lost_reason='badTiming' WHERE id=$1", [w.teammate]);
-  await db.rows(
+  await db.ownerRows(
     "CREATE FUNCTION fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$; CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION fail_audit()",
   );
   await expect(

@@ -138,7 +138,7 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
    pnpm db:generate
    ```
 
-2. Copy `.env.example` to `.env` and set `DATABASE_URL`. Clear the placeholder `AUTH_SECRET`
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `MIGRATION_DATABASE_URL`. Clear the placeholder `AUTH_SECRET`
    to keep sign-in off, or replace it with a generated secret before enabling sign-in. Use a dedicated database:
 
    ```sh
@@ -146,7 +146,28 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
      -e POSTGRES_DB=relay -p 127.0.0.1:54329:5432 -d postgres:17
    ```
 
-3. Apply migrations and start the app.
+3. Create the migration owner and restricted app roles in that dedicated server. Replace both
+   example passwords and put the matching URLs in `.env`.
+
+   ```sh
+   docker exec -i relay-crm-pg psql -U relay -d relay -v owner_password=fake-local-owner-password -v app_password=fake-local-app-password < packages/store/scripts/setup-roles.sql
+   ```
+
+   `relay_owner` owns the schema and tables. It has `CREATEDB` for isolated test databases and
+   no superuser or role-management attribute. `MIGRATION_DATABASE_URL` is its connection.
+   `relay_app` has no ownership, superuser, `CREATEDB`, `CREATEROLE` or `BYPASSRLS` attribute,
+   and no membership of the owner role. `DATABASE_URL` is its connection. Do not put the owner
+   credentials in the serving app's environment.
+
+   The app has schema usage and sequence usage. Immutable tables, including the ledger, grant
+   only `SELECT` and `INSERT`. Mutable business tables also grant `UPDATE`. Memberships,
+   authentication tables, request limits and email suppressions also grant `DELETE`.
+   No app table grants `TRUNCATE`, DDL or trigger control. The forward migration lists every grant.
+   The statement-level `BEFORE TRUNCATE` triggers remain a second defence, including for the owner.
+   Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts packages/store/test/schema.int.test.ts`
+   to check permissions and the truncate guards.
+
+4. Apply migrations and start the app.
 
    ```sh
    pnpm db:migrate
@@ -160,7 +181,7 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
    Production startup refuses a nonempty `RELAY_DEV_ACTOR`, even with `NODE_ENV=development`.
    `pnpm test:prod` reproduces that startup and checks that no development user is created.
 
-4. Send a lead through the web form endpoint.
+5. Send a lead through the web form endpoint.
 
    ```sh
    curl -X POST http://localhost:3000/api/intake/form \
@@ -179,7 +200,7 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 | `pnpm build`             | Builds the app. It needs no database                            |
 | `pnpm start`             | Serves the built app                                            |
 | `pnpm db:generate`       | Generates the Prisma client from the schema                     |
-| `pnpm db:migrate`        | Applies the migrations to `DATABASE_URL`                        |
+| `pnpm db:migrate`        | Applies migrations through `MIGRATION_DATABASE_URL`             |
 | `pnpm outbox`            | Delivers due payment receipts through SMTP                      |
 | `pnpm import:csv <file>` | Imports a CSV file through intake and prints a report           |
 | `pnpm test`              | Runs the unit tests. They need no database                      |
@@ -190,7 +211,10 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 | `pnpm typecheck`         | Typechecks every package and its tests                          |
 
 The integration tests create a template database and one database per test, and drop each test's
-database when the test ends. The database user needs the `CREATEDB` privilege.
+database when the test ends. Only `MIGRATION_DATABASE_URL` needs `CREATEDB`.
+The app and test operations use the restricted `DATABASE_URL` role. Test fixtures use an explicit
+owner connection only to create schemas, install failure triggers or verify owner-level defences.
+Database test files run sequentially.
 
 ## Sign in and assign through the API
 

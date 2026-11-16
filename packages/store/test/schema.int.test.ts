@@ -5,7 +5,7 @@ import { describe, expect } from "vitest";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const CHECK_VIOLATION = "23514";
-const RESTRICT_VIOLATION = "23001";
+const RESTRICT_VIOLATION = "42501";
 const AT = "2026-03-02T09:00:00.000Z";
 
 type Row = Readonly<Record<string, unknown>>;
@@ -273,7 +273,7 @@ describe("what the database refuses by itself", () => {
   });
 
   test("a status the state constraint has not heard of fails closed", async ({ db }) => {
-    await db.rows("ALTER TYPE lead_status ADD VALUE 'archived'");
+    await db.ownerRows("ALTER TYPE lead_status ADD VALUE 'archived'");
 
     await expect(insert(db, "leads", lead({ status: "archived" }))).rejects.toMatchObject({
       code: CHECK_VIOLATION,
@@ -326,7 +326,7 @@ test("every append-only table refuses truncate even when empty", async ({ db }) 
   );
   expect(tables.length).toBeGreaterThan(0);
   for (const table of tables) {
-    await expect(db.rows(`TRUNCATE "${String(table.name)}" CASCADE`)).rejects.toThrow(
+    await expect(db.ownerRows(`TRUNCATE "${String(table.name)}" CASCADE`)).rejects.toThrow(
       "append-only",
     );
   }

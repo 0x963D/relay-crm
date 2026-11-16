@@ -81,10 +81,12 @@ test("system keys replay canonical input, refuse different input and operations,
         ),
       ),
     ).toEqual({ outcome: "separate" });
-    await expect(db.rows("UPDATE idempotency_records SET key='changed'")).rejects.toThrow(
-      "append-only",
-    );
-    await expect(db.rows("DELETE FROM idempotency_records")).rejects.toThrow("append-only");
+    await expect(db.rows("UPDATE idempotency_records SET key='changed'")).rejects.toMatchObject({
+      code: "42501",
+    });
+    await expect(db.rows("DELETE FROM idempotency_records")).rejects.toMatchObject({
+      code: "42501",
+    });
     expect(await db.rows("SELECT count(*)::int AS count FROM users")).toEqual([{ count: 0 }]);
   } finally {
     await client.$disconnect();

@@ -35,6 +35,7 @@ export interface TestDatabase {
   readonly store: Store;
   readonly gate: Gate;
   readonly transactions: readonly TransactionReport[];
+  ownerRows(sql: string, values?: readonly unknown[]): Promise<readonly Record<string, unknown>[]>;
   rows(sql: string, values?: readonly unknown[]): Promise<readonly Record<string, unknown>[]>;
   counts(): Promise<RowCounts>;
   seedUser(role: Role): Promise<UserId>;
@@ -74,9 +75,10 @@ async function createTestDatabase(): Promise<{
 
   const store = openStore({ connectionString });
   const prisma = connect(connectionString);
+  const owner = new pg.Client({ connectionString: server.ownerUrlFor(name) });
   const inspector = new pg.Client({ connectionString });
-  const gateSession = new pg.Client({ connectionString });
-  await Promise.all([inspector.connect(), gateSession.connect()]);
+  const gateSession = new pg.Client({ connectionString: server.ownerUrlFor(name) });
+  await Promise.all([inspector.connect(), gateSession.connect(), owner.connect()]);
 
   const transactions: TransactionReport[] = [];
   const onReport = (message: unknown): void => {
@@ -90,6 +92,8 @@ async function createTestDatabase(): Promise<{
     store,
     gate: createGate(gateSession, inspector),
     transactions,
+    ownerRows: async (sql, values = []) =>
+      (await owner.query<Record<string, unknown>>(sql, [...values])).rows,
     rows: async (sql, values = []) => {
       const result = await inspector.query<Record<string, unknown>>(sql, [...values]);
       return result.rows;
@@ -139,10 +143,14 @@ async function createTestDatabase(): Promise<{
 
   const dispose = async (): Promise<void> => {
     transactionReports.unsubscribe(onReport);
-    await Promise.all([store.close(), prisma.$disconnect(), inspector.end(), gateSession.end()]);
-    await server.admin((client) =>
-      client.query(`DROP DATABASE ${pg.escapeIdentifier(name)} WITH (FORCE)`),
-    );
+    await Promise.all([
+      store.close(),
+      prisma.$disconnect(),
+      inspector.end(),
+      gateSession.end(),
+      owner.end(),
+    ]);
+    await server.dropDatabase(name);
   };
   return { db, dispose };
 }

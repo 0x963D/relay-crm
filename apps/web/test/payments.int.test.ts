@@ -243,7 +243,7 @@ test("a failed inbox write rolls settlement back and the signed retry succeeds",
         "x-sandbox-signature": signPaymentBody(secret, timestamp, body),
       },
     });
-  await db.rows(
+  await db.ownerRows(
     "CREATE FUNCTION refuse_inbox() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test inbox failure'; END $$; CREATE TRIGGER refuse_inbox BEFORE INSERT ON webhook_inbox FOR EACH ROW EXECUTE FUNCTION refuse_inbox()",
   );
   expect((await receiver(request())).status).toBe(500);
@@ -251,7 +251,7 @@ test("a failed inbox write rolls settlement back and the signed retry succeeds",
   expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(0);
   expect(await db.rows("SELECT * FROM outbox")).toHaveLength(0);
   expect((await db.store.getPayment(actor, id)).state.status).toBe("checkoutCreated");
-  await db.rows("DROP TRIGGER refuse_inbox ON webhook_inbox");
+  await db.ownerRows("DROP TRIGGER refuse_inbox ON webhook_inbox");
   expect((await receiver(request())).status).toBe(200);
   expect(await db.rows("SELECT * FROM ledger_transactions")).toHaveLength(1);
   expect(await db.rows("SELECT * FROM outbox")).toHaveLength(1);

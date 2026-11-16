@@ -29,7 +29,6 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm test:prod
 
   integration:
     runs-on: ubuntu-latest
@@ -49,7 +48,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://relay:relay@localhost:5432/relay
+      DATABASE_URL: postgresql://relay_app:fake-local-app-password@localhost:5432/relay
+      MIGRATION_DATABASE_URL: postgresql://relay_owner:fake-local-owner-password@localhost:5432/relay
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -59,5 +59,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+      - run: psql postgresql://relay:relay@localhost:5432/relay -v owner_password=fake-local-owner-password -v app_password=fake-local-app-password -f packages/store/scripts/setup-roles.sql
       - run: pnpm db:migrate
       - run: pnpm test:int
+      - run: pnpm test:prod

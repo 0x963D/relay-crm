@@ -196,7 +196,7 @@ test("the database refuses second postings, unbalanced postings and ledger mutat
     "DELETE FROM ledger_transactions",
     "UPDATE ledger_accounts SET currency='USD'",
   ]) {
-    await expect(db.rows(sql)).rejects.toMatchObject({ code: "23001" });
+    await expect(db.rows(sql)).rejects.toMatchObject({ code: "42501" });
   }
   const { id: second } = await db.store.createPayment(
     actor,

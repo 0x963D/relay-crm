@@ -19,6 +19,7 @@ export default defineConfig({
         resolve: { alias: { "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)) } },
         test: {
           name: "integration",
+          fileParallelism: false,
           include: INTEGRATION_TESTS,
           globalSetup: ["packages/store/src/testing/global-setup.ts"],
           testTimeout: 30_000,
@@ -28,6 +29,7 @@ export default defineConfig({
       {
         test: {
           name: "production",
+          fileParallelism: false,
           globalSetup: ["packages/store/src/testing/global-setup.ts"],
           include: PRODUCTION_TESTS,
           testTimeout: 30_000,

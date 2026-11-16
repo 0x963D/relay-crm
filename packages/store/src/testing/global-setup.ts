@@ -8,14 +8,12 @@ import { testServer } from "./server.ts";
 export default async function setup(): Promise<void> {
   const server = testServer();
   const template = pg.escapeIdentifier(server.templateName);
-  await server.admin(async (client) => {
-    await client.query(`DROP DATABASE IF EXISTS ${template} WITH (FORCE)`);
-    await client.query(`CREATE DATABASE ${template}`);
-  });
+  await server.dropDatabase(server.templateName);
+  await server.admin((client) => client.query(`CREATE DATABASE ${template}`));
 
   const prismaCli = createRequire(import.meta.url).resolve("prisma/build/index.js");
   await promisify(execFile)(process.execPath, [prismaCli, "migrate", "deploy"], {
     cwd: fileURLToPath(new URL("../..", import.meta.url)),
-    env: { ...process.env, DATABASE_URL: server.urlFor(server.templateName) },
+    env: { ...process.env, MIGRATION_DATABASE_URL: server.ownerUrlFor(server.templateName) },
   });
 }

@@ -220,7 +220,7 @@ test("a failure while queuing the receipt rolls back the second approval and pos
 }) => {
   const w = await setup(db);
   await db.store.approveManualPayment(w.a, w.input, requestId);
-  await db.rows(
+  await db.ownerRows(
     "CREATE FUNCTION fail_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Receipt unavailable'; END $$; CREATE TRIGGER fail_receipt BEFORE INSERT ON outbox FOR EACH ROW EXECUTE FUNCTION fail_receipt()",
   );
   await expect(db.store.approveManualPayment(w.b, w.input, requestId)).rejects.toThrow(
@@ -230,7 +230,7 @@ test("a failure while queuing the receipt rolls back the second approval and pos
   expect(view.state.status).toBe("pendingApproval");
   expect(view.approvals).toHaveLength(1);
   expect(await counts(db)).toEqual([{ postings: 0, lines: 0, total: "0", outbox: 0 }]);
-  await db.rows("DROP TRIGGER fail_receipt ON outbox");
+  await db.ownerRows("DROP TRIGGER fail_receipt ON outbox");
   await db.store.approveManualPayment(w.b, w.input, requestId);
   expect((await db.store.getPayment(w.b, w.id)).state.status).toBe("completed");
 });
