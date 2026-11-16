@@ -88,7 +88,8 @@ back to the TCP peer. Configure the exact proxy count and prevent direct access 
 proxies. Each proxy must append the peer address or overwrite the header with a verified chain.
 IPv4-mapped IPv6 and IPv6 spellings are canonicalized before counting.
 
-Use `pnpm dev` and `pnpm start`. Their Node HTTP entry point captures the connection address
+Use `pnpm dev` and `pnpm start`. Development always binds `127.0.0.1`. Production uses `HOST`,
+defaulting to `0.0.0.0`. `pnpm test -- apps/web/test/env.test.ts` checks those choices. Their Node HTTP entry point captures the connection address
 in request-local storage before Next handles the request. Running `next start` directly lacks
 that context and puts requests without a trusted forwarded address in one `unknown` budget.
 `pnpm test -- apps/web/test/env.test.ts` checks that the proxy count is an integer from 0 to 32.

@@ -3,7 +3,7 @@ import { connections } from "../src/server/client-address.ts";
 import { serverOptions } from "../src/server/env.ts";
 import { logToConsole } from "../src/server/log.ts";
 
-const { dev, port } = serverOptions();
+const { dev, port, host } = serverOptions();
 const { default: next } = await import("next");
 const app = next({ dev, port });
 await app.prepare();
@@ -12,6 +12,6 @@ createServer((request, response) => {
   connections.run(request.socket.remoteAddress ?? "", () => {
     void handle(request, response);
   });
-}).listen(port, () => {
-  logToConsole("server.ready", { port });
+}).listen(port, host, () => {
+  logToConsole("server.ready", { port, host });
 });

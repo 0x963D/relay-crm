@@ -195,16 +195,19 @@ export function readEnv(developmentBuild?: boolean): Env {
   return parseEnv(process.env, developmentBuild);
 }
 
-export function serverOptions() {
+export function serverOptions(
+  argv: readonly string[] = process.argv,
+  variables: Readonly<Record<string, string | undefined>> = process.env,
+) {
   const port = z.coerce
     .number()
     .int()
     .min(1)
     .max(65535)
-    .parse(process.env.PORT ?? "3000");
-  const dev = process.argv.includes("--dev");
+    .parse(variables.PORT ?? "3000");
+  const dev = argv.includes("--dev");
   Object.assign(process.env, { NODE_ENV: dev ? "development" : "production" });
-  return { port, dev };
+  return { port, dev, host: dev ? "127.0.0.1" : (variables.HOST ?? "0.0.0.0") };
 }
 
 function paymentEnv(v: z.infer<typeof Variables>): PaymentEnv | null {

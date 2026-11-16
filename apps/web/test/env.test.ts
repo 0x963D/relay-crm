@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { EnvError, parseEnv } from "../src/server/env.ts";
+import { EnvError, parseEnv, serverOptions } from "../src/server/env.ts";
 
 const DATABASE_URL = "postgresql://relay:relay@localhost:5432/relay";
 const META = {
@@ -145,6 +145,7 @@ it("keeps payments off until enabled and checks the reconciliation timing defaul
   expect(parseEnv(values).payments).toMatchObject({
     firstCheckMs: 900000,
     intervalMs: 300000,
+    checkoutTtlMs: 86400000,
     lateMs: 30000,
   });
   expect(
@@ -201,4 +202,15 @@ it.each([
       true,
     ),
   ).toThrow(/distinct/);
+});
+
+it("development always binds loopback and production honors its configured host", () => {
+  expect(
+    serverOptions(["node", "serve", "--dev"], { HOST: "0.0.0.0", PORT: "3001" }),
+  ).toMatchObject({ host: "127.0.0.1", port: 3001, dev: true });
+  expect(serverOptions(["node", "serve"], { HOST: "192.0.2.7", PORT: "3002" })).toMatchObject({
+    host: "192.0.2.7",
+    port: 3002,
+    dev: false,
+  });
 });
