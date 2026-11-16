@@ -8,9 +8,14 @@ const outputDirectory = resolve(argument);
 await mkdir(outputDirectory, { recursive: true });
 
 const assignment = "packages/store/src/distribution.ts";
-const command =
-  "pnpm exec dotenv -- vitest run --project integration packages/store/test/access-assignment.int.test.ts";
-const mutations = [
+const definitions: {
+  name: string;
+  file: string;
+  before: string;
+  after: string;
+  test: string;
+  testFile?: string;
+}[] = [
   {
     name: "replay",
     file: "packages/store/src/idempotency.ts",
@@ -69,7 +74,24 @@ const mutations = [
     after: "",
     test: "reassigning the current owner reports no change and writes no history",
   },
+  {
+    name: "payment-completion-recorder",
+    file: "packages/store/prisma/migrations/0024_payment_makers/migration.sql",
+    before: " AND a.approver_id<>NEW.recorded_by_id",
+    after: "",
+    test: "completion independently excludes the recorder when another person last edited",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
 ];
+const filter = process.argv[3];
+const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));
+if (!mutations.length) throw new Error("No matching mutations.");
+const files = [
+  ...new Set(
+    mutations.map((m) => m.testFile ?? "packages/store/test/access-assignment.int.test.ts"),
+  ),
+];
+const command = `pnpm exec dotenv -- vitest run --project integration ${files.join(" ")}`;
 
 async function run(name: string) {
   const result = spawnSync(command, { shell: true, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
