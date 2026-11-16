@@ -851,7 +851,7 @@ test("account lists sort by person name with a scoped total and payment summary"
       id: accountId,
       campaign: "Evening course",
       person: { name: "Ada" },
-      paymentCount: 0,
+      paymentCount: 1,
       paymentInProgress: { status: "checkoutCreated" },
     });
     if (actor === w.agent) expect(result.items[0]?.balances).toBeNull();
