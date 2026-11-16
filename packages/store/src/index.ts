@@ -77,9 +77,10 @@ export type Store = ReturnType<typeof openStore>;
 
 export function openStore(config: {
   readonly connectionString: string;
+  readonly clock?: () => Date;
   readonly receipts?: Pick<OutboxOptions, "leaseMs" | "sendTimeoutMs" | "lifetimeAttemptLimit">;
 }) {
-  const db = connect(config.connectionString);
+  const db = connect(config.connectionString, config.clock);
   return {
     demoPerson: (role: DemoRole) => demoPerson(db, role),
     demoReady: () => demoReady(db),

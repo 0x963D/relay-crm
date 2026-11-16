@@ -6,8 +6,16 @@ import { PrismaClient, type Prisma } from "./generated/client.ts";
 export type Db = PrismaClient;
 export type Tx = Prisma.TransactionClient;
 
-export function connect(connectionString: string): Db {
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const clocks = new WeakMap<Db, () => Date>();
+
+export function storeNow(db: Db): Date {
+  return (clocks.get(db) ?? (() => new Date()))();
+}
+
+export function connect(connectionString: string, clock: () => Date = () => new Date()): Db {
+  const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  clocks.set(db, clock);
+  return db;
 }
 
 /**

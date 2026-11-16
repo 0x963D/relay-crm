@@ -1,4 +1,6 @@
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
+
+vi.setConfig({ testTimeout: 120_000 });
 import { AccountId, UserId, PaymentId, parseExternalId } from "@relay/domain";
 import { seedDemo, resetDemo } from "../src/demo.ts";
 import { DEMO_PEOPLE } from "../src/demo-state.ts";
@@ -197,3 +199,41 @@ test("demo people keep their final roles throughout seeded approvals", async ({ 
     ),
   ).toEqual([{ count: 0 }]);
 });
+
+test.for(["Asia/Tokyo", "America/Los_Angeles"])(
+  "demo history uses ordered working hours across a fortnight in %s",
+  async (timeZone, { db }) => {
+    await seedDemo({ ...options(db), timeZone });
+    const times = await db.rows(
+      `SELECT at FROM activities UNION ALL SELECT created_at AS at FROM leads UNION ALL SELECT created_at AS at FROM payments UNION ALL SELECT at FROM payment_approvals UNION ALL SELECT at FROM ledger_transactions UNION ALL SELECT started_at AS at FROM receipt_attempts`,
+    );
+    const dates = times.map((row) => new Date(String(row.at)));
+    expect(new Set(dates.map((at) => at.toISOString().slice(0, 10))).size).toBeGreaterThanOrEqual(
+      7,
+    );
+    for (const at of dates) {
+      expect(at.getTime()).toBeGreaterThanOrEqual(today.getTime() - 15 * 86400000);
+      expect(at.getTime()).toBeLessThan(today.getTime());
+      const hour = Number(
+        new Intl.DateTimeFormat("en", { timeZone, hour: "numeric", hourCycle: "h23" }).format(at),
+      );
+      expect(hour).toBeGreaterThanOrEqual(9);
+      expect(hour).toBeLessThan(18);
+    }
+    expect(
+      await db.rows(
+        "SELECT count(*)::int AS count FROM activities a JOIN leads l ON l.id=a.lead_id WHERE a.at<l.created_at",
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      await db.rows(
+        "SELECT count(*)::int AS count FROM payments p JOIN accounts a ON a.id=p.account_id WHERE p.created_at<a.created_at OR p.decided_at<p.created_at",
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      await db.rows(
+        "SELECT count(*)::int AS count FROM payment_approvals a JOIN payments p ON p.id=a.payment_id WHERE a.at<p.created_at OR a.at>p.decided_at",
+      ),
+    ).toEqual([{ count: 0 }]);
+  },
+);

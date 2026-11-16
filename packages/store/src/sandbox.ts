@@ -2,13 +2,13 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Money, SandboxMode } from "@relay/domain";
 import type { SandboxCheckout } from "./generated/client.ts";
 import { AccessError } from "./errors.ts";
-import { transact, type Db } from "./tx.ts";
+import { transact, storeNow, type Db } from "./tx.ts";
 
 function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
-function current(row: SandboxCheckout | null) {
-  return row?.status === "pending" && row.expiresAt <= new Date()
+function current(db: Db, row: SandboxCheckout | null) {
+  return row?.status === "pending" && row.expiresAt <= storeNow(db)
     ? { ...row, status: "expired" }
     : row;
 }
@@ -27,7 +27,7 @@ export function createSandboxCheckout(
     if (
       payment?.status !== "checkoutCreated" ||
       payment.creationToken !== (input.creationToken ?? null) ||
-      (payment.creationPendingUntil !== null && payment.creationPendingUntil <= new Date())
+      (payment.creationPendingUntil !== null && payment.creationPendingUntil <= storeNow(db))
     )
       throw new AccessError("conflict");
     await tx.payment.update({
@@ -44,18 +44,21 @@ export function createSandboxCheckout(
         amount: input.money.minor,
         currency: input.money.currency,
         mode: input.mode,
-        expiresAt: input.expiresAt ?? new Date(Date.now() + 86400000),
+        expiresAt: input.expiresAt ?? new Date(storeNow(db).getTime() + 86400000),
       },
     });
     return { id: row.id, token };
   });
 }
 export async function getSandboxCheckout(db: Db, paymentId: string) {
-  return current(await db.sandboxCheckout.findUnique({ where: { paymentId } }));
+  return current(db, await db.sandboxCheckout.findUnique({ where: { paymentId } }));
 }
 export async function getSandboxCheckoutByToken(db: Db, token: string) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-  return current(await db.sandboxCheckout.findUnique({ where: { tokenHash: tokenHash(token) } }));
+  return current(
+    db,
+    await db.sandboxCheckout.findUnique({ where: { tokenHash: tokenHash(token) } }),
+  );
 }
 export async function cancelSandboxCheckout(db: Db, paymentId: string) {
   await transact(db, (tx) =>
@@ -69,6 +72,7 @@ export function paySandboxCheckout(db: Db, token: string) {
   return transact(db, async (tx) => {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const row = current(
+      db,
       await tx.sandboxCheckout.findUnique({ where: { tokenHash: tokenHash(token) } }),
     );
     if (row?.status !== "pending") return null;

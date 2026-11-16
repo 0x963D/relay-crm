@@ -24,7 +24,7 @@ import { AccessError } from "./errors.ts";
 import { InvariantError } from "./lead-row.ts";
 import { scopeWhere } from "./scope.ts";
 import type { Payment, Prisma } from "./generated/client.ts";
-import { transact, type Db, type Tx } from "./tx.ts";
+import { transact, storeNow, type Db, type Tx } from "./tx.ts";
 
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new InvariantError("Invalid payment record");
@@ -158,7 +158,7 @@ export async function createPayment(
         });
         if (!account) throw new AccessError("accessDenied");
         await availablePayment(tx, account.id);
-        const at = new Date();
+        const at = storeNow(db);
         const row = await tx.payment.create({
           data: {
             accountId: account.id,
@@ -214,14 +214,14 @@ export async function checkoutTerms(db: Db, actor: Actor, id: PaymentId) {
       row.status !== "checkoutCreated" ||
       (row.creationToken !== null &&
         row.creationPendingUntil !== null &&
-        row.creationPendingUntil > new Date())
+        row.creationPendingUntil > storeNow(db))
     )
       throw new AccessError("conflict");
     const creationToken = randomUUID();
     await tx.payment.update({
       where: { id },
       data: {
-        creationPendingUntil: new Date(Date.now() + 30_000),
+        creationPendingUntil: new Date(storeNow(db).getTime() + 30_000),
         creationToken,
         checkToken: null,
       },
@@ -260,7 +260,7 @@ export async function recordCheckoutCancellation(
   providerAsked: boolean,
 ) {
   return transact(db, async (tx) => {
-    const at = new Date();
+    const at = storeNow(db);
     if (observed)
       await settlePayment(
         tx,
@@ -438,7 +438,7 @@ export interface ProviderEvent {
 }
 export async function receivePaymentWebhook(db: Db, event: ProviderEvent) {
   return transact(db, async (tx) => {
-    const at = new Date();
+    const at = storeNow(db);
     const prior = await tx.webhookInbox.findUnique({ where: { eventId: event.eventId } });
     if (prior && (prior.paymentId !== event.paymentId || prior.payloadHash !== event.payloadHash))
       throw new AccessError("conflict");
@@ -524,7 +524,7 @@ export async function finishPaymentCheck(
   return transact(db, async (tx) => {
     const row = required(await tx.payment.findUnique({ where: { id } }));
     const superseded = row.checkToken !== token;
-    const at = new Date();
+    const at = storeNow(db);
     const recordCheck = async (outcome: SettlementResult) => {
       await tx.paymentEvent.create({
         data: {
@@ -585,7 +585,7 @@ export async function closePayment(
     )
       throw new AccessError("accessDenied");
     const before = stateOf(row);
-    const at = new Date();
+    const at = storeNow(db);
     const next = transitionPayment(before, { type, reason }, money(row.amount, row.currency), at);
     if (next === before) throw new AccessError("conflict");
     const updated = await tx.payment.update({ where: { id }, data: columns(next) });
@@ -945,7 +945,7 @@ export async function recordManualPayment(
         });
         if (!account) throw new AccessError("accessDenied");
         await availableManualTerms(tx, account.id, input.receiptHash);
-        const at = new Date();
+        const at = storeNow(db);
         const row = await tx.payment.create({
           data: {
             accountId: account.id,
@@ -1019,7 +1019,7 @@ export async function approveManualPayment(
     )
       throw new AccessError("alreadyApproved");
     const row = await waitingPayment(tx, current, input);
-    const at = new Date();
+    const at = storeNow(db);
     await tx.paymentApproval.create({
       data: {
         paymentId: row.id,
@@ -1090,7 +1090,7 @@ export async function decideManualPayment(
           recordScope(current, "payment", "approve").kind !== "all"
     )
       throw new AccessError("accessDenied");
-    const at = new Date();
+    const at = storeNow(db);
     const before = stateOf(row);
     const next = transitionPayment(
       before,
@@ -1143,7 +1143,7 @@ export async function editManualPayment(
         version: { increment: 1 },
       },
     });
-    const at = new Date();
+    const at = storeNow(db);
     await writeAudit(tx, current, {
       action: "paymentEdited",
       subject: { type: "payment", id: input.id },

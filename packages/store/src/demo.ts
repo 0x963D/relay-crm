@@ -137,7 +137,34 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       data: { email: "leila.farouk@example.com", reason: "Invented demo suppression" },
     });
   });
-  const store = openStore({ connectionString: options.appUrl });
+  const [bounds] = await owner.$queryRaw<{ start: Date; end: Date }[]>`
+    SELECT date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
+      AT TIME ZONE ${options.timeZone ?? "UTC"} AS start,
+      (date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
+        + interval '1 day') AT TIME ZONE ${options.timeZone ?? "UTC"} AS end`;
+  const midnight = required(bounds).start;
+  const nextDay = required(bounds).end;
+  const history = await owner.$queryRaw<{ at: Date }[]>`
+    SELECT (((${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})::date
+      - ago + time '09:00') AT TIME ZONE ${options.timeZone ?? "UTC"}) AS at
+    FROM generate_series(14,1,-1) AS ago ORDER BY ago DESC`;
+  let tick = 0;
+  let paymentTime = required(history[7]).at;
+  const clock = () => paymentTime;
+  const advance = () => {
+    const step = tick++;
+    paymentTime = new Date(
+      required(history[7 + Math.floor(step / 8)]).at.getTime() + (step % 8) * 3600000,
+    );
+  };
+  const stories = new Map<LeadId, Date>();
+  const storyTime = (id: LeadId) => {
+    const at = new Date(required(stories.get(id)).getTime() + 1200000);
+    stories.set(id, at);
+    return at;
+  };
+  let leadNumber = 0;
+  const store = openStore({ connectionString: options.appUrl, clock });
   const actor = (name: string): Actor => {
     const person = required(STAFF.find((person) => person.name === name));
     return { userId: required(UserId.parse(person.id)), role: person.role, team: null };
@@ -147,7 +174,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
   const accountant = actor("Esther Okafor");
   const noor = actor("Noor Haddad");
   const ffion = actor("Ffion Pryce");
-  const early = new Date(options.today.getTime() - 8 * day);
+  const early = required(history[0]).at;
   const nameEmail = (name: string) => name.toLowerCase().replaceAll(" ", ".").replaceAll("-", "");
   const courses: Readonly<Record<string, string>> = {
     "IELTS evening": "IELTS evening · January intake",
@@ -159,6 +186,8 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
   let phone = 140;
   async function lead(name: string, course: string, source: IntakeSource = "metaLeadAds") {
     phone++;
+    const number = leadNumber++;
+    const createdAt = new Date(required(history[number % 7]).at.getTime() + (number % 12) * 900000);
     const email = parseEmail(`${nameEmail(name)}@example.com`);
     if (!email.ok) throw new Error("Invalid invented email.");
     const result = await store.intake({
@@ -173,12 +202,13 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
         adSet: course === "IELTS evening" ? "London, age 25 to 40" : null,
         ad: course === "IELTS evening" ? "Band 7 in 8 weeks, video" : null,
       }),
-      submittedAt: early,
-      receivedAt: early,
+      submittedAt: createdAt,
+      receivedAt: createdAt,
       raw: { demo: true },
     });
     if (result.outcome.kind !== "leadCreated")
       throw new Error("Seed intake did not create a lead.");
+    stories.set(result.outcome.leadId, createdAt);
     return result.outcome.leadId;
   }
   async function assign(id: LeadId, to = agent) {
@@ -188,17 +218,11 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       [id],
       { ownerId: to.userId, teamId: sales },
       randomUUID(),
-      early,
+      storyTime(id),
     );
   }
   const work = (id: LeadId, command: LeadWork, by = agent) =>
-    workLead(
-      app,
-      by,
-      { id, key: randomUUID(), work: command },
-      randomUUID(),
-      new Date(early.getTime() + 60000),
-    );
+    workLead(app, by, { id, key: randomUUID(), work: command }, randomUUID(), storyTime(id));
   const attempt = (id: LeadId, note: string, spoke: boolean, callbackAt?: Date) =>
     work(id, {
       kind: "attempt",
@@ -209,13 +233,6 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
         ...(callbackAt ? { callback: { kind: "set", at: callbackAt } } : {}),
       },
     });
-  const [bounds] = await owner.$queryRaw<{ start: Date; end: Date }[]>`
-    SELECT date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
-      AT TIME ZONE ${options.timeZone ?? "UTC"} AS start,
-      (date_trunc('day', ${options.today}::timestamptz AT TIME ZONE ${options.timeZone ?? "UTC"})
-        + interval '1 day') AT TIME ZONE ${options.timeZone ?? "UTC"} AS end`;
-  const midnight = required(bounds).start;
-  const nextDay = required(bounds).end;
   const dueToday = new Date(nextDay.getTime() - 1);
   const queue = [
     {
@@ -331,6 +348,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     let command = 0;
     async function manual(name: string, amount: bigint, kind: "first" | "repeat", by = agent) {
       command++;
+      advance();
       return store.recordManualPayment(
         by,
         {
@@ -344,8 +362,10 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
         randomUUID(),
       );
     }
-    const approve = (id: PaymentId, by: Actor, version = 0) =>
-      store.approveManualPayment(by, { id, version, roleVersion: 0 }, randomUUID());
+    const approve = (id: PaymentId, by: Actor, version = 0) => {
+      advance();
+      return store.approveManualPayment(by, { id, version, roleVersion: 0 }, randomUUID());
+    };
     async function completedManual(
       name: string,
       amount: bigint,
@@ -366,6 +386,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       by = manager,
       expired = false,
     ) {
+      advance();
       const money = { minor: amount, currency: "GBP" } as const;
       const payment = await store.createPayment(
         by,
@@ -385,6 +406,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
       money: { readonly minor: bigint; readonly currency: "GBP" },
       status: "completed" | "expired" = "completed",
     ) {
+      advance();
       return store.receivePaymentWebhook({
         paymentId: id,
         eventId: randomUUID(),
@@ -396,7 +418,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     await completedManual("Jonas Weber", 39500n, "repeat", true);
     const recovered = await card("Jonas Weber", 39500n, "repeat", "drop");
     await store.paySandboxCheckout(recovered.token);
-    const token = required(await store.claimPaymentCheck(recovered.id, new Date(), 60000));
+    const token = required(await store.claimPaymentCheck(recovered.id, clock(), 60000));
     const paid = required(await store.getSandboxCheckout(recovered.id));
     await store.finishPaymentCheck(recovered.id, token, {
       status: "completed",
@@ -426,7 +448,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     await store.paySandboxCheckout(mismatch.token);
     await observe(mismatch.id, { minor: 35900n, currency: "GBP" });
     const late = await card("Tariq Aziz", 48000n, "first", "drop", noor, true);
-    const expiryCheck = required(await store.claimPaymentCheck(late.id, new Date(), 60000));
+    const expiryCheck = required(await store.claimPaymentCheck(late.id, clock(), 60000));
     await store.finishPaymentCheck(late.id, expiryCheck, { status: "expired", money: late.money });
     await observe(late.id, late.money);
     const expired = await card("Tariq Aziz", 48000n, "first", "drop", noor, true);
@@ -434,6 +456,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     await card("Marek Novak", 48000n, "first", "normal", agent);
     await card("Chiara Bianchi", 24000n, "repeat", "normal", ffion);
     const yusuf = await manual("Yusuf Demir", 47900n, "first", actor("Tomasz Zielinski"));
+    advance();
     await store.editManualPayment(
       agent,
       {
@@ -449,6 +472,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     await manual("Isabela Duarte", 115000n, "first");
     const mireille = await manual("Mireille Dubois", 39500n, "repeat", noor);
     const pedro = await manual("Pedro Alves", 24000n, "repeat");
+    advance();
     await store.decideManualPayment(
       accountant,
       {
@@ -461,18 +485,21 @@ async function seed(owner: Db, app: Db, options: DemoOptions) {
     );
     await manual("Aoife Brennan", 24000n, "repeat", actor("Tomasz Zielinski"));
     await approve(mireille.id, accountant);
-    await store.runOutbox(async (message, signal): Promise<DeliveryOutcome> => {
-      const state = deliveryStates.get(message.paymentId);
-      return state
-        ? {
-            state,
-            reason:
-              state === "failed"
-                ? "Invented SMTP connection refusal. Automatic retry is scheduled."
-                : "Invented connection loss after DATA. Delivery is unknown.",
-          }
-        : options.deliver(message, signal);
-    });
+    await store.runOutbox(
+      async (message, signal): Promise<DeliveryOutcome> => {
+        const state = deliveryStates.get(message.paymentId);
+        return state
+          ? {
+              state,
+              reason:
+                state === "failed"
+                  ? "Invented SMTP connection refusal. Automatic retry is scheduled."
+                  : "Invented connection loss after DATA. Delivery is unknown.",
+            }
+          : options.deliver(message, signal);
+      },
+      { at: new Date(required(history[13]).at.getTime() + 7 * 3600000) },
+    );
     await transact(
       owner,
       (tx) => tx.$executeRaw`UPDATE demo_seed SET state='ready' WHERE key=${DEMO_KEY}`,
