@@ -239,6 +239,15 @@ const definitions: {
     test: "standalone truncate refuses outbox",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
+  {
+    name: "payment-active-approval-index",
+    file: "packages/store/prisma/migrations/0016_manual_payments/migration.sql",
+    before:
+      "CREATE UNIQUE INDEX payment_approvals_active_key ON payment_approvals(payment_id,approver_id) WHERE voided_at IS NULL;",
+    after: "",
+    test: "the database refuses duplicate active approvals but permits a fresh approval after voiding",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
 ];
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));

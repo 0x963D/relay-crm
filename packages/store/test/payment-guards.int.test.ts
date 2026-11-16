@@ -126,3 +126,27 @@ test.for([
     await db.ownerRows("ROLLBACK");
   }
 });
+
+test("the database refuses duplicate active approvals but permits a fresh approval after voiding", async ({
+  db,
+}) => {
+  const w = await waiting(db);
+  await db.store.approveManualPayment(w.a, w.input, requestId);
+  await expect(
+    db.rows(
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      [w.id, w.a.userId, requestId],
+    ),
+  ).rejects.toMatchObject({ code: "23505", constraint: "payment_approvals_active_key" });
+  await db.rows("UPDATE users SET role='manager' WHERE id=$1", [w.a.userId]);
+  await db.rows(
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,1,now(),$3)",
+    [w.id, w.a.userId, requestId],
+  );
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS total,count(*) FILTER(WHERE voided_at IS NULL)::int AS active FROM payment_approvals WHERE payment_id=$1",
+      [w.id],
+    ),
+  ).toEqual([{ total: 2, active: 1 }]);
+});
