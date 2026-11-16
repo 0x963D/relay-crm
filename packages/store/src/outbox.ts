@@ -196,7 +196,10 @@ export async function runOutbox(db: Db, deliver: ReceiptDelivery, options: Outbo
             new Promise<DeliveryOutcome>((resolve) => {
               timer = setTimeout(() => {
                 controller.abort();
-                resolve(timeout);
+                // Let the SMTP abort handler report a definite failure before DATA.
+                setImmediate(() => {
+                  resolve(timeout);
+                });
               }, remaining);
             }),
           ]);

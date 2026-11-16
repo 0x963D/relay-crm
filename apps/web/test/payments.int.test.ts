@@ -1,3 +1,5 @@
+import { createReceiptMailer } from "../src/server/mailer.ts";
+import { openSmtpInbox } from "./support/smtp.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { expect, vi } from "vitest";
 import { test } from "@relay/store/testing";
@@ -519,20 +521,47 @@ test("worker HTTP responses contain counts without record identifiers", async ({
     expect.soft(await checked.json()).toEqual({ checked: 1, changed: 1 });
     const delivered = await outbox(request(values.RELAY_OUTBOX_SECRET));
     expect(delivered.status).toBe(200);
-    expect
-      .soft(await delivered.json())
-      .toEqual({
-        processed: 1,
-        sent: 0,
-        failed: 0,
-        suppressed: 1,
-        unknown: 0,
-        recordingFailed: 0,
-        superseded: 0,
-      });
+    expect.soft(await delivered.json()).toEqual({
+      processed: 1,
+      sent: 0,
+      failed: 0,
+      suppressed: 1,
+      unknown: 0,
+      recordingFailed: 0,
+      superseded: 0,
+    });
   } finally {
     await globalThis.relayComposition?.store.close();
     Reflect.deleteProperty(globalThis, "relayComposition");
     vi.unstubAllEnvs();
+  }
+});
+
+test("a worker deadline before the SMTP greeting records a retryable failure", async ({ db }) => {
+  const actor: Actor = { userId: await db.seedUser("manager"), role: "manager", team: null };
+  const accountId = await db.seedAccount();
+  const money = { minor: 100n, currency: "GBP" as const };
+  const { id } = await db.store.createPayment(
+    actor,
+    { key: randomUUID(), accountId, money, kind: "first", mode: "drop" },
+    0,
+    randomUUID(),
+  );
+  await db.store.receivePaymentWebhook({
+    eventId: randomUUID(),
+    paymentId: id,
+    payloadHash: "fake",
+    observed: { status: "completed", money },
+  });
+  await db.rows("UPDATE outbox SET recipient='receipt@example.com' WHERE payment_id=$1", [id]);
+  const inbox = await openSmtpInbox(() => "sent", "greeting");
+  try {
+    const send = createReceiptMailer({ kind: "smtp", url: inbox.url, from: "sender@example.com" });
+    expect(await db.store.runOutbox(send, { leaseMs: 2000, sendTimeoutMs: 200 })).toMatchObject([
+      { state: "failed" },
+    ]);
+    expect((await db.store.getPayment(actor, id)).receipt?.nextAttemptAt).toBeInstanceOf(Date);
+  } finally {
+    await inbox.close();
   }
 });
