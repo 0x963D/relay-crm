@@ -105,6 +105,10 @@ export function PaymentDetail({
   const reviewing = state.status === "needsReview";
   const waiting = state.status === "checkoutCreated";
   const manualWaiting = state.status === "pendingApproval";
+  const closedState = payment.events.findLast((event) => {
+    const status = eventDetail(event.detail).status;
+    return status === "expired" || status === "failed" || event.kind === "checkoutClosed";
+  });
   const approvals = payment.approvals.filter((a) => !a.voidedAt);
   const reports = payment.events.filter(
     (event) =>
@@ -234,22 +238,57 @@ export function PaymentDetail({
           </section>
         )}
         {reviewing && (
-          <div className="grid gap-4 @lg/payment:grid-cols-3">
+          <section aria-label="Review comparison" className="grid gap-4 @lg/payment:grid-cols-3">
             <div>
               <p className="text-xs text-muted-foreground">This payment</p>
-              <p className="text-xl font-bold">{formatMoney(payment.money)}</p>
+              <p className="text-xl font-bold">
+                {state.reason === "paid after close"
+                  ? closedState && eventDetail(closedState.detail).status === "expired"
+                    ? "Expired"
+                    : "Closed as failed"
+                  : `${formatMoney(payment.money)} ${payment.money.currency}`}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">The provider reported</p>
               <p className="text-xl font-bold text-refused-foreground">
-                {formatMoney(state.reported)}
+                {state.reason === "paid after close"
+                  ? "Paid"
+                  : `${formatMoney(state.reported)} ${state.reported.currency}`}
               </p>
+              {state.reason === "paid after close" && (
+                <p className="text-caption">
+                  {formatMoney(state.reported)} {state.reported.currency}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-muted-foreground">What differs</p>
-              <p className="font-semibold">{state.reason}</p>
+              <p className="text-xl font-bold">
+                {state.reason === "paid after close"
+                  ? "The state"
+                  : state.reason === "currency mismatch"
+                    ? `${payment.money.currency} / ${state.reported.currency}`
+                    : formatMoney({
+                        minor:
+                          payment.money.minor > state.reported.minor
+                            ? payment.money.minor - state.reported.minor
+                            : state.reported.minor - payment.money.minor,
+                        currency: payment.money.currency,
+                      })}
+              </p>
+              <p className="text-caption text-secondary-foreground">
+                {state.reason === "paid after close"
+                  ? payment.money.minor === state.reported.minor &&
+                    payment.money.currency === state.reported.currency
+                    ? "The amount and the currency match."
+                    : "The payment was already closed. The reported money also differs."
+                  : state.reason === "currency mismatch"
+                    ? "The currency. Amounts in different currencies cannot be compared."
+                    : "The amount. The currency matches."}
+              </p>
             </div>
-          </div>
+          </section>
         )}
         <div className="grid gap-6 @2xl/payment:grid-cols-payment-detail">
           <div className="space-y-6">
