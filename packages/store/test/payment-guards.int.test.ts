@@ -51,3 +51,32 @@ test("completion independently excludes the recorder when another person last ed
   await db.ownerRows("ALTER TABLE payment_approvals ENABLE TRIGGER payment_approvals_guard");
   await refusesCompletion(db, w.id);
 });
+
+async function staleApproval(db: TestDatabase) {
+  const w = await waiting(db);
+  await db.store.approveManualPayment(w.a, w.input, requestId);
+  await db.ownerRows("ALTER TABLE users DISABLE TRIGGER users_void_approvals");
+  await db.rows("UPDATE users SET role='manager' WHERE id=$1", [w.a.userId]);
+  await db.ownerRows("ALTER TABLE users ENABLE TRIGGER users_void_approvals");
+  return w;
+}
+
+test("approval insert independently compares the current role version", async ({ db }) => {
+  const w = await waiting(db);
+  await db.rows("UPDATE users SET role='manager' WHERE id=$1", [w.a.userId]);
+  await expect(
+    db.rows(
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      [w.id, w.a.userId, requestId],
+    ),
+  ).rejects.toMatchObject({ code: "23514" });
+});
+
+test("completion independently compares both approval role versions", async ({ db }) => {
+  const w = await staleApproval(db);
+  await db.rows(
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+    [w.id, w.b.userId, requestId],
+  );
+  await refusesCompletion(db, w.id);
+});

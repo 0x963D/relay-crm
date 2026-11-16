@@ -82,6 +82,22 @@ const definitions: {
     test: "completion independently excludes the recorder when another person last edited",
     testFile: "packages/store/test/payment-guards.int.test.ts",
   },
+  {
+    name: "payment-role-insert",
+    file: "packages/store/prisma/migrations/0024_payment_makers/migration.sql",
+    before: " OR u.role_version<>NEW.role_version",
+    after: "",
+    test: "approval insert independently compares the current role version",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
+  {
+    name: "payment-role-completion",
+    file: "packages/store/prisma/migrations/0024_payment_makers/migration.sql",
+    before: "AND a.role_version=u.role_version ",
+    after: "",
+    test: "completion independently compares both approval role versions",
+    testFile: "packages/store/test/payment-guards.int.test.ts",
+  },
 ];
 const filter = process.argv[3];
 const mutations = definitions.filter((m) => !filter || m.name.startsWith(filter));
