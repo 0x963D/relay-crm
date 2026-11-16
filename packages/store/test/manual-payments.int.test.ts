@@ -173,10 +173,11 @@ test("editing races approval and the stale operation must refresh", async ({ db 
     ),
     db.store.approveManualPayment(w.a, w.input, requestId),
   ]);
-  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-  expect(results.find((r) => r.status === "rejected")).toMatchObject({
-    reason: { code: "refreshConflict" },
-  });
+  expect(results[0]?.status).toBe("fulfilled");
+  if (results[1]?.status === "rejected")
+    expect(results[1].reason).toMatchObject({ code: "refreshConflict" });
+  const detail = await db.store.getPayment(w.a, w.id);
+  expect(detail.approvals.filter((a) => a.voidedAt === null)).toHaveLength(0);
 });
 test("SQL cannot bypass approvals or create another posting", async ({ db }) => {
   const w = await setup(db);
@@ -250,7 +251,7 @@ test("partial unique indexes also refuse direct SQL duplicates", async ({ db }) 
     ),
   ).rejects.toMatchObject({ code: "23505", constraint: "payments_live_receipt_key" });
 });
-test("editing untouched terms invalidates stale approvals and a written rejection releases the account", async ({
+test("editing terms invalidates stale requests and a written rejection releases the account", async ({
   db,
 }) => {
   const w = await setup(db);
@@ -305,4 +306,60 @@ test("an eligible role change voids old approval but permits fresh approval", as
   await db.store.approveManualPayment(w.a, { ...w.input, roleVersion: 1 }, requestId);
   await db.store.approveManualPayment(w.b, w.input, requestId);
   expect((await db.store.getPayment(w.b, w.id)).state.status).toBe("completed");
+});
+
+test("the last editor is a maker and editing voids existing approvals", async ({ db }) => {
+  const w = await setup(db);
+  await db.store.approveManualPayment(w.a, w.input, requestId);
+  const edited = await db.store.editManualPayment(
+    w.b,
+    {
+      ...w.input,
+      money: { minor: 4800000n, currency: "GBP" },
+      receiptHash: w.terms.receiptHash,
+      reference: "Corrected amount",
+    },
+    requestId,
+  );
+  expect(edited.version).toBe(1);
+  const input = { ...w.input, version: 1 };
+  expect((await db.store.getPayment(w.b, w.id)).approvals.every((a) => a.voidedAt !== null)).toBe(
+    true,
+  );
+  await expect(db.store.approveManualPayment(w.b, input, requestId)).rejects.toMatchObject({
+    code: "paymentMaker",
+  });
+  await expect(
+    db.rows(
+      "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$3)",
+      [w.id, w.b.userId, requestId],
+    ),
+  ).rejects.toMatchObject({ code: "23514" });
+  expect((await db.store.getPayment(w.b, w.id)).actions.approve).toBe(false);
+  await db.store.approveManualPayment(w.a, input, requestId);
+  await db.store.approveManualPayment(w.c, input, requestId);
+  expect((await db.store.accountLedger(w.c, w.accountId)).balances[0]?.balance).toBe(4800000n);
+});
+
+test("completion independently refuses an editor approval inserted without the insert guard", async ({
+  db,
+}) => {
+  const w = await setup(db);
+  await db.store.editManualPayment(
+    w.b,
+    { ...w.input, money, receiptHash: w.terms.receiptHash, reference: "Corrected" },
+    requestId,
+  );
+  await db.ownerRows("ALTER TABLE payment_approvals DISABLE TRIGGER payment_approvals_guard");
+  await db.rows(
+    "INSERT INTO payment_approvals(id,payment_id,approver_id,role_version,at,request_id) VALUES (gen_random_uuid(),$1,$2,0,now(),$4),(gen_random_uuid(),$1,$3,0,now(),$4)",
+    [w.id, w.b.userId, w.c.userId, requestId],
+  );
+  await db.ownerRows("ALTER TABLE payment_approvals ENABLE TRIGGER payment_approvals_guard");
+  await expect(
+    db.rows(
+      "UPDATE payments SET status='completed',completed_by='manualApproval',decided_at=now() WHERE id=$1",
+      [w.id],
+    ),
+  ).rejects.toMatchObject({ code: "23514", constraint: "manual_approvals_required" });
 });

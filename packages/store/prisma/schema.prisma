@@ -381,6 +381,7 @@ model Payment {
   method String @default("card")
   kind String
   status String @default("checkoutCreated")
+  termsSetById String? @map("terms_set_by_id") @db.Uuid
   recordedById String @map("recorded_by_id") @db.Uuid
   soldById String? @map("sold_by_id") @db.Uuid
   createdAt DateTime @map("created_at") @db.Timestamptz(3)
@@ -473,6 +474,7 @@ model SandboxCheckout {
 
 
 model PaymentApproval {
+  paymentVersion Int @default(0) @map("payment_version")
   id String @id @default(uuid(7)) @db.Uuid
   paymentId String @map("payment_id") @db.Uuid
   approverId String @map("approver_id") @db.Uuid

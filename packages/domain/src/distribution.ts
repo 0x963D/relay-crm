@@ -33,6 +33,7 @@ export const ACCESS_FAILURES = [
   "pendingPayment",
   "receiptUsed",
   "paymentRecorder",
+  "paymentMaker",
   "alreadyApproved",
   "roleChanged",
   "refreshConflict",

@@ -104,6 +104,7 @@ function payment(row: Payment) {
     money: money(row.amount, row.currency),
     state: stateOf(row),
     recordedById: row.recordedById,
+    termsSetById: row.termsSetById,
     soldById: row.soldById,
     createdAt: row.createdAt,
     nextCheckAt: row.nextCheckAt,
@@ -796,6 +797,7 @@ export async function approveManualPayment(
       throw new AccessError("accessDenied");
     const visible = await scopedPayment(tx, current, input.id);
     if (visible.recordedById === current.userId) throw new AccessError("paymentRecorder");
+    if (visible.termsSetById === current.userId) throw new AccessError("paymentMaker");
     if (
       await tx.paymentApproval.findFirst({
         where: { paymentId: input.id, approverId: current.userId, voidedAt: null },
@@ -809,6 +811,7 @@ export async function approveManualPayment(
         paymentId: row.id,
         approverId: current.userId,
         roleVersion: user.roleVersion,
+        paymentVersion: row.version,
         at,
         requestId,
       },
@@ -912,8 +915,6 @@ export async function editManualPayment(
       where: { id: row.accountId, ...scopeWhere(recordScope(current, "payment", "edit")) },
     });
     if (!account) throw new AccessError("accessDenied");
-    if (await tx.paymentApproval.findFirst({ where: { paymentId: row.id, voidedAt: null } }))
-      throw new AccessError("refreshConflict");
     await availableManualTerms(tx, row.accountId, input.receiptHash, row.id);
     const updated = await tx.payment.update({
       where: { id: row.id },
@@ -923,6 +924,7 @@ export async function editManualPayment(
         receiptHash: input.receiptHash,
         reference: input.reference,
         version: { increment: 1 },
+        termsSetById: current.userId,
       },
     });
     const at = new Date();
@@ -977,19 +979,20 @@ async function approvalDetail(tx: Tx, actor: Actor, row: Payment) {
   const refusal =
     row.recordedById === actor.userId
       ? "paymentRecorder"
-      : approvals.some((a) => a.approverId === actor.userId && a.voidedAt === null)
-        ? "alreadyApproved"
-        : !mayApprove
-          ? "accessDenied"
-          : row.status !== "pendingApproval"
-            ? "refreshConflict"
-            : null;
+      : row.termsSetById === actor.userId
+        ? "paymentMaker"
+        : approvals.some((a) => a.approverId === actor.userId && a.voidedAt === null)
+          ? "alreadyApproved"
+          : !mayApprove
+            ? "accessDenied"
+            : row.status !== "pendingApproval"
+              ? "refreshConflict"
+              : null;
   const mayDecide =
     row.status === "pendingApproval" && (row.recordedById === actor.userId || mayApprove);
   const receipt = await receiptDetail(tx, row.id);
   const editable =
     row.status === "pendingApproval" &&
-    !approvals.some((a) => a.voidedAt === null) &&
     (await tx.account.findFirst({
       where: { id: row.accountId, ...scopeWhere(recordScope(actor, "payment", "edit")) },
     }));
