@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Outputs } from "@/lib/api";
 import { api } from "@/lib/api";
 import { authFailure } from "@/lib/failures";
-import { Avatar, Brand, Empty, Refusal } from "./pieces";
+import { Avatar, Brand, Refusal } from "./pieces";
 import { Icon, type IconName } from "./icons";
 import { Button } from "./ui/button";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
@@ -24,7 +24,6 @@ interface Nav {
   id: string;
   label: string;
   icon: IconName;
-  available: boolean;
 }
 export function Workspace({
   profile,
@@ -40,8 +39,12 @@ export function Workspace({
   const router = useRouter();
   const params = useSearchParams();
   const isManager = ["owner", "admin", "manager", "teamLead"].includes(profile.role);
-  const defaultView = profile.role === "agent" ? "queue" : isManager ? "pool" : "payments";
-  const view = params.get("view") ?? defaultView;
+  const defaultView = profile.role === "agent" ? "queue" : "pool";
+  const requestedView = params.get("view");
+  const view =
+    requestedView === "queue" || (requestedView === "pool" && isManager)
+      ? requestedView
+      : defaultView;
   const [pending, setPending] = useState(false);
   const [poolTotal, setPoolTotal] = useState<number | null>(null);
   const [queueTotal, setQueueTotal] = useState<number | null>(null);
@@ -49,17 +52,12 @@ export function Workspace({
   const nav: Nav[] = [
     ...(isManager
       ? [
-          { id: "pool", label: "Lead pool", icon: "inbox" as const, available: true },
-          { id: "queue", label: "Agent queues", icon: "queue" as const, available: true },
+          { id: "pool", label: "Lead pool", icon: "inbox" as const },
+          { id: "queue", label: "Agent queues", icon: "queue" as const },
         ]
       : profile.role === "agent"
-        ? [{ id: "queue", label: "My queue", icon: "queue" as const, available: true }]
+        ? [{ id: "queue", label: "My queue", icon: "queue" as const }]
         : []),
-    { id: "payments", label: "Payments", icon: "payments", available: false },
-    { id: "accounts", label: "Accounts", icon: "accounts", available: false },
-    ...(isManager
-      ? [{ id: "funnel", label: "Campaign funnel", icon: "funnel" as const, available: false }]
-      : []),
   ];
   async function switchRole(role: string) {
     setPending(true);
@@ -143,7 +141,7 @@ export function Workspace({
               if (value && value !== profile.role) void switchRole(value);
             }}
           >
-            {["manager", "agent", "accountant"].map((role) => (
+            {["manager", "agent"].map((role) => (
               <ToggleGroupItem value={role} key={role} disabled={pending}>
                 {role[0]?.toUpperCase()}
                 {role.slice(1)}
@@ -240,17 +238,8 @@ export function Workspace({
             zone={zone}
             onTotalChange={setQueueTotal}
           />
-        ) : view === "pool" && isManager ? (
-          <PoolScreen initialAgents={agents} zone={zone} onTotalChange={setPoolTotal} />
         ) : (
-          <>
-            <header className="ph">
-              <h1>{nav.find((n) => n.id === view)?.label ?? "Workspace"}</h1>
-            </header>
-            <Empty icon="info" title="This view is unavailable">
-              Use the navigation to open an available workspace.
-            </Empty>
-          </>
+          <PoolScreen initialAgents={agents} zone={zone} onTotalChange={setPoolTotal} />
         )}
         <nav className="mobile-nav" aria-label="Workspace">
           {nav.map((item) => (

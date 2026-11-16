@@ -10,7 +10,6 @@ import { ThemeSwitch } from "./theme-switch";
 const people = [
   { role: "manager", name: "Priya Raman" },
   { role: "agent", name: "Dele Akinwale" },
-  { role: "accountant", name: "Esther Okafor" },
 ];
 export function SignIn({ demo }: { demo: boolean }) {
   const [step, setStep] = useState<"email" | "code">("email");
