@@ -1,11 +1,8 @@
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 export const evidenceDirectory =
-  process.platform === "win32"
-    ? "test-results/relay-crm-screens"
-    : join(tmpdir(), "relay-crm-screens");
+  process.env.RELAY_EVIDENCE_DIR ?? join(process.cwd(), "test-results", "evidence");
 export const browserDirectory = join(evidenceDirectory, "playwright");
 export const captureDirectory = join(evidenceDirectory, "built");
 export const stateFile = join(browserDirectory, "state.json");
