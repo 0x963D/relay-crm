@@ -3,7 +3,14 @@ import { useEffect, useState, useRef, type SyntheticEvent } from "react";
 import { DEAD_REASONS, recordScope, scopeAdmits } from "@relay/domain";
 import { api, type Inputs, type Outputs } from "@/lib/api";
 import { failureMessage } from "@/lib/failures";
-import { localCallback, shortDate, sourceLabel, custodyDate } from "@/lib/display";
+import {
+  localCallback,
+  shortDate,
+  sourceLabel,
+  custodyDate,
+  callbackDate,
+  overdueBy,
+} from "@/lib/display";
 import { Empty, Loading, Refusal, Signoff, Slip } from "./pieces";
 import { Icon, type IconName } from "./icons";
 import { Button } from "./ui/button";
@@ -321,8 +328,13 @@ export function LeadDetail({
                 {state.status.slice(1)}
               </Slip>
             ) : callbackAt ? (
-              <Slip kind={callbackAt < new Date() ? "pink" : "canary"} icon="callback">
-                Callback {shortDate(callbackAt, zone)}
+              <Slip
+                kind={callbackAt < new Date() ? "pink" : "canary"}
+                icon={callbackAt < new Date() ? "alarm" : "callback"}
+              >
+                {callbackAt < new Date()
+                  ? `Callback overdue ${overdueBy(callbackAt)}`
+                  : `Callback ${callbackDate(callbackAt, zone)}`}
               </Slip>
             ) : (
               <Slip kind="mute" icon={lead.contactedAt ? "check" : "assign"}>
@@ -710,7 +722,7 @@ export function LeadDetail({
                     )}
                     {entry.summary?.kind === "attempt" && entry.summary.callbackAt && (
                       <Slip kind="line" icon="callback">
-                        Callback {shortDate(entry.summary.callbackAt, zone)}
+                        Callback {callbackDate(entry.summary.callbackAt, zone)}
                       </Slip>
                     )}
                     <time className="tl-time" dateTime={entry.at.toISOString()}>

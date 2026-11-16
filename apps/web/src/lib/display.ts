@@ -53,16 +53,64 @@ export function localCallback(value: string, timeZone: string): Date | null {
   return null;
 }
 
-export function custodyDate(at: Date | null, zone: string, held = false): string | undefined {
+function calendarDay(at: Date, zone: string): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return Date.UTC(part("year"), part("month") - 1, part("day")) / 86400000;
+}
+export function callbackDate(at: Date | null, zone: string, now = new Date()): string {
+  if (!at) return "Unknown";
+  const days = calendarDay(at, zone) - calendarDay(now, zone);
+  return new Intl.DateTimeFormat("en-GB", {
+    ...(days === 0
+      ? {}
+      : days > 0 && days <= 6
+        ? { weekday: "short" as const }
+        : { day: "numeric" as const, month: "short" as const }),
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: zone,
+  }).format(at);
+}
+export function overdueBy(at: Date, now = new Date()): string {
+  const minutes = Math.max(1, Math.floor((now.getTime() - at.getTime()) / 60000));
+  return minutes >= 60
+    ? `${String(Math.floor(minutes / 60))} h ${String(minutes % 60)} min`
+    : `${String(minutes)} min`;
+}
+export function callbackFields(at: Date, zone: string): { day: string; time: string } {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .format(at)
+    .split(" ");
+  return { day: parts[0] ?? "", time: parts[1] ?? "" };
+}
+export function custodyDate(
+  at: Date | null,
+  zone: string,
+  held = false,
+  now = new Date(),
+): string | undefined {
   if (!at) return undefined;
-  return held
-    ? `since ${new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: zone }).format(at)}`
-    : new Intl.DateTimeFormat("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        timeZone: zone,
-      }).format(at);
+  const old = calendarDay(now, zone) - calendarDay(at, zone) > 6;
+  const text = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    ...(!held || old ? { day: "numeric" as const, month: "short" as const } : {}),
+    timeZone: zone,
+  }).format(at);
+  return held ? `since ${text}` : text;
 }
 import { CURRENCIES, type Money } from "@relay/domain";
 

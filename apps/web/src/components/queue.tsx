@@ -5,7 +5,14 @@ import { type Outputs } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { reads } from "@/lib/reads";
 import { failureMessage } from "@/lib/failures";
-import { campaignLabel, dayLabel, shortDate, sourceLabel } from "@/lib/display";
+import {
+  campaignLabel,
+  dayLabel,
+  shortDate,
+  sourceLabel,
+  callbackDate,
+  overdueBy,
+} from "@/lib/display";
 import { Avatar, Empty, Loading, Refusal, Slip } from "./pieces";
 import { Button } from "./ui/button";
 import { Icon } from "./icons";
@@ -35,15 +42,9 @@ export function QueueSlip({
   at: Date;
 }) {
   if (group === "overdueCallbacks") {
-    const minutes = item.callbackAt
-      ? Math.max(1, Math.floor((at.getTime() - item.callbackAt.getTime()) / 60000))
-      : 0;
     return (
       <Slip kind="pink" icon="alarm">
-        Overdue{" "}
-        {minutes >= 60
-          ? `${String(Math.floor(minutes / 60))} h ${String(minutes % 60)} min`
-          : `${String(minutes)} min`}
+        Overdue {item.callbackAt ? overdueBy(item.callbackAt, at) : "Unknown"}
       </Slip>
     );
   }
@@ -53,13 +54,7 @@ export function QueueSlip({
         kind={group === "dueToday" ? "canary" : "line"}
         icon={group === "dueToday" ? "clock" : "callback"}
       >
-        {group === "dueToday" && item.callbackAt
-          ? new Intl.DateTimeFormat("en-GB", {
-              hour: "2-digit",
-              minute: "2-digit",
-              timeZone: zone,
-            }).format(item.callbackAt)
-          : shortDate(item.callbackAt, zone)}
+        {callbackDate(item.callbackAt, zone, at)}
       </Slip>
     );
   if (group === "notYetCalled")
