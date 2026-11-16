@@ -72,7 +72,12 @@ test("the receiver rejects forged and stale signatures, replays event IDs, and r
   expect(
     (await receiver(request(timestamp, signPaymentBody(secret, timestamp, changed), changed)))
       .status,
-  ).toBe(500);
+  ).toBe(409);
+  const malformed = new TextEncoder().encode("{broken");
+  expect(
+    (await receiver(request(timestamp, signPaymentBody(secret, timestamp, malformed), malformed)))
+      .status,
+  ).toBe(400);
   const missing = new TextEncoder().encode(
     JSON.stringify({ ...payload, eventId: "missing", paymentId: randomUUID() }),
   );
@@ -330,4 +335,23 @@ test("a scan timestamp does not become the deadline origin for later claims", as
   const [row] = await db.rows("SELECT next_check_at FROM payments WHERE id=$1", [id]);
   if (!(row?.next_check_at instanceof Date)) throw new Error("No deadline");
   expect(row.next_check_at.getTime()).toBeGreaterThanOrEqual(before + env.intervalMs);
+});
+
+test("signed malformed JSON is refused as input", async ({ db }) => {
+  const body = new TextEncoder().encode("{broken");
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const response = await paymentWebhook(
+    db.store,
+    secret,
+  )(
+    new Request("http://localhost/api/payments/webhook", {
+      method: "POST",
+      body,
+      headers: {
+        "x-sandbox-timestamp": timestamp,
+        "x-sandbox-signature": signPaymentBody(secret, timestamp, body),
+      },
+    }),
+  );
+  expect(response.status).toBe(400);
 });

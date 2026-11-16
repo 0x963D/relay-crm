@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { PaymentId, isCurrencyCode } from "@relay/domain";
-import type { Store } from "@relay/store";
+import { AccessError, type Store } from "@relay/store";
 import { z } from "zod";
 import { readBody } from "../http.ts";
 import { reportFailure } from "../errors.ts";
@@ -51,7 +51,13 @@ export function paymentWebhook(store: Store, secret: string) {
         )
       )
         return new Response(null, { status: 401 });
-      const parsed = Event.safeParse(JSON.parse(new TextDecoder().decode(body)));
+      let input: unknown;
+      try {
+        input = JSON.parse(new TextDecoder().decode(body));
+      } catch {
+        return new Response(null, { status: 400 });
+      }
+      const parsed = Event.safeParse(input);
       if (!parsed.success) return new Response(null, { status: 400 });
       const { eventId, paymentId, status, amount, currency } = parsed.data;
       const id = PaymentId.parse(paymentId);
@@ -64,6 +70,8 @@ export function paymentWebhook(store: Store, secret: string) {
       });
       return Response.json({ recorded: true });
     } catch (error) {
+      if (error instanceof AccessError && error.code === "conflict")
+        return new Response(null, { status: 409 });
       const failure = reportFailure("paymentWebhook.failed", error);
       return Response.json(failure, { status: 500 });
     }
