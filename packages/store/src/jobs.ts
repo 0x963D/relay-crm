@@ -3,7 +3,7 @@ import { transact, type Db } from "./tx.ts";
 
 export async function exclusiveJob<T>(
   db: Db,
-  route: "outbox" | "reconcile",
+  route: "outbox" | "reconcile" | "demo",
   run: () => Promise<T>,
 ) {
   const token = randomUUID();

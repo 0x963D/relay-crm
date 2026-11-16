@@ -46,15 +46,21 @@ function compose(env: Env): Composition {
     auth:
       env.auth === null
         ? null
-        : createAuthentication(store, env.auth, createMailer(env.auth.delivery), (task) => {
-            after(async () => {
-              try {
-                await task();
-              } catch {
-                log("signInMailFailed", {});
-              }
-            });
-          }),
+        : createAuthentication(
+            store,
+            env.auth,
+            createMailer(env.auth.delivery),
+            (task) => {
+              after(async () => {
+                try {
+                  await task();
+                } catch {
+                  log("signInMailFailed", {});
+                }
+              });
+            },
+            env.demo,
+          ),
     metaWebhook: createMetaWebhook(
       env.meta && {
         verifyToken: env.meta.verifyToken,

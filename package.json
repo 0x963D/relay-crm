@@ -23,6 +23,8 @@
     "test:prod": "pnpm build && dotenv -- vitest run --project production",
     "db:generate": "pnpm --filter @relay/store generate",
     "db:migrate": "dotenv -- pnpm --filter @relay/store migrate",
+    "db:seed": "dotenv -- tsx apps/web/scripts/seed.ts",
+    "demo:reset": "dotenv -- tsx apps/web/scripts/demo-reset.ts",
     "outbox": "dotenv -- tsx apps/web/scripts/outbox.ts",
     "reconcile": "dotenv -- tsx apps/web/scripts/reconcile.ts",
     "import:csv": "dotenv -- tsx apps/web/scripts/import-csv.ts",

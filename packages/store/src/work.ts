@@ -108,6 +108,7 @@ export async function workLead(
   actor: Actor,
   input: { readonly id: LeadId; readonly key: string; readonly work: LeadWork },
   requestId: string,
+  at = new Date(),
 ) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
@@ -127,7 +128,6 @@ export async function workLead(
         if (row.status === "won" && work.kind === "close" && work.closing.kind === "won")
           return { id: row.id, accountId: row.accountId };
         if (!isOpen(before.state)) throw new AccessError("leadClosed");
-        const at = new Date();
         let next = before;
         let contactedAt = row.contactedAt;
         let lostNote = row.lostNote;

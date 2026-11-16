@@ -6,6 +6,7 @@ export const APP_TABLE_PRIVILEGES: Readonly<Record<string, readonly string[]>> =
   auth_request_limits: ["DELETE", "INSERT", "SELECT", "UPDATE"],
   auth_sessions: ["DELETE", "INSERT", "SELECT", "UPDATE"],
   auth_verifications: ["DELETE", "INSERT", "SELECT", "UPDATE"],
+  demo_seed: ["SELECT"],
   distribution_previews: ["INSERT", "SELECT"],
   email_suppressions: ["SELECT"],
   idempotency_records: ["INSERT", "SELECT"],

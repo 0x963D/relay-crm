@@ -57,13 +57,13 @@ async function applyAssignment(
   item: DistributionItem,
   mode: "pool" | "owned",
   cause: AuditCause,
+  at = new Date(),
 ): Promise<boolean> {
   const row = await scopedLead(tx, actor, item.leadId, "assign");
   if ((mode === "pool" && row.status !== "new") || (mode === "owned" && row.status === "new"))
     throw new AccessError("conflict");
   await agentFor(tx, actor, item.to);
   const before = lifecycleFromRow(row);
-  const at = new Date();
   const next = transition(before, { type: "assign", to: item.to }, at);
   if (!next.ok) throw new AccessError("conflict");
   if (JSON.stringify(before) === JSON.stringify(next.value)) return false;
@@ -102,13 +102,14 @@ export async function assignPool(
   leadIds: readonly LeadId[],
   to: Assignment,
   requestId: string,
+  at = new Date(),
 ): Promise<DistributionResult> {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
     const items = [...new Set(leadIds)].sort().map((leadId) => ({ leadId, to }));
     if (items.length === 0) throw new AccessError("conflict");
     const cause = { kind: "request", id: requestId } as const;
-    for (const item of items) await applyAssignment(tx, current, item, "pool", cause);
+    for (const item of items) await applyAssignment(tx, current, item, "pool", cause, at);
     return { items, changed: true };
   });
 }

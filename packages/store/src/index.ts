@@ -68,6 +68,8 @@ import { workLead, workQueue, leadDetail as getLead, campaignFunnel } from "./wo
 import type { UserId, LeadWork } from "@relay/domain";
 import { exclusiveJob } from "./jobs.ts";
 import { connect } from "./tx.ts";
+import { demoPerson, demoReady, databaseReady, type DemoRole } from "./demo-state.ts";
+export { DEMO_PEOPLE, DEMO_ROLES, type DemoRole } from "./demo-state.ts";
 
 export type { LeadListItem };
 export { AccessError, isAccessError } from "./errors.ts";
@@ -79,7 +81,10 @@ export function openStore(config: {
 }) {
   const db = connect(config.connectionString);
   return {
-    exclusiveJob: <T>(route: "outbox" | "reconcile", run: () => Promise<T>) =>
+    demoPerson: (role: DemoRole) => demoPerson(db, role),
+    demoReady: () => demoReady(db),
+    databaseReady: () => databaseReady(db),
+    exclusiveJob: <T>(route: "outbox" | "reconcile" | "demo", run: () => Promise<T>) =>
       exclusiveJob(db, route, run),
     runOutbox: (deliver: ReceiptDelivery, options?: OutboxOptions) =>
       runOutbox(db, deliver, { ...config.receipts, ...options }),

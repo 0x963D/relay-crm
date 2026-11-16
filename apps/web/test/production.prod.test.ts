@@ -1,4 +1,7 @@
 import { submissionExample } from "@relay/domain/testing";
+import { seedDemo } from "@relay/store/demo";
+import { DEMO_PEOPLE } from "@relay/store";
+import { limitKey } from "../src/server/rate-limit.ts";
 import { randomUUID } from "node:crypto";
 import { signPaymentBody } from "../src/server/payments/webhook.ts";
 import superjson from "superjson";
@@ -17,6 +20,105 @@ import { describe, expect, test } from "vitest";
 const APP = fileURLToPath(new URL("..", import.meta.url));
 const NEXT = createRequire(import.meta.url).resolve("next/dist/bin/next");
 const UNREACHABLE_DATABASE = "postgresql://nobody:nobody@127.0.0.1:9/unreachable";
+
+databaseTest(
+  "a production build exposes only the three demo identities when RELAY_DEMO=1 and keeps emailed sign-in",
+  async ({ db }) => {
+    await seedDemo({
+      ownerUrl: db.ownerConnectionString,
+      appUrl: db.connectionString,
+      today: new Date(),
+      deliver: () => Promise.resolve({ state: "sent" }),
+    });
+    const inbox = await openSmtpInbox();
+    for (const demo of [false, true]) {
+      const server = await serve(
+        (origin) => ({
+          AUTH_URL: origin,
+          AUTH_SECRET: "fake-demo-production-auth-secret-0123456789",
+          SMTP_URL: inbox.url,
+          SMTP_FROM: "relay@sender.example",
+          ...(demo ? { RELAY_DEMO: "1" } : {}),
+        }),
+        db.connectionString,
+      );
+      try {
+        const origin = new URL(server.url("/")).origin;
+        const post = (path: string, body: unknown, sentOrigin = origin) =>
+          fetch(server.url(path), {
+            method: "POST",
+            headers: { origin: sentOrigin, "content-type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        if (!demo) {
+          for (const role of ["manager", "agent", "accountant"])
+            expect((await post("/api/auth/demo", { role })).status).toBe(404);
+          continue;
+        }
+        expect((await fetch(server.url("/api/auth/demo"))).status).toBe(404);
+        expect((await post("/api/auth/demo", { role: "owner" })).status).toBe(400);
+        expect(
+          (await post("/api/auth/demo", { role: "manager", userId: DEMO_PEOPLE.manager.id }))
+            .status,
+        ).toBe(400);
+        expect(
+          (await post("/api/auth/demo", { role: "manager" }, "https://outside.example")).status,
+        ).toBe(403);
+        for (const role of ["manager", "agent", "accountant"] as const) {
+          const response = await post("/api/auth/demo", { role });
+          expect(response.status, await response.clone().text()).toBe(200);
+          const body: unknown = await response.json();
+          expect(body).toMatchObject({
+            user: { name: DEMO_PEOPLE[role].name, role },
+            roles: ["manager", "agent", "accountant"],
+          });
+          const cookie = response.headers
+            .getSetCookie()
+            .map((value) => value.split(";")[0])
+            .join("; ");
+          const session = await fetch(server.url("/api/auth/get-session"), { headers: { cookie } });
+          expect(await session.json()).toMatchObject({ user: { id: DEMO_PEOPLE[role].id } });
+        }
+        const email = DEMO_PEOPLE.manager.email;
+        expect(
+          (await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" }))
+            .status,
+        ).toBe(200);
+        for (let i = 0; i < 100 && inbox.messages.length === 0; i++) await sleep(50);
+        const otp = inbox.messages[0]?.match(/Your sign-in code is (\d{6})/)?.[1];
+        expect(otp).toMatch(/^\d{6}$/);
+        expect((await post("/api/auth/sign-in/email-otp", { email, otp })).status).toBe(200);
+        await db.rows("UPDATE auth_request_limits SET count=20 WHERE key=$1", [
+          limitKey("demo:client", "127.0.0.1"),
+        ]);
+        const limited = await post("/api/auth/demo", { role: "manager" });
+        expect(limited.status).toBe(429);
+        expect(limited.headers.get("retry-after")).toBe("60");
+      } finally {
+        await server.stop();
+      }
+    }
+    await inbox.close();
+  },
+);
+
+databaseTest(
+  "health returns no details and refuses a reachable database missing its migration",
+  async ({ db }) => {
+    const server = await serve({}, db.connectionString);
+    try {
+      const healthy = await fetch(server.url("/api/health"));
+      expect(healthy.status).toBe(200);
+      expect(await healthy.text()).toBe("");
+      await db.ownerRows("DROP FUNCTION public.relay_ready()");
+      const unhealthy = await fetch(server.url("/api/health"));
+      expect(unhealthy.status).toBe(503);
+      expect(await unhealthy.text()).toBe("");
+    } finally {
+      await server.stop();
+    }
+  },
+);
 
 databaseTest(
   "the production work journey signs in, wins a form lead and reads its account and funnel",

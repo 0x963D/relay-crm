@@ -10,6 +10,26 @@ const META = {
   META_GRAPH_VERSION: "v24.0",
 };
 
+it("requires a strong reset secret distinct from every other secret", () => {
+  const secret = "fake-reset-secret-abcdefghijklmnopqrstuvwxyz012345";
+  for (const other of [
+    "AUTH_SECRET",
+    "RELAY_PAYMENT_WEBHOOK_SECRET",
+    "RELAY_RECONCILE_SECRET",
+    "RELAY_OUTBOX_SECRET",
+  ]) {
+    expect(() =>
+      parseEnv({ DATABASE_URL, RELAY_DEMO_RESET_SECRET: secret, [other]: secret }),
+    ).toThrow("distinct");
+  }
+  expect(() => parseEnv({ DATABASE_URL, RELAY_DEMO_RESET_SECRET: "fake-short" })).toThrow(
+    "RELAY_DEMO_RESET_SECRET",
+  );
+  expect(() => parseEnv({ DATABASE_URL, RELAY_DEMO_RESET_SECRET: "x".repeat(40) })).toThrow(
+    "RELAY_DEMO_RESET_SECRET",
+  );
+});
+
 describe("parseEnv", () => {
   it("configures receipt SMTP without enabling sign-in", () => {
     const env = parseEnv({
@@ -24,6 +44,8 @@ describe("parseEnv", () => {
     expect(parseEnv({ DATABASE_URL })).toEqual({
       smtp: null,
       publicForm: true,
+      demoResetSecret: null,
+      demoOwnerFile: null,
       timeZone: "UTC",
       demo: false,
       outboxSecret: null,
