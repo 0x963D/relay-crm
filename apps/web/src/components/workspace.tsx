@@ -95,30 +95,33 @@ export function Workspace({
       setPending(false);
     }
   }
-  const sections = (
-    <nav className="nav" aria-label="Main">
-      {nav.map((item) => (
-        <a
-          key={item.id}
-          href={`/?view=${item.id}`}
-          aria-current={view === item.id ? "page" : undefined}
-          onClick={(event) => {
-            event.preventDefault();
-            router.push(`/?view=${item.id}`);
-          }}
-        >
-          <Icon name={item.icon} />
-          <span>{item.label}</span>
-          {item.id === "pool" && poolTotal !== null && (
-            <span className="nav-count">{poolTotal}</span>
-          )}
-          {item.id === "queue" && profile.role === "agent" && queueTotal !== null && (
-            <span className="nav-count">{queueTotal}</span>
-          )}
-        </a>
-      ))}
-    </nav>
-  );
+  const teamName = profile.teams?.find((team) => team.id === profile.team?.id)?.name;
+  function navigation(mobile = false) {
+    return (
+      <nav className={mobile ? "mobile-nav" : "nav"} aria-label={mobile ? "Workspace" : "Main"}>
+        {nav.map((item) => (
+          <a
+            key={item.id}
+            href={`/?view=${item.id}`}
+            aria-current={view === item.id ? "page" : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              router.push(`/?view=${item.id}`);
+            }}
+          >
+            <Icon name={item.icon} />
+            <span>{item.label}</span>
+            {!mobile && item.id === "pool" && poolTotal !== null && (
+              <span className="nav-count">{poolTotal}</span>
+            )}
+            {!mobile && item.id === "queue" && profile.role === "agent" && queueTotal !== null && (
+              <span className="nav-count">{queueTotal}</span>
+            )}
+          </a>
+        ))}
+      </nav>
+    );
+  }
   return (
     <SidebarProvider className={demo ? "" : "shell--live"}>
       <a className="skip" href="#main">
@@ -152,7 +155,7 @@ export function Workspace({
       )}
       <Sidebar>
         <Brand />
-        {sections}
+        {navigation()}
         <div className="rail-end">
           <div className="me">
             <Avatar name={profile.name} large carbon />
@@ -160,9 +163,7 @@ export function Workspace({
               <div className="me-name">{profile.name}</div>
               <div className="me-role">
                 {roleNames[profile.role]}
-                {profile.teams?.find((t) => t.id === profile.team?.id)?.name
-                  ? ` · ${profile.teams.find((t) => t.id === profile.team?.id)?.name ?? ""}`
-                  : ""}
+                {teamName ? ` � ${teamName}` : ""}
               </div>
               <ThemeSwitch />
             </div>
@@ -184,11 +185,7 @@ export function Workspace({
           <Button
             variant="ghost"
             size="icon"
-            aria-label={`${profile.name
-              .split(" ")
-              .map((part) => part[0])
-              .slice(0, 2)
-              .join("")}, sign out ${profile.name}`}
+            aria-label={`Sign out ${profile.name}`}
             disabled={pending}
             onClick={() => {
               void signOut();
@@ -241,22 +238,7 @@ export function Workspace({
         ) : (
           <PoolScreen initialAgents={agents} zone={zone} onTotalChange={setPoolTotal} />
         )}
-        <nav className="mobile-nav" aria-label="Workspace">
-          {nav.map((item) => (
-            <a
-              key={item.id}
-              href={`/?view=${item.id}`}
-              aria-current={view === item.id ? "page" : undefined}
-              onClick={(event) => {
-                event.preventDefault();
-                router.push(`/?view=${item.id}`);
-              }}
-            >
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
+        {navigation(true)}
       </SidebarInset>
     </SidebarProvider>
   );
