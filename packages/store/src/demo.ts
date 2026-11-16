@@ -17,7 +17,7 @@ import { openStore } from "./index.ts";
 import { DEMO_COMPANY, DEMO_KEY, DEMO_PEOPLE } from "./demo-state.ts";
 import { assignPool } from "./distribution.ts";
 import { workLead } from "./work.ts";
-import { connect, transact, type Db, type Tx } from "./tx.ts";
+import { connect, transact, transactionConnection, type Db, type Tx } from "./tx.ts";
 import { exclusiveJob } from "./jobs.ts";
 import type { ReceiptDelivery } from "./outbox.ts";
 
@@ -159,7 +159,7 @@ async function seed(owner: Db, app: Db, options: DemoOptions, signal: AbortSigna
     return at;
   };
   let leadNumber = 0;
-  const store = openStore({ connectionString: options.appUrl, clock });
+  const store = openStore({ connectionString: options.appUrl, connection: app, clock });
   const actor = (name: string): Actor => {
     const person = required(STAFF.find((person) => person.name === name));
     return { userId: required(UserId.parse(person.id)), role: person.role, team: null };
@@ -711,9 +711,10 @@ export function resetDemo(options: DemoOptions & { readonly demo: boolean }) {
         const outbox = await exclusiveJob(owner, "outbox", async (outboxSignal) => {
           const signal = AbortSignal.any([demoSignal, reconcileSignal, outboxSignal]);
           signal.throwIfAborted();
-          await transact(
+          return transact(
             owner,
             async (tx) => {
+              await tx.$executeRawUnsafe("SET LOCAL lock_timeout = '2s'");
               await tx.$executeRaw`UPDATE demo_seed SET state='building' WHERE key=${DEMO_KEY}`;
               const names = await demoTables(tx);
               // Immutable history is discarded only inside this owner transaction on a marked demo database.
@@ -722,10 +723,15 @@ export function resetDemo(options: DemoOptions & { readonly demo: boolean }) {
               await tx.$executeRawUnsafe(`TRUNCATE ${names.join(",")} RESTART IDENTITY`);
               for (const name of names)
                 await tx.$executeRawUnsafe(`ALTER TABLE ${name} ENABLE TRIGGER USER`);
+              return seed(
+                transactionConnection(owner, tx),
+                transactionConnection(app, tx),
+                options,
+                signal,
+              );
             },
-            { timeoutMs: 30000, maxAttempts: 1 },
+            { timeoutMs: 180000, maxAttempts: 1 },
           );
-          return seed(owner, app, options, signal);
         });
         if (!outbox.ran) throw new Error("Receipt delivery is running. Retry the reset.");
         return outbox.result;

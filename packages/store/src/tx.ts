@@ -7,13 +7,32 @@ export type Db = PrismaClient;
 export type Tx = Prisma.TransactionClient;
 
 const clocks = new WeakMap<Db, () => Date>();
+const boundTransactions = new WeakMap<Db, Tx>();
+
+/** Demo setup composes existing operations into one owner transaction. */
+export function transactionConnection(db: Db, tx: Tx): Db {
+  const bound = new Proxy(db, {
+    get(target, key) {
+      if (key === "$disconnect") return () => Promise.resolve();
+      const value: unknown = Reflect.get(tx, key, tx) ?? Reflect.get(target, key, target);
+      return value;
+    },
+  });
+  boundTransactions.set(bound, tx);
+  clocks.set(bound, clocks.get(db) ?? (() => new Date()));
+  return bound;
+}
 
 export function storeNow(db: Db): Date {
   return (clocks.get(db) ?? (() => new Date()))();
 }
 
-export function connect(connectionString: string, clock: () => Date = () => new Date()): Db {
-  const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+export function connect(
+  connectionString: string,
+  clock: () => Date = () => new Date(),
+  connection?: Db,
+): Db {
+  const db = connection ?? new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   clocks.set(db, clock);
   return db;
 }
@@ -111,6 +130,8 @@ export async function transact<T>(
   body: (tx: Tx) => Promise<T>,
   options?: { readonly timeoutMs: number; readonly maxAttempts: number },
 ): Promise<T> {
+  const bound = boundTransactions.get(db);
+  if (bound) return body(bound);
   for (let attempt = 1; ; attempt += 1) {
     try {
       const result = await db.$transaction(body, {

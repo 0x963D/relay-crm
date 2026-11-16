@@ -67,7 +67,7 @@ import {
 import { workLead, workQueue, leadDetail as getLead, campaignFunnel } from "./work.ts";
 import type { UserId, LeadWork } from "@relay/domain";
 import { exclusiveJob } from "./jobs.ts";
-import { connect } from "./tx.ts";
+import { connect, type Db } from "./tx.ts";
 import { demoPerson, demoReady, databaseReady, type DemoRole } from "./demo-state.ts";
 export { DEMO_PEOPLE, DEMO_ROLES, type DemoRole } from "./demo-state.ts";
 
@@ -77,10 +77,11 @@ export type Store = ReturnType<typeof openStore>;
 
 export function openStore(config: {
   readonly connectionString: string;
+  readonly connection?: Db;
   readonly clock?: () => Date;
   readonly receipts?: Pick<OutboxOptions, "leaseMs" | "sendTimeoutMs" | "lifetimeAttemptLimit">;
 }) {
-  const db = connect(config.connectionString, config.clock);
+  const db = connect(config.connectionString, config.clock, config.connection);
   return {
     demoPerson: (role: DemoRole) => demoPerson(db, role),
     demoReady: () => demoReady(db),

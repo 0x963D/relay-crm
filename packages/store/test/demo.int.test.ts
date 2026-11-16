@@ -152,6 +152,33 @@ test("seeding refuses an unmarked database that already has people", async ({ db
   expect(await db.rows("SELECT * FROM demo_seed")).toEqual([]);
 });
 
+test("a failed reseed rolls the wipe and seed marker back together", async ({ db }) => {
+  await seedDemo(options(db));
+  const before = await db.counts();
+  const marker = await db.rows("SELECT * FROM demo_seed");
+  await db.ownerRows(`CREATE FUNCTION refuse_demo_user() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'reseed refused'; END $$`);
+  await db.ownerRows(`CREATE TRIGGER refuse_demo_user BEFORE INSERT ON users
+    FOR EACH ROW EXECUTE FUNCTION refuse_demo_user()`);
+  await expect(resetDemo({ ...options(db), demo: true })).rejects.toThrow("reseed refused");
+  expect(await db.counts()).toEqual(before);
+  expect(await db.rows("SELECT * FROM demo_seed")).toEqual(marker);
+  expect(await db.store.demoReady()).toBe(true);
+});
+
+test("reset refuses a held payment lock without discarding the ready demo", async ({ db }) => {
+  await seedDemo(options(db));
+  const before = await db.counts();
+  await db.gate.close("payments");
+  try {
+    await expect(resetDemo({ ...options(db), demo: true })).rejects.toThrow(/lock timeout/);
+    expect(await db.counts()).toEqual(before);
+    expect(await db.store.demoReady()).toBe(true);
+  } finally {
+    await db.gate.open();
+  }
+});
+
 test("seeding also refuses intake history without a lead", async ({ db }) => {
   const externalId = parseExternalId("rejected-demo");
   if (!externalId) throw new Error("Invalid fixture");
