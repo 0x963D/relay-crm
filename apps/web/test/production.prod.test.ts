@@ -110,8 +110,13 @@ databaseTest(
             .getSetCookie()
             .map((value) => value.split(";")[0])
             .join("; ");
-          const session = await fetch(server.url("/api/auth/get-session"), { headers: { cookie } });
-          expect(await session.json()).toMatchObject({ user: { id: DEMO_PEOPLE[role].id } });
+          const session = await fetch(server.url("/api/auth/get-session"), {
+            headers: { cookie, origin, authorization: "Basic dXNlcjpwYXNz" },
+          });
+          expect(session.status, server.output()).toBe(200);
+          const current: unknown = await session.json();
+          expect(current).toMatchObject({ user: { id: DEMO_PEOPLE[role].id } });
+          expect(current).not.toHaveProperty("session.token");
           const landing = await fetch(server.url("/"), { headers: { cookie } });
           expect(new URL(landing.url).pathname).toBe(
             role === "manager" ? "/pool" : role === "agent" ? "/queue" : "/payments",
@@ -182,11 +187,17 @@ databaseTest(
         return response;
       };
       const email = "user-1@team.example";
-      expect((await post("/api/auth/native/send-code", { email })).status).toBe(200);
+      expect(
+        (await post("/api/auth/native/send-code", { email }, { cookie: "__cf_bm=abc" })).status,
+      ).toBe(200);
       for (let i = 0; i < 100 && inbox.messages.length === 0; i++) await sleep(50);
       const otp = inbox.messages[0]?.match(/Your sign-in code is (\d{6})/)?.[1];
       expect(otp).toMatch(/^\d{6}$/);
-      const response = await post("/api/auth/native/sign-in", { email, otp });
+      const response = await post(
+        "/api/auth/native/sign-in",
+        { email, otp },
+        { cookie: "__cf_bm=abc" },
+      );
       expect(response.status, await response.clone().text()).toBe(200);
       const signed = z
         .object({
@@ -197,7 +208,7 @@ databaseTest(
         .strict()
         .parse(await response.json());
       expect(signed.user.id).toBe(userId);
-      const headers = { authorization: `Bearer ${signed.token}` };
+      const headers = { authorization: `Bearer ${signed.token}`, cookie: "__cf_bm=abc" };
       const session = await fetch(server.url("/api/auth/get-session"), { headers });
       expect(session.headers.has("set-cookie")).toBe(false);
       expect(await session.json()).toMatchObject({ user: signed.user });
@@ -218,8 +229,9 @@ databaseTest(
         ).status,
       ).toBe(403);
       expect(
-        (await fetch(rpcUrl("session.current"), { headers: { ...headers, cookie: "" } })).status,
-      ).toBe(403);
+        (await fetch(rpcUrl("session.current"), { headers: { ...headers, cookie: "__cf_bm=abc" } }))
+          .status,
+      ).toBe(200);
       const unknown = "x".repeat(32);
       expect(
         (

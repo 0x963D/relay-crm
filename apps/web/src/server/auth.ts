@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseEmail } from "@relay/domain";
 import type { Store } from "@relay/store";
@@ -47,6 +48,7 @@ export function createAuthentication(
   schedule: Schedule,
   demo = false,
 ) {
+  const nativeRequest = new AsyncLocalStorage<boolean>();
   const demoEndpoint = (path: "/demo" | "/native/demo") =>
     createAuthEndpoint(path, { method: "POST", body: DemoSignIn }, async (ctx) => {
       if (!demo) throw new APIError("NOT_FOUND");
@@ -77,7 +79,11 @@ export function createAuthentication(
       session: {
         create: {
           before: async (session) => ({
-            data: { ...session, currentTeamId: await store.initialSessionTeam(session.userId) },
+            data: {
+              ...session,
+              currentTeamId: await store.initialSessionTeam(session.userId),
+              isNative: nativeRequest.getStore() ?? false,
+            },
           }),
         },
       },
@@ -87,7 +93,10 @@ export function createAuthentication(
       modelName: "authSession",
       expiresIn: 60 * 60 * 24,
       cookieCache: { enabled: false },
-      additionalFields: { currentTeamId: { type: "string", required: false, input: false } },
+      additionalFields: {
+        currentTeamId: { type: "string", required: false, input: false },
+        isNative: { type: "boolean", defaultValue: false, input: false },
+      },
     },
     account: { modelName: "authAccount" },
     verification: { modelName: "authVerification" },
@@ -114,8 +123,21 @@ export function createAuthentication(
     ],
   });
 
-  async function dispatch(request: Request): Promise<Response> {
-    const response = await auth.handler(request);
+  async function dispatch(request: Request, native = false): Promise<Response> {
+    const headers = new Headers(request.headers);
+    if (
+      native ||
+      (headers.has("cookie") &&
+        (await auth.api.getSession({ headers, query: { disableRefresh: true } }))?.session.isNative)
+    )
+      headers.delete("cookie");
+    const forwarded = new Request(request.url, {
+      method: request.method,
+      headers,
+      signal: request.signal,
+      ...(request.body === null ? {} : { body: await request.arrayBuffer() }),
+    });
+    const response = await nativeRequest.run(native, () => auth.handler(forwarded));
     return response.status < 500
       ? response
       : failureResponse("auth.failed", new Error(await response.text()));
@@ -128,14 +150,34 @@ export function createAuthentication(
       return session === null ? null : store.sessionPrincipal(session.session.id);
     }
     if (credentials.kind !== "cookie") return null;
-    const session = await auth.api.getSession({ headers });
-    return session === null ? null : store.sessionPrincipal(session.session.id);
+    const session = await auth.api.getSession({ headers, query: { disableRefresh: true } });
+    return session === null || session.session.isNative
+      ? null
+      : store.sessionPrincipal(session.session.id);
   }
 
   async function bearerSession(token: string | null) {
     if (token === null) return null;
     const session = await (await auth.$context).internalAdapter.findSession(token);
-    return session === null || session.session.expiresAt <= new Date() ? null : session;
+    return !session?.session.isNative || session.session.expiresAt <= new Date() ? null : session;
+  }
+
+  async function withoutToken(response: Response) {
+    if (!response.ok) return response;
+    const body: unknown = await response.json();
+    if (body !== null && typeof body === "object") {
+      if ("token" in body) delete body.token;
+      if (
+        "session" in body &&
+        body.session !== null &&
+        typeof body.session === "object" &&
+        "token" in body.session
+      )
+        delete body.session.token;
+    }
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    return Response.json(body, { status: response.status, headers });
   }
 
   function withoutCookies(response: Response) {
@@ -154,7 +196,7 @@ export function createAuthentication(
     if (native) {
       if (request.method !== "POST" || (path === "/demo" && !demo))
         return new Response(null, { status: 404 });
-      if (["origin", "cookie", "sec-fetch-site"].some((header) => request.headers.has(header)))
+      if (["origin", "sec-fetch-site"].some((header) => request.headers.has(header)))
         return new Response(null, { status: 403 });
       if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json")
         return new Response(null, { status: 415 });
@@ -168,7 +210,11 @@ export function createAuthentication(
         await (await auth.$context).internalAdapter.deleteSession(session.session.token);
         return Response.json({ success: true });
       }
-    } else if (credentials.kind === "refused") return new Response(null, { status: 403 });
+    } else {
+      if (path === "/sign-out" && (credentials.kind === "bearer" || credentials.kind === "refused"))
+        return new Response(null, { status: 400 });
+      if (credentials.kind === "refused") return new Response(null, { status: 403 });
+    }
     if (path === "/get-session" && request.method === "GET" && credentials.kind === "bearer") {
       const current = await principal(request.headers);
       if (current?.kind !== "session")
@@ -223,9 +269,10 @@ export function createAuthentication(
         .json()
         .catch(() => null);
       if (!DemoSignIn.safeParse(body).success) return new Response(null, { status: 400 });
-      return dispatch(request);
+      return dispatch(request, native);
     }
-    if (path === "/get-session" && request.method === "GET") return dispatch(request);
+    if (path === "/get-session" && request.method === "GET")
+      return withoutToken(await dispatch(request));
     if (path === "/sign-out" && request.method === "POST") return dispatch(request);
     const sending = path === "/email-otp/send-verification-otp";
     if (request.method !== "POST" || (!sending && path !== "/sign-in/email-otp")) {
@@ -255,8 +302,9 @@ export function createAuthentication(
           headers: request.headers,
           body: JSON.stringify(sending ? { ...parsed.data, type: "sign-in" } : parsed.data),
         }),
+        native,
       );
-      if (!native) return response;
+      if (!native) return sending ? response : await withoutToken(response);
       if (sending || !response.ok) return withoutCookies(response);
       const result: unknown = await response.json();
       const token = z.object({ token: z.string() }).parse(result).token;

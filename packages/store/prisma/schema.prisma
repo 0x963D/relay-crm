@@ -242,6 +242,7 @@ model AuthSession {
   currentTeamId String?  @map("current_team_id") @db.Uuid
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token         String   @unique
+  isNative      Boolean  @default(false) @map("is_native")
   currentTeam   Team?    @relation(fields: [currentTeamId], references: [id], onDelete: SetNull)
   ipAddress     String?  @map("ip_address")
   userAgent     String?  @map("user_agent")
