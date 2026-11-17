@@ -113,9 +113,9 @@ for (const role of ["agent", "manager", "accountant"] as const) {
             page.getByRole("region", { name: "Accounts", exact: true }).getByRole("link").first(),
             keyboard,
           );
-          await expect(
-            page.getByRole("link", { name: "Back to accounts", exact: true }),
-          ).toBeVisible();
+          const back = page.getByRole("link", { name: "Back to accounts", exact: true });
+          if (width < 1280) await expect(back).toBeVisible();
+          else await expect(back).toBeHidden();
           if (role === "agent") {
             await expect(page.getByRole("link", { name: "Open ledger", exact: true })).toHaveCount(
               0,
