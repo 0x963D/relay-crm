@@ -5,6 +5,7 @@ import {
   type Actor,
   type AccessFailure,
   type Role,
+  type TeamId,
 } from "@relay/domain";
 import type { Payment, PaymentApproval, ReceiptAttempt } from "./generated/client.ts";
 import type { Tx } from "./tx.ts";
@@ -16,16 +17,16 @@ interface Person {
 }
 interface ApprovalRead {
   readonly id: string;
-  readonly recordedBy: Person;
+  readonly recordedBy: Person | null;
   readonly roleVersion: number;
   readonly ownerId: UserId | null;
-  readonly teamId: import("@relay/domain").TeamId | null;
+  readonly teamId: TeamId | null;
   readonly approvals: (Omit<PaymentApproval, "at" | "voidedAt"> & {
     at: string;
     voidedAt: string | null;
-    approver: Person & { role: Role };
+    approver?: Person & { role: Role };
   })[];
-  readonly makers: { userId: string; at: string; user: Person }[];
+  readonly makers: { userId: string; at: string; user: Person | null }[];
   readonly receipt: null | {
     id: string;
     processing: boolean;
@@ -168,7 +169,7 @@ function approvalDetail(
       closeCheckout:
         row.status === "checkoutCreated" &&
         scopeAdmits(recordScope(actor, "account", "edit"), detail),
-      editManual: Boolean(editable),
+      editManual: editable,
       requeueReceipt:
         mayApprove &&
         receipt !== null &&
@@ -179,7 +180,7 @@ function approvalDetail(
       approvalRefusal: refusal,
       reject: waiting && mayApprove && !maker,
       cancel: waiting && row.recordedById === actor.userId,
-      roleVersion: roleVersion,
+      roleVersion,
     },
   };
 }

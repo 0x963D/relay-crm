@@ -80,7 +80,7 @@ Every route that reads a request body reads it through `readBody` in `apps/web/s
 
 A refusal the product intends, such as `accessDenied` or `stalePreview`, reaches the client as a typed code with a message written for a person. [The API page](api.md#refusals) lists the codes.
 
-Anything unexpected returns the fixed message `Something went wrong.` and a generated `requestId`. The server logs the error's stable name and its database or Prisma error code beside that ID. Normal RPC refusals log their refusal code at info level. It logs neither the error message nor the submitted data, because either can carry an email address. No response contains a stack trace.
+Anything unexpected returns the fixed message `Something went wrong.` and a generated `requestId`. The server logs the error's stable name and its database or Prisma error code beside that ID. It logs neither the error message nor the submitted data, because either can carry an email address. No response contains a stack trace. Normal RPC refusals log their refusal code at info level.
 
 ## Client addresses and proxies
 

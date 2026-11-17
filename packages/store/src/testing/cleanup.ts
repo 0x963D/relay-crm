@@ -1,7 +1,7 @@
 import { testServer } from "./server.ts";
 
 const runId = process.env.RELAY_TEST_RUN;
-if (!runId || !/^[a-f0-9]{16}$/.test(runId))
+if (!runId || !/^\d+_[a-f0-9]{16}$/.test(runId))
   throw new Error("A cleanup process needs its test run ID.");
 let cleaning: Promise<void> | undefined;
 const cleanup = () => {

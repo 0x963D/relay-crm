@@ -18,6 +18,7 @@ function timelineEntry(
   lead: Lead,
 ): { title: string; body: string; icon: IconName } {
   const detail = object(entry.detail);
+  const fieldValue = (value: unknown) => (typeof value === "string" ? value : "empty");
   if (entry.summary?.kind === "attempt")
     return {
       title: entry.summary.channel === "call" ? "Call attempt" : "WhatsApp attempt",
@@ -35,7 +36,7 @@ function timelineEntry(
       body: changes
         .map(
           (field) =>
-            `Changed ${field} from ${String(before?.[field] ?? "empty")} to ${String(after?.[field] ?? "empty")}.`,
+            `Changed ${field} from ${fieldValue(before?.[field])} to ${fieldValue(after?.[field])}.`,
         )
         .join(" "),
       icon: "edit",

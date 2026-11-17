@@ -11,7 +11,7 @@ export default async function setup(): Promise<() => Promise<void>> {
   const server = testServer();
   await server.dropTestDatabases();
   const previousRun = process.env.RELAY_TEST_RUN;
-  process.env.RELAY_TEST_RUN = randomUUID().replaceAll("-", "").slice(0, 16);
+  process.env.RELAY_TEST_RUN = `${String(process.pid)}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
   // A detached process survives a Windows console interrupt and cleans only this run.
   const cleanup = fork(fileURLToPath(new URL("./cleanup.ts", import.meta.url)), [], {
     detached: true,
@@ -19,7 +19,10 @@ export default async function setup(): Promise<() => Promise<void>> {
     stdio: ["ignore", "ignore", "ignore", "ipc"],
     execArgv: [],
   });
-  const exited = once(cleanup, "exit");
+  const exited = new Promise<number | null>((resolve, reject) => {
+    cleanup.once("exit", resolve);
+    cleanup.once("error", reject);
+  });
   await Promise.race([
     once(cleanup, "message"),
     exited.then(() => {
@@ -30,7 +33,7 @@ export default async function setup(): Promise<() => Promise<void>> {
   const teardown = () =>
     (cleaning ??= (async () => {
       cleanup.send("close");
-      const [code] = await exited;
+      const code = await exited;
       if (previousRun === undefined) delete process.env.RELAY_TEST_RUN;
       else process.env.RELAY_TEST_RUN = previousRun;
       if (code !== 0) throw new Error("Test database cleanup failed.");

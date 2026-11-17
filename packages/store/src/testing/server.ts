@@ -49,9 +49,30 @@ export function testServer(): TestServer {
     }
   };
   const prefix = `${baseName}_test_`;
+  const liveRun = (database: string) => {
+    const match = /^(\d+)_[a-f0-9]{16}_[a-f0-9]{16}$/.exec(database.slice(prefix.length));
+    if (!match) return false;
+    try {
+      process.kill(Number(match[1]), 0);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+      throw error;
+    }
+  };
   const dropDatabase = async (database: string) => {
     if (database !== `${baseName}_template` && !database.startsWith(prefix))
       throw new Error("Refusing to drop a database outside the test namespace.");
+    const app = new pg.Client({ connectionString: databaseUrl });
+    await app.connect();
+    try {
+      await app.query(
+        "SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity WHERE datname=$1 AND usename=current_user AND pid<>pg_backend_pid()",
+        [database],
+      );
+    } finally {
+      await app.end();
+    }
     await admin((client) =>
       client.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)} WITH (FORCE)`),
     );
@@ -59,7 +80,7 @@ export function testServer(): TestServer {
   return {
     templateName: `${baseName}_template`,
     newDatabaseName: () =>
-      `${prefix}${process.env.RELAY_TEST_RUN ? process.env.RELAY_TEST_RUN + "_" : ""}${randomUUID().replaceAll("-", "")}`,
+      `${prefix}${process.env.RELAY_TEST_RUN ? process.env.RELAY_TEST_RUN + "_" : ""}${randomUUID().replaceAll("-", "").slice(0, 16)}`,
     urlFor: (database) => urlFor(base, database),
     ownerUrlFor: (database) => urlFor(owner, database),
     admin,
@@ -74,7 +95,9 @@ export function testServer(): TestServer {
             )
           ).rows,
       );
-      for (const { name } of names) await dropDatabase(name);
+      for (const { name } of names) {
+        if (runId || !liveRun(name)) await dropDatabase(name);
+      }
     },
   };
 }

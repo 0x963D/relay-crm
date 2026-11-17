@@ -52,18 +52,7 @@ const t = initTRPC.context<RpcContext>().create({
   transformer: superjson,
   errorFormatter: ({ shape, error, ctx }) => {
     const accessFailure = isAccessError(error.cause) ? error.cause.code : null;
-    const refused =
-      accessFailure ||
-      [
-        "UNAUTHORIZED",
-        "FORBIDDEN",
-        "BAD_REQUEST",
-        "NOT_FOUND",
-        "CONFLICT",
-        "TOO_MANY_REQUESTS",
-        "PAYLOAD_TOO_LARGE",
-        "METHOD_NOT_SUPPORTED",
-      ].includes(error.code);
+    const refused = accessFailure !== null || error.code !== "INTERNAL_SERVER_ERROR";
     if (refused)
       logToConsole(`rpc.${accessFailure ?? error.code}`, { requestId: ctx?.requestId }, "info");
     const failure = refused
@@ -237,18 +226,16 @@ export const appRouter = t.router({
           ),
         ),
       ),
-    list: authenticated
-      .input(Paged)
-      .query(({ ctx, input }) =>
-        paymentResponse(
-          ctx,
-          ctx.store.listPayments(ctx.actor, {
-            ...input,
-            at: new Date(),
-            timeZone: ctx.timeZone ?? "UTC",
-          }),
-        ),
+    list: authenticated.input(Paged).query(({ ctx, input }) =>
+      paymentResponse(
+        ctx,
+        ctx.store.listPayments(ctx.actor, {
+          ...input,
+          at: new Date(),
+          timeZone: ctx.timeZone ?? "UTC",
+        }),
       ),
+    ),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
       .query(({ ctx, input }) => paymentResponse(ctx, ctx.store.getPayment(ctx.actor, input.id))),
