@@ -180,3 +180,43 @@ describe("listLeads ordering", () => {
     expect(listed.map((lead) => lead.id)).toEqual([second, first].sort().reverse());
   });
 });
+
+test("agent pages filter scope before their limit and offset", async ({ db }) => {
+  const teamId = await db.seedTeam("sales");
+  const outside = await db.seedTeam("sales");
+  const userId = await db.seedUser("teamLead");
+  await db.ownerRows("INSERT INTO memberships(user_id,team_id,is_lead) VALUES ($1,$2,true)", [
+    userId,
+    teamId,
+  ]);
+  for (const [team, prefix] of [
+    [outside, "A"],
+    [teamId, "B"],
+  ] as const) {
+    await db.ownerRows(
+      `WITH people AS (
+      INSERT INTO users(id,email,name,role)
+      SELECT gen_random_uuid(), $2 || n::text || '@example.com', $2 || lpad(n::text,3,'0'), 'agent'
+      FROM generate_series(1,105) n RETURNING id
+    ) INSERT INTO memberships(user_id,team_id) SELECT id,$1::uuid FROM people`,
+      [team, prefix],
+    );
+  }
+  const actor: Actor = {
+    userId,
+    role: "teamLead",
+    team: { id: teamId, kind: "sales", isLead: true },
+  };
+  const first = await db.store.queueAgents(actor, 0);
+  const second = await db.store.queueAgents(actor, 100);
+  expect(first).toHaveLength(100);
+  expect(second).toHaveLength(5);
+  expect(
+    [...first, ...second].every(
+      (member) => member.teamId === teamId && member.name.startsWith("B"),
+    ),
+  ).toBe(true);
+  expect(new Set([...first, ...second].map((member) => member.ownerId)).size).toBe(105);
+  const owner = await ownerOf(db);
+  expect(await db.store.queueAgents(owner, 200)).toHaveLength(10);
+});
