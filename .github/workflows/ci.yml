@@ -118,7 +118,8 @@ jobs:
       - run: pnpm capture
       - run: pnpm capture:readme
       - uses: actions/upload-artifact@v6
-        if: always()
+        if: failure()
         with:
           name: browser-evidence
           path: /tmp/relay-crm-screens
+          retention-days: 7
