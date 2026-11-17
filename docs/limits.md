@@ -38,7 +38,7 @@ pnpm exec dotenv -- vitest run --project integration packages/store/test/databas
 ## Payments and receipts
 
 - A manual payment's receipt hash proves nothing about a bank transfer. [Two approvers acting together](payments.md#what-the-receipt-hash-does-and-does-not-prove) can approve an invented receipt.
-- A provider report with a different amount or currency goes to review whatever its status, including pending, failed and expired.
+- While a payment waits for its result, a provider report with a different amount or currency sends it to review whatever status the report carries, including pending, failed and expired. A payment that is already decided does not compare amounts.
 - `sent` means the mail server accepted the receipt. It does not mean the message reached an inbox.
 - An `unknown` receipt is never retried automatically. A person has to requeue it, and a requeue can produce a second copy of a receipt that had in fact arrived.
 - A receipt whose preparation takes longer than the send timeout is marked `unknown` without being sent.

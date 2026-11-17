@@ -38,7 +38,7 @@ The company is Tidewell Language School, and it is invented. The sign-in page ha
 
 Four more people are seeded without a button: a second manager and three more agents. They own leads and accounts, take their turn in round-robin and recorded some of the seeded payments.
 
-The seed does not insert finished rows. It calls the operations the app calls, through the app's database role: intake for every lead, assignment by the manager, logged attempts, closes, card checkouts, webhooks and two-person approvals. Every seeded lead and payment has therefore passed the same rules as one a visitor creates. The owner role writes only the teams, the people, one suppressed email address and the seed marker.
+The seed does not insert finished rows. It calls the operations the app calls: intake for every lead, assignment by the manager, logged attempts, closes, card checkouts, webhooks and two-person approvals. Every seeded lead and payment has therefore passed the same rules as one a visitor creates. On the first seed those operations run through the app's database role, and the owner role writes only the teams, the people, one suppressed email address and the seed marker. A reset runs the same operations inside its one owner transaction.
 
 Dele's queue has two leads in each of its five groups, and the demo check below asserts those counts. Two of the leads have callbacks due today, at 20:00 and 22:00 in the demo's time zone, so one moves to overdue after 20:00 and the other after 22:00.
 

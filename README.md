@@ -55,7 +55,7 @@ Three packages, each with one job and one thing it must not do. Docker Compose p
 - A payment credits once across duplicate, late or missing webhooks. [Payment races](packages/store/test/payments.int.test.ts), `a webhook, its duplicate and the reconciler collide and credit exactly once` and `a lost webhook is reconciled and a late webhook changes no money or audit`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts`.
 - Manual payments need two approvers who did not set the terms. [Manual payments](packages/store/test/manual-payments.int.test.ts), `the last editor is a maker and editing voids existing approvals`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts`.
 - The app's database role cannot change a ledger line. [Database role](packages/store/test/database-role.int.test.ts), `the app role refuses UPDATE ledger_lines SET amount=amount+1`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts`.
-- Every open lead appears in exactly one queue group. [Queue partition](packages/domain/test/work.test.ts), `open leads match an independent partition across offsets, DST changes and midnight`. Run `pnpm exec vitest run --project unit packages/domain/test/work.test.ts`.
+- Every lead in an agent's queue falls into exactly one group. [Queue partition](packages/domain/test/work.test.ts), `open leads match an independent partition across offsets, DST changes and midnight`. Run `pnpm exec vitest run --project unit packages/domain/test/work.test.ts`.
 
 ## Limits
 

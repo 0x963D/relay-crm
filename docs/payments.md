@@ -69,7 +69,7 @@ If the response in step 2 is lost after the provider created the checkout, the l
 
 ### What the provider can report
 
-`settlePayment` compares the reported amount and currency with the payment before it looks at the status.
+For a payment that is still waiting for its result, `settlePayment` compares the reported amount and currency with the payment before it looks at the status. Once a payment is decided, only the last row applies: a completed payment ignores every later report, and a failed or expired one reacts only to a report that it was paid.
 
 | Provider report                                | Result                                                |
 | ---------------------------------------------- | ----------------------------------------------------- |
@@ -173,7 +173,7 @@ pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-
 
 ## Receipts
 
-Settlement queues a receipt and does not send it. The outbox row commits with the posting, and a separate worker sends the email afterwards. A mail server that is down therefore cannot block or undo a payment, and a receipt never goes out for a payment that rolled back.
+Settlement queues a receipt and does not send it. The outbox row commits with the posting, and a separate worker sends the email afterwards. A mail server that is down therefore cannot block or undo a payment, and a receipt never goes out for a payment that rolled back. A demo reset is the one exception. It rebuilds the invented data inside a single transaction and sends the seeded receipts before that transaction commits.
 
 ### The worker
 
@@ -186,7 +186,7 @@ For each due receipt the worker runs four steps.
 3. It sends the email outside any transaction, and aborts the send at `RELAY_RECEIPT_SEND_TIMEOUT_MS`.
 4. It records the outcome and clears the lease.
 
-If step 4 fails for one receipt, the worker leaves that attempt `unknown`, appends a `receiptRecordingFailed` event to the payment and carries on with the rest of the batch.
+If step 4 fails for one receipt, the worker leaves that attempt `unknown`, tries to append a `receiptRecordingFailed` event to the payment and carries on with the rest of the batch. If the database refuses that event too, the failure appears only in the worker's result, as `failureRecorded: false`.
 
 Step 2 comes before the send on purpose. If the worker dies during the send, the row already says `unknown`, and the worker never retries an `unknown` receipt by itself. The choice is between a customer who might get no receipt and one who might get two, and the app picks the first because a person can requeue it.
 

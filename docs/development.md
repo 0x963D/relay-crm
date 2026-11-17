@@ -18,7 +18,7 @@ The domain takes the time and any randomness as arguments. It loads no ambient t
 
 Two lint rules shape the store. Only `tx.ts` may call Prisma's `$transaction`, so every transaction goes through `transact`. Only `leads.ts` may query the leads table directly, so every lead read sits beside the scope rule that filters it.
 
-The web app parses its settings in one file, `apps/web/src/server/env.ts`, and lint refuses `process.env` everywhere else. A production server refuses to start on a setting it cannot parse.
+The web app parses its settings in one file, `apps/web/src/server/env.ts`, and lint refuses `process.env` in the rest of the app. The exceptions are listed in `eslint.config.ts`: `env-file.ts`, which loads the demo's configuration file, the Prisma config and two test files. A production server refuses to start on a setting it cannot parse.
 
 ## Every transaction is serializable and retried
 

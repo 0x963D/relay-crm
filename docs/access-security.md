@@ -39,7 +39,7 @@ Existing staff sign in with a six-digit code sent by email. There is no sign-up 
 2. The server stores a hash of the code and sends the email after it has answered.
 3. The client posts `{"email":"staff@example.com","otp":"123456"}` to `/api/auth/sign-in/email-otp` and keeps the session cookie.
 
-A code lasts 5 minutes, and three wrong guesses use it up. An address that belongs to nobody gets the same response as a real one, receives no mail and cannot obtain a session. Both endpoints hold their answer for at least 300 milliseconds, so the response time does not reveal which addresses exist.
+A code lasts 5 minutes, and three wrong guesses use it up. An address that belongs to nobody gets the same response as a real one, receives no mail and cannot obtain a session. Both endpoints hold their answer for at least 300 milliseconds, which hides the difference in work between a real address and an unknown one whenever that work finishes inside the delay. A slower request is not padded further.
 
 Both requests carry JSON, or the URL-encoded fields of the sign-in page's form, and an `Origin` header equal to the origin of `AUTH_URL`. A different origin gets 403. `POST /api/auth/sign-out` ends the session and `GET /api/auth/get-session` reads it. Every other path under `/api/auth` answers 404.
 
@@ -93,7 +93,7 @@ With a positive count, the app's port must be reachable only through the proxy, 
 
 The server writes IPv4-mapped IPv6 addresses as IPv4 and every IPv6 address in one spelling before it counts.
 
-`pnpm dev` and `pnpm start` run `apps/web/scripts/serve.ts`, which records each connection's address before Next.js handles the request. Development binds `127.0.0.1`. Production binds `HOST`, which defaults to `0.0.0.0`. Running `next start` directly skips that entry point. A request then has no address, and every route that needs one refuses it with the fixed error response and logs the configuration error once.
+`pnpm dev` and `pnpm start` run `apps/web/scripts/serve.ts`, which records each connection's address before Next.js handles the request. Development binds `127.0.0.1`. Production binds `HOST`, which defaults to `0.0.0.0`. Running `next start` directly skips that entry point. A request then has no connection address. Unless a trusted proxy supplies one in `X-Forwarded-For`, every route that needs an address refuses the request with the fixed error response and logs the configuration error once.
 
 ## Secrets
 
@@ -120,7 +120,7 @@ Put each value in the deployment environment and the untracked `.env`.
 - `relay_owner` owns the schema and every table. Migrations, the demo seed and test setup connect as the owner through `MIGRATION_DATABASE_URL`. The owner may create databases, which the integration tests need, and is neither a superuser nor able to create roles.
 - `relay_app` is the role the running app uses through `DATABASE_URL`. It owns nothing, belongs to no other role and has no superuser, `CREATEDB`, `CREATEROLE` or `BYPASSRLS` attribute.
 
-The serving app never receives the owner's credentials. A compromised app process is then limited to the grants below. It cannot drop a table, disable a trigger, or update or delete a ledger line.
+In the Docker Compose demo the serving app never receives the owner's credentials. A compromised app process is then limited to the grants below. `pnpm dev` and `pnpm start` load `.env`, which holds both connections, so a deployment has to keep the owner connection out of the serving process itself. It cannot drop a table, disable a trigger, or update or delete a ledger line.
 
 Eleven history tables are append-only for both roles. A trigger refuses `UPDATE`, `DELETE` and `TRUNCATE` on `activities`, `audit_log`, `distribution_previews`, `idempotency_records`, `intake_events`, `ledger_accounts`, `ledger_lines`, `ledger_transactions`, `payment_events`, `payment_makers` and `webhook_inbox`. Only the owner can disable such a trigger. The app cannot read `audit_log`. It can only add to it. Row-level security on `job_leases` shows the app the reconcile and outbox rows and hides the lease that the demo reset holds.
 
