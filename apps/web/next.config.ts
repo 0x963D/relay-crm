@@ -7,12 +7,13 @@ const config: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
   transpilePackages: ["@relay/domain", "@relay/store"],
-  headers: async () => [
-    {
-      source: "/sandbox/checkout/:path*",
-      headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
-    },
-  ],
+  headers: () =>
+    Promise.resolve([
+      {
+        source: "/sandbox/checkout/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+    ]),
   // Keeps `next dev` from writing a generated file into the repository.
   agentRules: false,
   // requireActor answers a request with no session through unauthorized(), which needs this.

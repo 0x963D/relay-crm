@@ -30,7 +30,7 @@ test("README journeys work through the browser with scheduled recovery", async (
     ["paid-after-close", late.id],
     ["waiting", waiting.id],
     ["reconciled", recovered.paymentId],
-  ]) {
+  ] as const) {
     await page.goto(`${browserState().url}/payments/${id}`);
     const events = page.getByRole("list", { name: "Payment events" });
     await expect(events.getByRole("heading").first()).toHaveText("Checkout created");
