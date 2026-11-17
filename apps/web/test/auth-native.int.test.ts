@@ -8,6 +8,8 @@ import { z } from "zod";
 import { createAuthentication } from "../src/server/auth.ts";
 import { connections } from "../src/server/client-address.ts";
 import { handleRpc } from "../src/server/rpc.ts";
+import { resolvePrincipal } from "../src/server/actor.ts";
+import { parseEnv } from "../src/server/env.ts";
 import { limitKey } from "../src/server/rate-limit.ts";
 
 const origin = "http://localhost:3405";
@@ -422,8 +424,33 @@ test("browser response bodies omit session tokens", async ({ db }) => {
   const browser = await browserSignIn();
   expect(browser.body).not.toHaveProperty("token");
   const current: unknown = await (await session({ cookie: browser.cookie })).json();
-  expect(current).toHaveProperty("session.id");
-  expect(current).not.toHaveProperty("session.token");
+  z.object({
+    session: z
+      .object({
+        id: z.uuid(),
+        expiresAt: z.iso.datetime(),
+        createdAt: z.iso.datetime(),
+        updatedAt: z.iso.datetime(),
+        ipAddress: z.string().nullable(),
+        userAgent: z.string().nullable(),
+        userId: z.uuid(),
+        currentTeamId: z.uuid().nullable(),
+      })
+      .strict(),
+    user: z
+      .object({
+        id: z.uuid(),
+        name: z.literal("agent user"),
+        email: z.literal(email),
+        emailVerified: z.literal(true),
+        image: z.string().nullable(),
+        createdAt: z.iso.datetime(),
+        updatedAt: z.iso.datetime(),
+      })
+      .strict(),
+  })
+    .strict()
+    .parse(current);
 });
 
 test("browser database tokens cannot authenticate bearer reads, writes or native sign-out", async ({
@@ -594,4 +621,88 @@ test("browser and native demo sign-in consume one per-client budget", async ({ d
   expect((await post("/native/demo", { role: "agent" })).response.status).toBe(200);
   expect((await post("/demo", { role: "agent" }, { origin })).response.status).toBe(429);
   expect((await post("/native/demo", { role: "agent" })).response.status).toBe(429);
+});
+
+test("page principal resolution never falls back from refused or invalid bearer credentials to cookies", async ({
+  db,
+}) => {
+  await db.seedUser("agent");
+  const { auth, browserSignIn, signIn } = setup(db.store);
+  const browser = await browserSignIn();
+  const app = { auth, store: db.store, env: parseEnv({ DATABASE_URL: db.connectionString }) };
+  expect(await resolvePrincipal(app, new Headers({ cookie: browser.cookie }))).not.toBeNull();
+  const native = await signIn();
+  for (const extra of [
+    { authorization: `Bearer ${native.token}`, origin },
+    { authorization: `Bearer ${native.token}`, origin: "" },
+    { authorization: "Bearer bad token" },
+    { authorization: `Bearer ${"z".repeat(32)}` },
+  ]) {
+    expect(
+      await resolvePrincipal(app, new Headers({ cookie: browser.cookie, ...extra })),
+    ).toBeNull();
+  }
+});
+
+test("native sign-in and sign-out never read or change the attached browser session", async ({
+  db,
+}) => {
+  const nativeId = await db.seedUser("agent");
+  const browserId = await db.seedUser("agent");
+  const reads: unknown[] = [];
+  const store = {
+    ...db.store,
+    authenticationDatabase: ((options) => {
+      const adapter = db.store.authenticationDatabase(options);
+      const findOne = adapter.findOne.bind(adapter);
+      adapter.findOne = (input) => {
+        reads.push(input);
+        return findOne(input);
+      };
+      return adapter;
+    }) satisfies typeof db.store.authenticationDatabase,
+  };
+  const { browserSignIn, post, sent, session } = setup(store);
+  const browser = await browserSignIn("user-2@team.example");
+  const before = await db.rows("SELECT * FROM auth_sessions WHERE user_id=$1", [browserId]);
+  expect(before).toHaveLength(1);
+  const browserToken = z.string().parse(before[0]?.token);
+  reads.length = 0;
+  expect(
+    (await post("/native/send-code", { email }, { cookie: browser.cookie })).response.status,
+  ).toBe(200);
+  const signed = await post(
+    "/native/sign-in",
+    { email, otp: sent.at(-1)?.code },
+    { cookie: browser.cookie },
+  );
+  expect(signed.response.status).toBe(200);
+  const native = NativeSession.parse(await signed.response.json());
+  expect(native.user.id).toBe(nativeId);
+  expect(
+    await db.rows("SELECT user_id,is_native FROM auth_sessions WHERE token=$1", [native.token]),
+  ).toEqual([{ user_id: nativeId, is_native: true }]);
+  expect(await db.rows("SELECT * FROM auth_sessions WHERE user_id=$1", [browserId])).toEqual(
+    before,
+  );
+  expect(
+    (
+      await post(
+        "/native/sign-out",
+        {},
+        { cookie: browser.cookie, authorization: `Bearer ${native.token}` },
+      )
+    ).response.status,
+  ).toBe(200);
+  expect(await db.rows("SELECT token FROM auth_sessions WHERE token=$1", [native.token])).toEqual(
+    [],
+  );
+  expect(await db.rows("SELECT * FROM auth_sessions WHERE user_id=$1", [browserId])).toEqual(
+    before,
+  );
+  expect(JSON.stringify(reads)).not.toContain(browserToken);
+  expect(await (await session({ cookie: browser.cookie })).json()).toHaveProperty(
+    "user.id",
+    browserId,
+  );
 });

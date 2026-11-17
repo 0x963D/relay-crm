@@ -46,10 +46,20 @@ export async function boundedRequest(request: Request): Promise<Request | null> 
   const body = await readBody(request);
   if (body === null) return null;
   if (request.body === null) return request;
+  return copyRequest(request, request.headers, body);
+}
+
+export async function copyRequest(
+  request: Request,
+  headers: Headers,
+  body?: Uint8Array,
+): Promise<Request> {
   return new Request(request.url, {
     method: request.method,
-    headers: request.headers,
+    headers,
     signal: request.signal,
-    body: new Uint8Array(body),
+    ...(request.body === null
+      ? {}
+      : { body: body ? new Uint8Array(body) : await request.arrayBuffer() }),
   });
 }

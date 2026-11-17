@@ -9,7 +9,7 @@ import { setSessionCookie } from "better-auth/cookies";
 import { betterAuth } from "better-auth";
 import { emailOTP } from "better-auth/plugins";
 import { z } from "zod";
-import { boundedRequest } from "./http.ts";
+import { boundedRequest, copyRequest } from "./http.ts";
 import { failureResponse, protectHttp } from "./errors.ts";
 import { clientAddress } from "./client-address.ts";
 import { allowRequest, limitKey, rateLimited } from "./rate-limit.ts";
@@ -131,12 +131,7 @@ export function createAuthentication(
         (await auth.api.getSession({ headers, query: { disableRefresh: true } }))?.session.isNative)
     )
       headers.delete("cookie");
-    const forwarded = new Request(request.url, {
-      method: request.method,
-      headers,
-      signal: request.signal,
-      ...(request.body === null ? {} : { body: await request.arrayBuffer() }),
-    });
+    const forwarded = await copyRequest(request, headers);
     const response = await nativeRequest.run(native, () => auth.handler(forwarded));
     return response.status < 500
       ? response
@@ -167,13 +162,12 @@ export function createAuthentication(
     const body: unknown = await response.json();
     if (body !== null && typeof body === "object") {
       if ("token" in body) delete body.token;
-      if (
-        "session" in body &&
-        body.session !== null &&
-        typeof body.session === "object" &&
-        "token" in body.session
-      )
-        delete body.session.token;
+      if ("session" in body && body.session !== null && typeof body.session === "object") {
+        if ("isNative" in body.session && body.session.isNative === true)
+          return Response.json(null, { headers: { "cache-control": "no-store" } });
+        if ("token" in body.session) delete body.session.token;
+        if ("isNative" in body.session) delete body.session.isNative;
+      }
     }
     const headers = new Headers(response.headers);
     headers.delete("content-length");
@@ -272,7 +266,13 @@ export function createAuthentication(
       return dispatch(request, native);
     }
     if (path === "/get-session" && request.method === "GET")
-      return withoutToken(await dispatch(request));
+      return withoutToken(
+        await auth.api.getSession({
+          headers: request.headers,
+          query: { disableRefresh: true },
+          asResponse: true,
+        }),
+      );
     if (path === "/sign-out" && request.method === "POST") return dispatch(request);
     const sending = path === "/email-otp/send-verification-otp";
     if (request.method !== "POST" || (!sending && path !== "/sign-in/email-otp")) {

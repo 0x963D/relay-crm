@@ -23,9 +23,11 @@ This page gathers what v0.1 leaves out and where its guarantees stop. The idea t
 
 A native session token is a bearer secret with a fixed 24-hour life and no refresh. Anyone holding it acts as that person until sign-out or expiry. A demo reset also ends the session.
 
-A browser session and a native session cannot stand in for each other. Browser responses omit session tokens. A browser session's raw database token is not a bearer credential. A native token does not work as a cookie, even with a valid signature. Only native sign-out ends a native session.
+A browser session and a native session cannot stand in for each other. Browser responses omit session tokens. A browser session's raw database token is not a bearer credential. A native token does not work as a cookie, even with a valid signature. Native sign-out, expiry and demo reset end native sessions. Browser sign-out does not.
 
 Native routes read no ambient credential and set none. Native routes and bearer requests ignore cookies. An invalid bearer never falls back to a valid browser cookie. Other authorization schemes leave browser cookie handling unchanged.
+
+A reverse proxy that injects its own `Authorization: Bearer` header makes browser sessions unauthorized, because the server treats every bearer header as a non-browser request.
 
 A browser cannot attach `Authorization: Bearer` across origins without a preflight that fails, because the server sends no CORS headers. The native routes also refuse `Origin` and `Sec-Fetch-Site`. Bearer requests refuse `Origin`. These header refusals are a second layer. They do not replace the credential rules.
 
