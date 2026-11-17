@@ -5,7 +5,9 @@
   <img alt="An agent's callback queue with Hye-jin Park's lead and work history open" src="docs/images/queue-light.png">
 </picture>
 
-Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone. Leads arrive from Meta Lead Ads, a web form or a CSV file. A manager shares them out, each agent works a queue of callbacks, and payments are recorded and posted to a ledger. Manual payments need approval from two people. It is a complete product that runs with one command, with invented data and three roles to try.
+Relay CRM is a sales CRM for a small team that buys leads from ads and closes them by phone. Leads arrive from Meta Lead Ads, a web form or a CSV file. A manager shares them out, each agent works a queue of callbacks, and payments are recorded and posted to a ledger. Manual payments need approval from two people. It runs with one command, on invented data, and you can try it as the manager, the agent or the accountant.
+
+It is built with TypeScript, Next.js, React, tRPC, TanStack Query, Prisma and PostgreSQL.
 
 ## Run it
 
@@ -15,9 +17,9 @@ With Docker and Docker Compose installed, run this in the repository.
 docker compose up
 ```
 
-Wait for the app to become healthy, then open [Relay CRM](http://127.0.0.1:3107). Choose **Manager** for Priya, **Agent** for Dele or **Accountant** for Esther. The [mail inbox](http://127.0.0.1:8127) holds sign-in codes and receipts.
+Wait for the app to become healthy, then open [Relay CRM](http://127.0.0.1:3107). The sign-in page has a button for each of three people: Priya Raman the manager, Dele Akinwale the agent and Esther Okafor the accountant. The [mail inbox](http://127.0.0.1:8127) shows the receipts the demo sends, and the code if you sign in by email.
 
-A first run builds the app image, so it takes about two and a half minutes and about 4.2 GB of images. One fresh-clone run measured 146,660 ms with `pnpm demo:check ../relay-demo-evidence --cold`, and `docker image inspect` reported 4,181,959,252 bytes across the five images. See the [measurement commands and cache conditions](docs/demo.md#first-run-measurements).
+A first run builds the app image, so it takes about two and a half minutes and about 4.2 GB of images. The [first-run measurements](docs/demo.md#first-run-measurements) give the exact figures and the commands that produced them.
 
 ## Three things to try
 
@@ -29,7 +31,7 @@ A first run builds the app image, so it takes about two and a half minutes and a
   <img alt="The manager previews a round-robin assignment before confirming it" src="docs/images/pool-light.png">
 </picture>
 
-3. As Agent, open **Accounts**, **Leila Farouk** and **Create card checkout**, enter **395.00**, create it, open the sandbox page, choose **Drop it** and pay, then return to the payment and watch the reconciler complete it with one ledger posting.
+3. As Agent, open **Accounts**, **Leila Farouk** and **Create card checkout**, enter **395.00**, create it, open the sandbox page, choose **Drop it** and pay. Then switch to Accountant, open **Payments** and that payment, and watch the reconciler complete it with one ledger posting.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/payment-dark.png">
@@ -38,7 +40,7 @@ A first run builds the app image, so it takes about two and a half minutes and a
 
 ## How it is built
 
-TypeScript, Next.js, React, tRPC, TanStack Query, Prisma and PostgreSQL, packaged with Docker Compose.
+Three packages, each with one job and one thing it must not do. Docker Compose packages the demo.
 
 | Package           | Owns                                | Must not do                           |
 | ----------------- | ----------------------------------- | ------------------------------------- |
@@ -49,7 +51,7 @@ TypeScript, Next.js, React, tRPC, TanStack Query, Prisma and PostgreSQL, package
 ## What is proven, and where
 
 - Concurrent submissions become one lead. [Intake race](packages/store/test/intake-races.int.test.ts), `for one new email: one lead is created and the other attaches to it`. Run `pnpm test:int -- packages/store/test/intake-races.int.test.ts`.
-- One scope function decides record reads, edits and assignments. [Access](packages/domain/test/access.test.ts), `never lets a $role in $situation edit a lead they cannot read`. Run `pnpm test -- packages/domain/test/access.test.ts`.
+- One scope function decides record reads, edits and assignments. [Access](packages/domain/test/access.test.ts), `never lets a $role in $situation edit a lead they cannot read`, which runs once for every role and team situation. Run `pnpm test -- packages/domain/test/access.test.ts`.
 - A payment credits once across duplicate, late or missing webhooks. [Payment races](packages/store/test/payments.int.test.ts), `a webhook, its duplicate and the reconciler collide and credit exactly once` and `a lost webhook is reconciled and a late webhook changes no money or audit`. Run `pnpm test:int -- packages/store/test/payments.int.test.ts`.
 - Manual payments need two approvers who did not set the terms. [Manual payments](packages/store/test/manual-payments.int.test.ts), `the last editor is a maker and editing voids existing approvals`. Run `pnpm test:int -- packages/store/test/manual-payments.int.test.ts`.
 - The app's database role cannot change a ledger line. [Database role](packages/store/test/database-role.int.test.ts), `the app role refuses UPDATE ledger_lines SET amount=amount+1`. Run `pnpm test:int -- packages/store/test/database-role.int.test.ts`.
