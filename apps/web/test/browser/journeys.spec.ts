@@ -20,11 +20,17 @@ test.describe.serial("lead work journeys", () => {
     expect(response.status()).toBe(202);
     await signIn(page, "manager");
     await expect(page.getByRole("heading", { name: "Lead pool", exact: true })).toBeVisible();
+    const poolBefore = (await rpc(page).leads.pool.query({})).total;
     await accessibility(page, "pool-hand");
     await page.getByRole("checkbox", { name: `Select ${leadName}`, exact: true }).check();
     await page.getByRole("radio", { name: /Dele Akinwale/ }).check();
     await page.getByRole("button", { name: "Assign 1 lead to Dele Akinwale", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "1 lead was assigned" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: "Main" })
+        .getByRole("link", { name: "Lead pool", exact: true }),
+    ).toHaveText(`Lead pool${poolBefore - 1}`);
     await page
       .getByRole("radiogroup", { name: "View the demo as" })
       .getByRole("radio", { name: "Agent", exact: true })
@@ -37,6 +43,7 @@ test.describe.serial("lead work journeys", () => {
     page,
   }) => {
     await signIn(page, "agent");
+    const accountsBefore = (await rpc(page).accounts.list.query({})).total;
     const beforeQueue = await rpc(page).leads.queue.query({});
     const beforeTotal = Object.values(beforeQueue.counts).reduce((a, b) => a + b, 0);
     await page.getByRole("link", { name: `Open ${leadName}`, exact: true }).click();
@@ -77,6 +84,13 @@ test.describe.serial("lead work journeys", () => {
     await expect(
       page.getByRole("status").filter({ hasText: "An account was opened" }),
     ).toBeFocused();
+    const navigation = page.getByRole("navigation", { name: "Main" });
+    await expect(navigation.getByRole("link", { name: "Accounts", exact: true })).toHaveText(
+      `Accounts${accountsBefore + 1}`,
+    );
+    await expect(navigation.getByRole("link", { name: "My queue", exact: true })).toHaveText(
+      `My queue${beforeTotal - 1}`,
+    );
     const accounts = await rpc(page).accounts.list.query({ limit: 100 });
     expect(accounts.items.some((a) => a.person?.name === leadName)).toBe(true);
     const queue = await rpc(page).leads.queue.query({});

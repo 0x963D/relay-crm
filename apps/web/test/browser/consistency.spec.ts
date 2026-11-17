@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { signIn, latestCode } from "./support.ts";
+import { signIn, latestCode, rpc } from "./support.ts";
 import { browserState } from "./paths.ts";
 
 test("workspace hydration stays error-free through demo sign-in, checkout and emailed code", async ({
@@ -23,10 +23,17 @@ test("workspace hydration stays error-free through demo sign-in, checkout and em
     .getByRole("link")
     .filter({ hasText: "Leila Farouk" })
     .click();
+  const before = await rpc(page).payments.list.query({});
+  const paymentCount = Object.values(before.counts).reduce((sum, count) => sum + count, 0);
   await page.getByRole("link", { name: "Create card checkout", exact: true }).click();
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("395.00");
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Pay link", exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Payments", exact: true }),
+  ).toHaveText(`Payments${paymentCount + 1}`);
   const href = await page
     .getByRole("link", { name: "Go to payment", exact: true })
     .getAttribute("href");

@@ -2,9 +2,8 @@
 import { type ReactNode, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
-import { useCachedCount } from "@/lib/trpc/use-cached-count";
 import type { Outputs } from "@/lib/api";
 import { isLeadManager } from "@/lib/workspace";
 import { authFailure } from "@/lib/failures";
@@ -45,18 +44,29 @@ export function Workspace({
   const router = useRouter();
   const trpc = useTRPC();
   const client = useQueryClient();
-  const poolTotal = useCachedCount(trpc.leads.pool.queryKey(), poolCount);
-  const agentTotal = useCachedCount(trpc.leads.agents.queryKey(), agentCount);
-  const queueTotal = useCachedCount(
-    trpc.leads.queue.queryKey({ agentId: profile.userId }),
-    queueCount,
-  );
+  const manager = isLeadManager(profile.role);
+  const poolTotal = useQuery(
+    trpc.leads.pool.queryOptions({ limit: 14, offset: 0 }, { enabled: manager, select: poolCount }),
+  ).data;
+  const agentTotal = useQuery(
+    trpc.leads.agents.queryOptions({ offset: 0 }, { enabled: manager, select: agentCount }),
+  ).data;
+  const queueTotal = useQuery(
+    trpc.leads.queue.queryOptions(
+      { agentId: profile.userId, limit: 20 },
+      { enabled: profile.role === "agent", select: queueCount },
+    ),
+  ).data;
   const counts: Record<string, number | undefined> = {
     "/pool": poolTotal,
     "/agents": agentTotal,
     "/queue": queueTotal,
-    "/payments": useCachedCount(trpc.payments.list.queryKey(), paymentCount),
-    "/accounts": useCachedCount(trpc.accounts.list.queryKey(), accountCount),
+    "/payments": useQuery(
+      trpc.payments.list.queryOptions({ limit: 20, offset: 0 }, { select: paymentCount }),
+    ).data,
+    "/accounts": useQuery(
+      trpc.accounts.list.queryOptions({ limit: 20, offset: 0 }, { select: accountCount }),
+    ).data,
   };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
