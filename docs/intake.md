@@ -32,7 +32,7 @@ The reopen policy lives in one place. `resolveIntake` asks the lead transition t
 
 `parseEmail` in `packages/domain/src/email.ts` produces the one spelling the `leads_email_key` unique index compares. It trims the address, lowercases ASCII letters and converts the domain to its punycode form. Dots and plus tags in the part before the @ sign stay significant, so `ana.silva@example.com` and `anasilva@example.com` are two leads.
 
-The rule is conservative on purpose. If it splits one person into two leads, an agent closes one as a duplicate. If it merged two people into one lead, nobody could separate their histories again. A character that Unicode folds into an ASCII letter, such as the Kelvin sign for K, makes the address invalid, so it never attaches to the ASCII lead.
+The rule is conservative on purpose. If it splits one person into two leads, an agent closes one as a duplicate. If it merged two people into one lead, nobody could separate their histories again. A character that Unicode folds into an ASCII letter, such as the Kelvin sign for K, makes the address invalid, so it never attaches to the ASCII lead. A punycode label must decode to text that passes the same rules and produces that exact label again.
 
 Phone numbers are contact data. Intake collapses their whitespace, clips them to 40 characters and never matches on them.
 

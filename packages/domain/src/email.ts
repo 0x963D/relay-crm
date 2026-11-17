@@ -1,4 +1,5 @@
 import type { Brand } from "./ids.ts";
+import { decodePunycode } from "./punycode.ts";
 import { err, ok, type Result } from "./result.ts";
 
 /**
@@ -51,14 +52,25 @@ function isMailDomain(hostname: string): boolean {
  * The WHATWG URL parser applies UTS-46 and returns punycode. A lookalike of an ASCII name is
  * refused before it gets there, because the parser would fold it into that name.
  */
-function canonicalDomain(domain: string): string | null {
+function hostnameFromText(domain: string): string | null {
   if (NOT_HOSTNAME_TEXT.test(domain) || Array.from(domain).some(foldsToAscii)) return null;
   try {
-    const { hostname } = new URL(`http://${domain}/`);
-    return isMailDomain(hostname) ? hostname : null;
+    return new URL(`http://${domain}/`).hostname;
   } catch {
     return null;
   }
+}
+
+function canonicalDomain(domain: string): string | null {
+  const hostname = hostnameFromText(domain);
+  if (hostname === null || !isMailDomain(hostname)) return null;
+  // Some URL parsers pass ASCII punycode through without checking the text it spells.
+  for (const label of hostname.split(".")) {
+    if (!label.startsWith("xn--")) continue;
+    const decoded = decodePunycode(label.slice(4));
+    if (decoded === null || hostnameFromText(decoded) !== label) return null;
+  }
+  return hostname;
 }
 
 function canonicalize(input: string): Result<string, EmailProblem> {

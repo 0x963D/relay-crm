@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { err, isEmailAddress, ok, parseEmail, type EmailProblem } from "../src/index.ts";
+import { decodePunycode } from "../src/punycode.ts";
 
 const ACCEPTED: readonly (readonly [label: string, input: string, canonical: string])[] = [
   ["a plain address", "ana@example.com", "ana@example.com"],
@@ -130,6 +131,33 @@ describe("a lookalike of an ASCII address", () => {
       expect(folded).toEqual([]);
     },
   );
+});
+
+describe("decodePunycode", () => {
+  it.each([
+    ["bcher-kva", "bücher"],
+    ["BCHER-KVA", "BüCHER"],
+    ["r8jz45g", "例え"],
+    ["zckzah", "テスト"],
+    ["BCHER-2pa", "BÜCHER"],
+    ["xample-hy68a", "ｅxample"],
+    ["a", "\u0080"],
+    ["a-", "a"],
+    ["-", ""],
+  ])("decodes %s to %s", (input, text) => {
+    expect(decodePunycode(input)).toBe(text);
+  });
+
+  it.each([
+    ["a non-base-36 digit", "bcher-kv!"],
+    ["an integer overflow", "9".repeat(20)],
+    ["a truncated variable-length integer", "zz"],
+    ["a non-ASCII basic point", "ü-"],
+    ["a surrogate", "ib9b"],
+    ["a point above Unicode's range", "en32g"],
+  ])("refuses %s", (_label, input) => {
+    expect(decodePunycode(input)).toBeNull();
+  });
 });
 
 describe("isEmailAddress", () => {
