@@ -45,11 +45,7 @@ for (const role of ["agent", "manager", "accountant"] as const) {
               keyboard,
             );
             await expect(page.getByRole("status").filter({ hasText: "Note added" })).toBeFocused();
-            if (keyboard)
-              await accessibility(
-                page,
-                `lead-${String(width)}-${theme}-${keyboard ? "keys" : "mouse"}`,
-              );
+            if (keyboard) await accessibility(page, `lead-${String(width)}-${theme}-keys`);
           } else if (role === "manager") {
             await activate(
               page,
@@ -77,11 +73,7 @@ for (const role of ["agent", "manager", "accountant"] as const) {
               keyboard,
             );
             await expect(page.getByRole("heading", { name: "Preview", exact: true })).toBeFocused();
-            if (keyboard)
-              await accessibility(
-                page,
-                `pool-${String(width)}-${theme}-${keyboard ? "keys" : "mouse"}`,
-              );
+            if (keyboard) await accessibility(page, `pool-${String(width)}-${theme}-keys`);
           }
           await activate(
             page,
@@ -97,11 +89,7 @@ for (const role of ["agent", "manager", "accountant"] as const) {
           await expect(
             page.getByRole("article", { name: "Payment detail", exact: true }),
           ).toBeVisible();
-          if (keyboard)
-            await accessibility(
-              page,
-              `payment-${role}-${String(width)}-${theme}-${keyboard ? "keys" : "mouse"}`,
-            );
+          if (keyboard) await accessibility(page, `payment-${role}-${String(width)}-${theme}-keys`);
           expect(
             await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
           ).toBe(true);
@@ -142,11 +130,7 @@ for (const role of ["agent", "manager", "accountant"] as const) {
               page.getByRole("region", { name: "Account ledger", exact: true }),
             ).toBeVisible();
           }
-          if (keyboard)
-            await accessibility(
-              page,
-              `account-${role}-${String(width)}-${theme}-${keyboard ? "keys" : "mouse"}`,
-            );
+          if (keyboard) await accessibility(page, `account-${role}-${String(width)}-${theme}-keys`);
           if (role === "manager") {
             await activate(
               page,
@@ -156,11 +140,7 @@ for (const role of ["agent", "manager", "accountant"] as const) {
             await expect(
               page.getByRole("heading", { name: "Campaign funnel", exact: true }),
             ).toBeVisible();
-            if (keyboard)
-              await accessibility(
-                page,
-                `funnel-${String(width)}-${theme}-${keyboard ? "keys" : "mouse"}`,
-              );
+            if (keyboard) await accessibility(page, `funnel-${String(width)}-${theme}-keys`);
           }
         }
       });
