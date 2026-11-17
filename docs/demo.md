@@ -16,7 +16,7 @@ Wait until `docker compose ps` shows the `app` service as healthy, then open the
 
 `RELAY_HTTP_BIND` changes the app's published bind address and defaults to `127.0.0.1`. Setting it to `0.0.0.0` exposes the shared demo logins to the network. Use invented data only. A phone on the same network can then call the [native routes](api.md#non-browser-clients) at the host's network address and `RELAY_HTTP_PORT`. The demo's `AUTH_URL` stays unchanged, and the inbox still binds to loopback.
 
-`GET /api/health` answers with an empty 200 once the migrations and the seed have finished, and 503 before that.
+`GET /api/health` answers with an empty 200 only when the newest migration required by the running build has finished, no migration is unfinished, and the demo seed is ready. It answers 503 otherwise. The demo gate applies the same checks to every route.
 
 To run a second copy, give it its own project name and free ports. This is the command in a POSIX shell.
 

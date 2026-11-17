@@ -1,6 +1,7 @@
 import { serve } from "./support/production-server.ts";
 import { submissionExample } from "@relay/domain/testing";
 import { seedDemo } from "@relay/store/demo";
+import { REQUIRED_MIGRATION } from "../../../packages/store/src/demo-state.ts";
 import { DEMO_PEOPLE } from "@relay/store";
 import { limitKey } from "../src/server/rate-limit.ts";
 import { randomUUID } from "node:crypto";
@@ -260,10 +261,35 @@ databaseTest(
       const healthy = await fetch(server.url("/api/health"));
       expect(healthy.status).toBe(200);
       expect(await healthy.text()).toBe("");
-      await db.ownerRows("DROP FUNCTION public.relay_ready()");
-      const unhealthy = await fetch(server.url("/api/health"));
-      expect(unhealthy.status).toBe(503);
-      expect(await unhealthy.text()).toBe("");
+      await db.ownerRows(
+        "INSERT INTO demo_seed(key,company,state,seeded_at) VALUES ('tidewell-language-school/v1','Tidewell Language School','ready',now())",
+      );
+      const demo = await serve(
+        (origin) => ({
+          RELAY_DEMO: "1",
+          AUTH_URL: origin,
+          AUTH_SECRET: "fake-readiness-production-secret-0123456789",
+          SMTP_URL: "smtp://127.0.0.1:9",
+          SMTP_FROM: "relay@sender.example",
+        }),
+        db.connectionString,
+      );
+      try {
+        expect((await fetch(demo.url("/sign-in"))).status).toBe(200);
+        await db.ownerRows("DELETE FROM _prisma_migrations WHERE migration_name=$1", [
+          REQUIRED_MIGRATION,
+        ]);
+        const unhealthy = await fetch(server.url("/api/health"));
+        expect(unhealthy.status).toBe(503);
+        expect(await unhealthy.text()).toBe("");
+        for (const path of ["/api/health", "/sign-in", "/api/trpc/server.info"]) {
+          const response = await fetch(demo.url(path));
+          expect(response.status).toBe(503);
+          expect(response.headers.get("retry-after")).toBe("1");
+        }
+      } finally {
+        await demo.stop();
+      }
     } finally {
       await server.stop();
     }

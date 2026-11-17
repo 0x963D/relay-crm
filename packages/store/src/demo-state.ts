@@ -37,7 +37,11 @@ export async function demoPerson(db: Db, role: DemoRole) {
   return user;
 }
 
+export const REQUIRED_MIGRATION = "0009_native_sessions";
+
 export async function databaseReady(db: Db): Promise<boolean> {
-  const rows = await db.$queryRaw<{ ready: boolean }[]>`SELECT public.relay_ready() AS ready`;
+  const rows = await db.$queryRaw<
+    { ready: boolean }[]
+  >`SELECT public.relay_ready(${REQUIRED_MIGRATION}) AS ready`;
   return rows[0]?.ready === true;
 }
