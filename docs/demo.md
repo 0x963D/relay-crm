@@ -2,93 +2,143 @@
 
 [Back to Relay CRM](../README.md)
 
+This page covers how to run the demo, what its invented company contains, what resets, how long a first run takes and what to change before putting it on a server. The demo is the production build of the app with the sandbox provider and shared logins turned on. It runs the same code as any other deployment, and everything a visitor changes is gone at the next midnight in the demo's time zone.
+
 ## Run the demo
 
-The seeded queue shows all five groups from 00:00 until 22:00 in the configured local time zone, with two due-today callbacks before 20:00.
-
-Install Docker and Docker Compose, then run this command in the repository.
+Install Docker and Docker Compose, then run this in the repository.
 
 ```sh
 docker compose up
 ```
 
-Wait until `docker compose ps` shows `app` as healthy. `GET /api/health` returns an empty 200
-response when migrations and the seed are ready. During setup or a reset it returns 503.
-Open the app at <http://127.0.0.1:3107> and the inbox at <http://127.0.0.1:8127>.
-These are the only published ports. Both bind to loopback, and the database has no published port.
-`docker compose config` prints the effective ports and service configuration.
+Wait until `docker compose ps` shows the `app` service as healthy, then open the app at <http://127.0.0.1:3107> and the mail inbox at <http://127.0.0.1:8127>. Those two ports are the only ones published, and both bind to `127.0.0.1`. The database has no published port. `docker compose config` prints the ports and settings Compose will use.
 
-The upstream images in `compose.yaml` and `Dockerfile` pin a tag and its manifest digest.
-To update one, choose its new tag, run `docker buildx imagetools inspect <image>:<tag>`, and replace
-both the tag and the `sha256` digest with that manifest's values.
-Run `pnpm demo:check <evidence-directory>` before committing the update.
+`GET /api/health` answers with an empty 200 once the migrations and the seed have finished, and 503 before that.
 
-To run another copy, choose a different project name and free ports. In a POSIX shell, for example,
-run `COMPOSE_PROJECT_NAME=relay-second RELAY_HTTP_PORT=3117 RELAY_INBOX_PORT=8137 docker compose up`.
-Use the same variables with later Compose commands. `RELAY_TIME_ZONE` selects the local day for
-callbacks and reset, and defaults to UTC.
+To run a second copy, give it its own project name and free ports. This is the command in a POSIX shell.
 
-The invented company is Tidewell Language School. The sign-in page offers Priya Raman, manager,
-Dele Akinwale, agent, and Esther Okafor, accountant. The manager opens the lead pool, and the agent
-opens a queue with five groups. The accountant opens Payments. Staff can also sign in with an emailed code.
-The lead screens support assignment by hand, round-robin previews, attempts, callbacks, notes and
-closing a lead. A rejected preview assigns nothing. Only "Spoke to them" marks a lead contacted.
-Payments, the ledger, the funnel and the accounts list have screens backed by typed APIs.
+```sh
+COMPOSE_PROJECT_NAME=relay-second RELAY_HTTP_PORT=3117 RELAY_INBOX_PORT=8137 docker compose up
+```
 
-The data is invented and resets at the start of the next local day.
-The demo's logins are shared, so one visitor can give a manual payment both approvals.
-The demo's inbox keeps every message, and anyone who can open it can sign in by emailed code as any of the invented staff.
-The demo checks card payments more often than a production setup would, and payment API reads return its configured first-check delay and interval.
-The public form stores a submitted email as a lead and can reopen a lost lead.
-A visitor can leave data changed until the next reset.
+Pass the same variables to every later Compose command for that copy. `RELAY_TIME_ZONE` sets the time zone whose midnight starts a new day for callbacks and for the reset. It defaults to UTC.
 
-Compose creates private configuration files in separate volumes. The resetter holds the owner
-connection, applies migrations, recovers an interrupted seed and restores the demo each local day.
-The app connects as `relay_app`; the app and scheduler never receive the owner's credentials.
-The scheduler calls reconciliation and the outbox through their authenticated HTTP routes.
-The inbox retains mail across database resets. `docker compose down --volumes` removes the
-project's containers and volumes, including that inbox.
+`docker compose down --volumes` removes the containers and every volume, including the inbox.
 
-To restore a running demo, run
-`docker compose exec -T resetter node --import tsx apps/web/scripts/demo-reset.ts --container`.
-It ends every session. For a separately configured local database, `pnpm db:seed` requires the
-owner and app URLs and an SMTP sink. Repeating it on a ready seed changes nothing.
-`pnpm demo:reset` uses the owner connection and requires `RELAY_DEMO=1` and the owner-only marker.
-A marker left at `building` makes startup restore the seed before serving requests.
+## What is in it
 
-The seed follows the funnel's received, pool, contacted and won totals and keeps the named payment stories. History uses local working hours across the preceding fortnight.
-Failed, unknown, suppressed and capped receipts are seeded outcomes. They remain visible even when the inbox accepts every message. New successful receipts go to the SMTP sink. Leila's receipt uses explicit demo suppression because intake requires an email address.
+The company is Tidewell Language School, and it is invented. The sign-in page has a button for each of three people.
 
-For a hosted demo, configure `RELAY_DEMO`, `RELAY_SANDBOX`, `AUTH_URL`, `RELAY_SANDBOX_URL`,
-`DATABASE_URL`, `SMTP_URL`, `SMTP_FROM`, `RELAY_TIME_ZONE` and the proxy count. Use distinct auth,
-webhook, reconcile and outbox secrets. Keep the owner connection in a separate maintenance process.
-Point SMTP at a controlled sink. Do not publish the mail inbox, because a sign-in code read from it opens a session as any seeded staff member.
-Set `AUTH_URL` to the HTTPS origin so the session cookie is marked Secure.
-Do not publish PostgreSQL or bind the app or the inbox to all interfaces.
+| Person        | Role       | Opens on                             |
+| ------------- | ---------- | ------------------------------------ |
+| Priya Raman   | Manager    | The lead pool                        |
+| Dele Akinwale | Agent      | A callback queue with ten open leads |
+| Esther Okafor | Accountant | Payments                             |
+
+Four more people are seeded without a button: a second manager and three more agents. They own leads and accounts, take their turn in round-robin and recorded some of the seeded payments.
+
+The seed does not insert finished rows. It calls the operations the app calls, through the app's database role: intake for every lead, assignment by the manager, logged attempts, closes, card checkouts, webhooks and two-person approvals. Every seeded lead and payment has therefore passed the same rules as one a visitor creates. The owner role writes only the teams, the people, one suppressed email address and the seed marker.
+
+Dele's queue has two leads in each of its five groups, and the demo check below asserts those counts. Two of the leads have callbacks due today, at 20:00 and 22:00 in the demo's time zone, so one moves to overdue after 20:00 and the other after 22:00.
+
+The funnel covers Meta Lead Ads campaigns, the web form and a CSV import with no campaign. The payments screen opens with a payment in each state worth seeing: waiting for approval, waiting for the provider, in review for an amount mismatch, in review because it was paid after it expired, and completed by the reconciler ahead of a late webhook. Seeded receipts show the outcomes a working mail server never produces: one failed, one unknown, one suppressed and one at its lifetime attempt limit.
+
+## The services
+
+| Service     | Image                 | What it does                                                                          |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------- |
+| `secrets`   | Node.js               | Runs once. Generates passwords and secrets into four private volumes                  |
+| `db`        | PostgreSQL 17         | Creates the owner and app roles on first start                                        |
+| `mail`      | Mailpit               | Receives every email the demo sends and shows it in the inbox                         |
+| `app`       | The app image         | Serves the app as `relay_app`, with no owner credentials                              |
+| `resetter`  | The maintenance image | Holds the owner connection. Applies migrations, seeds, and restores the demo each day |
+| `scheduler` | The maintenance image | Calls the reconcile and outbox routes once a minute with their secrets                |
+
+Each service mounts only its own configuration volume. The app and the scheduler never see the owner's database password, and only the resetter can change the schema or wipe data. The scheduler has no database access at all. It reaches the two jobs through the same authenticated HTTP routes an outside scheduler would use.
+
+The app image contains the standalone Next.js output and runs as the `node` user. The maintenance image keeps the whole workspace, because migrations and the seed need Prisma and the TypeScript sources.
+
+The demo checks card payments sooner than the defaults. The first check has no delay, later checks come a minute apart and the sandbox's late webhook waits a minute. [Payments](payments.md#the-reconciler) gives the defaults.
+
+## What resets
+
+At each midnight in `RELAY_TIME_ZONE`, the resetter restores the demo. In one owner transaction it empties every table except the migration history, the seed marker and the job leases, then seeds again. A reset that fails rolls back and leaves the previous data in place.
+
+A reset ends every session, so each visitor signs in again. The inbox is not part of the database and keeps its mail across resets.
+
+This command restores a running demo without waiting for midnight.
+
+```sh
+docker compose exec -T resetter node --import tsx apps/web/scripts/demo-reset.ts --container
+```
+
+The first seed is not one transaction. If it is interrupted, the seed marker stays in the state `building` and the app answers every request with 503. The resetter restores the demo when it next starts.
+
+## What a visitor can do
+
+These follow from shared logins and invented data. None of them is acceptable with real data.
+
+- The three logins are shared. One visitor can record a manual payment as the agent and give it both approvals as the manager and the accountant.
+- The inbox keeps every message. Anyone who can open it can read a sign-in code and sign in by email as any seeded person.
+- The web form is public. A submitted email address becomes a lead, and a submission for a lost lead reopens it.
+- Whatever a visitor changes stays until the next reset.
+
+## Host it
+
+The Compose file is for one machine. To host the demo elsewhere, give the app these settings. The app image reads them from a JSON file at `/run/relay-secrets/app/config.json`, and `pnpm start` reads them from the environment.
+
+| Setting                                                                                        | Value                                                                                        |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `RELAY_DEMO`, `RELAY_SANDBOX`                                                                  | `1`                                                                                          |
+| `DATABASE_URL`                                                                                 | The `relay_app` connection                                                                   |
+| `AUTH_URL`, `RELAY_SANDBOX_URL`                                                                | The public HTTPS origin                                                                      |
+| `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`, `RELAY_RECONCILE_SECRET`, `RELAY_OUTBOX_SECRET` | Four different [generated secrets](access-security.md#secrets)                               |
+| `SMTP_URL`, `SMTP_FROM`                                                                        | A mail sink you control                                                                      |
+| `RELAY_TIME_ZONE`                                                                              | The time zone for callbacks and the reset                                                    |
+| `RELAY_TRUSTED_PROXY_COUNT`                                                                    | The number of [proxies in front of the app](access-security.md#client-addresses-and-proxies) |
+
+Four rules matter more than the settings.
+
+- Keep the owner connection in a separate maintenance process, as the resetter does.
+- Do not publish the mail inbox. A sign-in code read from it opens a session as any seeded person.
+- Do not publish PostgreSQL, and do not bind the app or the inbox to every interface of the host.
+- Call `POST /api/payments/reconcile` and `POST /api/payments/outbox` on a schedule. Without them a dropped webhook is never recovered and no receipt is sent.
+
+## Update a pinned image
+
+`compose.yaml` and `Dockerfile` pin each upstream image by tag and by manifest digest. To move to a new tag, read its digest and replace both values.
+
+```sh
+docker buildx imagetools inspect postgres:17
+```
+
+Then run the demo check below before committing.
 
 ## First-run measurements
 
-A fresh-clone run on 17 November 2026 took **146,660 ms**. Service images were already present. The application build cache was empty in a dedicated builder. This is one run on one machine, not a timing guarantee.
+One run on one machine on 17 November 2026 took 149,781 ms from `docker compose up` to a working demo. It is a single measurement and not a guarantee.
 
-| Image                            |      Bytes |
-| -------------------------------- | ---------: |
-| App                              |  410629247 |
-| Maintenance                      | 2731518828 |
-| All five required images, summed | 4181959252 |
+The timer stops after the health check passes, all three people have signed in, and the queue, payments, accounts and one ledger have been read. The three upstream images were already on the machine. The app was built in a new builder with an empty cache, so the time includes pulling the Node.js base image into that builder and installing every package.
 
-The maintenance image retains migration and seed tools. The app contains standalone output and runs as `node`. The sum counts shared layers more than once. The dedicated build cache reported **2.815 GB**. Database and inbox volumes are additional. These are Docker-reported image and cache sizes, not an exact increase in host disk use. The commands below produced the timing and size reports. Use fresh names for a repeat run.
+| Measured                              |         Bytes |
+| ------------------------------------- | ------------: |
+| App image                             |   410,573,994 |
+| Maintenance image                     | 2,791,583,826 |
+| All five images the demo uses, summed | 4,241,968,997 |
 
-The timer in `pnpm demo:check <evidence-directory> --cold` starts at `docker compose up` and ends after readiness, role sign-ins and initial queue, payment and ledger reads. The check then tests webhook delivery, scheduled recovery, SMTP delivery and an owner-side reset. It needs the development dependencies from `pnpm install --frozen-lockfile`. Add `--browser` to run the browser journeys too. That option also needs `pnpm db:generate` and `pnpm exec playwright install chromium` in the host clone.
+The sum counts layers that two images share more than once. The builder's cache held a further 2.933 GB. These are the sizes Docker reports for images and cache. They are not the growth in disk use on the host, and the database and inbox volumes come on top.
 
-To repeat the timing with an empty application build cache, choose fresh builder and project names.
+The timing comes from `pnpm demo:check`, which needs the development dependencies from `pnpm install --frozen-lockfile`. To repeat it with an empty build cache, pick a new builder name and a new project name.
 
 ```sh
 docker buildx create --name relay-measure-builder --driver docker-container
 BUILDX_BUILDER=relay-measure-builder COMPOSE_PROJECT_NAME=relay-measure pnpm demo:check ../relay-demo-evidence --cold
 ```
 
-In another terminal, while that check's project is up, these commands report the app and maintenance
-sizes, the sum of all distinct project images, and the dedicated cache size.
+The check prints the time as `wallMs` on its `QUICKSTART` line. It then pays one sandbox checkout and waits for its webhook, pays a second with the webhook dropped and waits for the scheduler to recover it, reads the receipt from the inbox, resets the demo and confirms that the sessions ended and the visitor's payment is gone. `--cold` refuses to start if the project's images already exist. When the check ends it removes its containers and volumes, and with `--cold` the images it built. The directory argument must be outside the repository.
+
+While the check's project is up, these commands in a second terminal report the two image sizes, the sum over the project's five images and the builder's cache.
 
 ```sh
 export COMPOSE_PROJECT_NAME=relay-measure
@@ -97,7 +147,4 @@ docker image inspect $(docker compose images -q | sort -u) --format '{{.Size}}' 
 docker buildx du --builder relay-measure-builder
 ```
 
-`--cold` requires absent project images. It refuses to remove a pre-existing image. The check
-removes its containers and volumes, and with `--cold` removes only the project images it created.
-It does not clear Docker's shared build cache. Remove a dedicated measurement builder with
-`docker buildx rm relay-measure-builder` when finished.
+Remove the builder afterwards with `docker buildx rm relay-measure-builder`. The check does not clear Docker's shared build cache.
