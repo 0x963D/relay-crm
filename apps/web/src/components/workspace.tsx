@@ -115,18 +115,34 @@ export function Workspace({
     }
   }
   const navigation = (
-    <nav aria-label="Main" className="flex flex-wrap gap-1 md:flex-col">
+    <nav aria-label="Main" className="flex gap-1 md:flex-col">
       {nav.map((item) => (
         <Link
           key={item.href}
           href={item.href}
+          aria-label={item.label}
           aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-          className="flex min-h-9 items-center gap-2 rounded-md px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground aria-[current=page]:bg-background aria-[current=page]:text-primary"
+          className="relative flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md px-1 py-2 text-xs font-medium md:min-h-9 md:flex-none md:flex-row md:justify-start md:gap-2 md:px-3 md:text-sm text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground aria-[current=page]:bg-background aria-[current=page]:text-primary"
         >
           <Icon name={item.icon} />
-          <span>{item.label}</span>
+          <span className="md:hidden">
+            {
+              {
+                "/pool": "Pool",
+                "/agents": "Queues",
+                "/queue": "Queue",
+                "/payments": "Payments",
+                "/accounts": "Accounts",
+                "/funnel": "Funnel",
+              }[item.href]
+            }
+          </span>
+          <span className="hidden md:inline">{item.label}</span>
           {counts[item.href] !== undefined && (
-            <span aria-hidden="true" className="ms-auto text-caption tabular-nums">
+            <span
+              aria-hidden="true"
+              className="absolute end-1 top-1 text-xs tabular-nums md:static md:ms-auto md:text-caption"
+            >
               {counts[item.href]}
             </span>
           )}

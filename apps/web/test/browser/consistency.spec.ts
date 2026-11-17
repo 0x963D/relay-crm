@@ -32,8 +32,9 @@ test("workspace hydration stays error-free through demo sign-in, checkout and em
   await expect(
     page
       .getByRole("navigation", { name: "Main" })
-      .getByRole("link", { name: "Payments", exact: true }),
-  ).toHaveText(`Payments${paymentCount + 1}`);
+      .getByRole("link", { name: "Payments", exact: true })
+      .locator("span[aria-hidden]"),
+  ).toHaveText(`${paymentCount + 1}`);
   const href = await page
     .getByRole("link", { name: "Go to payment", exact: true })
     .getAttribute("href");
@@ -116,7 +117,8 @@ test("reconciled payment refreshes its detail, list, header and navigation witho
   await expect(
     page
       .getByRole("navigation", { name: "Main" })
-      .getByRole("link", { name: "Payments", exact: true }),
-  ).toHaveText(`Payments${Object.values(after.counts).reduce((sum, count) => sum + count, 0)}`);
+      .getByRole("link", { name: "Payments", exact: true })
+      .locator("span[aria-hidden]"),
+  ).toHaveText(`${Object.values(after.counts).reduce((sum, count) => sum + count, 0)}`);
   expect(navigations).toEqual([]);
 });

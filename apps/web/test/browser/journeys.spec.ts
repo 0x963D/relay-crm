@@ -29,8 +29,9 @@ test.describe.serial("lead work journeys", () => {
     await expect(
       page
         .getByRole("navigation", { name: "Main" })
-        .getByRole("link", { name: "Lead pool", exact: true }),
-    ).toHaveText(`Lead pool${poolBefore - 1}`);
+        .getByRole("link", { name: "Lead pool", exact: true })
+        .locator("span[aria-hidden]"),
+    ).toHaveText(`${poolBefore - 1}`);
     await page
       .getByRole("radiogroup", { name: "View the demo as" })
       .getByRole("radio", { name: "Agent", exact: true })
@@ -85,12 +86,12 @@ test.describe.serial("lead work journeys", () => {
       page.getByRole("status").filter({ hasText: "An account was opened" }),
     ).toBeFocused();
     const navigation = page.getByRole("navigation", { name: "Main" });
-    await expect(navigation.getByRole("link", { name: "Accounts", exact: true })).toHaveText(
-      `Accounts${accountsBefore + 1}`,
-    );
-    await expect(navigation.getByRole("link", { name: "My queue", exact: true })).toHaveText(
-      `My queue${beforeTotal - 1}`,
-    );
+    await expect(
+      navigation.getByRole("link", { name: "Accounts", exact: true }).locator("span[aria-hidden]"),
+    ).toHaveText(`${accountsBefore + 1}`);
+    await expect(
+      navigation.getByRole("link", { name: "My queue", exact: true }).locator("span[aria-hidden]"),
+    ).toHaveText(`${beforeTotal - 1}`);
     const accounts = await rpc(page).accounts.list.query({ limit: 100 });
     expect(accounts.items.some((a) => a.person?.name === leadName)).toBe(true);
     const queue = await rpc(page).leads.queue.query({});
