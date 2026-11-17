@@ -2,89 +2,135 @@
 
 [Back to Relay CRM](../README.md)
 
-- Existing staff sign in with an expiring email code. There is no sign-up. Unknown addresses
-  receive the same response, get no mail and cannot obtain a session. Codes have limited guesses,
-  and PostgreSQL stores request limits across application processes.
-- A session starts in its sole team when the user has exactly one membership. With several
-  memberships, `session.current` returns the choices. Team-scoped operations require a selection
-  and return `teamSelectionRequired` until the user chooses. The server reloads current roles
-  and memberships inside each human record operation's transaction.
-- `recordScope` in `packages/domain/src/access.ts` decides all record and target-agent scope.
-  `scopeAdmits` applies that scope to a record. `scopeWhere` in `packages/store/src/scope.ts`
-  only translates it into a SQL filter. Lists and individual operations use those same decisions.
-  Agents read and edit their own records. Sales team leads read their team's leads and the pool,
-  assign within that team, and edit owned records that their read scope also admits.
-  Managers, admins and owners see and edit everything. Accountants read every account, including
-  the name and email of the person it was opened for. They cannot read lead records, edit or assign. Edit and assignment scopes always stay within read scope.
+This page covers who can read and change each record, how staff sign in, what the server limits, and what the app's database login may do. One function, `recordScope`, decides scope for every list and every write. The app connects to PostgreSQL as a role that cannot alter a table or rewrite history, so a faulty route still cannot drop a table or edit a ledger line.
 
-`RELAY_TRUSTED_PROXY_COUNT` defaults to 0. `pnpm exec vitest run --project unit apps/web/test/client-address.test.ts`
-checks that 0 ignores all forwarded headers and uses the TCP peer. A positive setting selects
-that many hops from the right of `X-Forwarded-For`. An invalid address or a shorter chain falls
-back to the TCP peer. When `RELAY_TRUSTED_PROXY_COUNT` is above zero, the app's port must be
-reachable only through the proxy. A direct connection can forge the forwarded header, so enforce
-that restriction with the deployment's network rules. Configure the exact proxy count. Each proxy
-must append the peer address or overwrite the header with a verified chain.
-IPv4-mapped IPv6 and IPv6 spellings are canonicalized before counting.
+## Roles and scope
 
-Use `pnpm dev` and `pnpm start`. Development always binds `127.0.0.1`. Production uses `HOST`,
-defaulting to `0.0.0.0`. `pnpm exec vitest run --project unit apps/web/test/env.test.ts` checks those choices. Their Node HTTP entry point captures the connection address
-in request-local storage before Next handles the request. Running `next start` directly lacks
-that context. A request without either a socket address or a trusted forwarded address is refused
-with the fixed error response. The server logs the missing-address configuration error once.
-No shared fallback budget is created. `pnpm test:prod` checks this through plain `next start`.
-`pnpm exec vitest run --project unit apps/web/test/env.test.ts` checks that the proxy count is an integer from 0 to 32.
+A person has one of six roles. `recordScope` in `packages/domain/src/access.ts` turns a role, a record kind and an action into a scope.
 
-## Sign-in request limits
+| Role                  | Leads read                       | Leads edited | Leads assigned                   | Accounts read | Accounts edited |
+| --------------------- | -------------------------------- | ------------ | -------------------------------- | ------------- | --------------- |
+| Owner, admin, manager | All                              | All          | All                              | All           | All             |
+| Team lead             | Their sales team's, and the pool | Their own    | Their sales team's, and the pool | Their team's  | Their own       |
+| Agent                 | Their own                        | Their own    | None                             | Their own     | Their own       |
+| Accountant            | None                             | None         | None                             | All           | None            |
 
-`pnpm exec dotenv -- vitest run --project integration apps/web/test/auth.int.test.ts` verifies these PostgreSQL budgets.
-All use 60-second fixed windows and return the same 429 body and `Retry-After: 60` for known
-and unknown email addresses. Timing padding also applies to a refused request.
+The team lead row applies when the person's current team is a sales team and their membership marks them as its lead. Without that, a team lead reads and edits only their own records and assigns nothing. A lead can only be assigned to an agent who belongs to a sales team.
 
-The client address has 20 requests across code issuance and verification. Code issuance has
-3 requests per normalized email address. Verification has 10 per normalized email address.
-Client identity follows `RELAY_TRUSTED_PROXY_COUNT`, just as the form does.
-The client budget is checked first, then the email budget, then the global circuit breaker.
-A refusal stops those checks, so it cannot consume the later budgets.
+A payment follows its account. Whoever reads the account reads its payments, and whoever edits the account can record a payment on it. Four things belong to accountants, managers, admins and owners alone: reading ledger postings and balances, approving a manual payment, closing a payment in review and requeueing a receipt. The other pages call these four roles approvers. An accountant reads every account, with the customer's name and email, and reads no lead record.
 
-`RELAY_AUTH_GLOBAL_LIMIT` defaults to 10,000 requests per window across both operations.
-`pnpm exec vitest run --project unit apps/web/test/env.test.ts` verifies that its configured value is an integer from
-21 to 1,000,000. Its minimum stays above a single client's budget.
+Edit and assignment scope never exceed read scope. `recordScope` computes the read scope first and intersects every other scope with it, so a change to the table cannot grant an edit without the read. The test `never lets a $role in $situation edit a lead they cannot read` in [access.test.ts](../packages/domain/test/access.test.ts) runs once for every role and team situation.
 
-## Error responses
+```sh
+pnpm exec vitest run --project unit packages/domain/test/access.test.ts -t "edit a lead they cannot read"
+```
 
-`pnpm exec dotenv -- vitest run --project integration apps/web/test/rpc.int.test.ts apps/web/test/auth.int.test.ts` verifies that
-unexpected failures return `Something went wrong.` and a generated `requestId`. The server
-logs the error class and code with that ID, without its message or submitted data.
-The tRPC formatter preserves typed domain failures in
-`data.accessFailure` and their messages. It removes stack traces from every error response.
-The auth and intake HTTP boundaries catch unexpected exceptions. The form keeps its retryable
-503 response for intake failures, with the same fixed message and a logged request ID.
+Two functions apply a scope. `scopeAdmits` answers for one record, and `scopeWhere` in `packages/store/src/scope.ts` translates the same scope into a SQL filter for a list. The server never trusts the role it loaded with the session. Each operation loads the person's current role and memberships again inside its own transaction, so a demotion takes effect on the next request.
+
+A record outside the caller's scope and a record that does not exist return the same `accessDenied` refusal.
+
+Three system actors act without a person. `intake` may find a lead by email and reopen a lost one. `providerWebhook` and `reconciler` may settle a card payment, and only `reconciler` may scan for due payments. None of them can read a full record, edit a contact field or assign a lead.
+
+## Sign-in
+
+Existing staff sign in with a six-digit code sent by email. There is no sign-up and no screen for creating users, so a person and their team memberships must already exist in the database.
+
+1. The client posts `{"email":"staff@example.com","type":"sign-in"}` to `/api/auth/email-otp/send-verification-otp`.
+2. The server stores a hash of the code and sends the email after it has answered.
+3. The client posts `{"email":"staff@example.com","otp":"123456"}` to `/api/auth/sign-in/email-otp` and keeps the session cookie.
+
+A code lasts 5 minutes, and three wrong guesses use it up. An address that belongs to nobody gets the same response as a real one, receives no mail and cannot obtain a session. Both endpoints hold their answer for at least 300 milliseconds, so the response time does not reveal which addresses exist.
+
+Both requests carry JSON, or the URL-encoded fields of the sign-in page's form, and an `Origin` header equal to the origin of `AUTH_URL`. A different origin gets 403. `POST /api/auth/sign-out` ends the session and `GET /api/auth/get-session` reads it. Every other path under `/api/auth` answers 404.
+
+Set `AUTH_SECRET` and `AUTH_URL` to turn sign-in on, and `SMTP_URL` and `SMTP_FROM` to deliver codes. With `AUTH_SECRET` and `AUTH_URL` both unset, sign-in is off and `/api/auth` answers 404. Without SMTP, `pnpm dev` prints each code to the console, and a production server refuses to start. When `AUTH_URL` is an HTTPS origin the session cookie is marked Secure.
+
+With `RELAY_DEMO=1` the server also accepts `POST /api/auth/demo` with `{"role":"manager"}`, `"agent"` or `"accountant"`, and signs the caller in as that seeded person without a code. [The demo page](demo.md#what-a-visitor-can-do) says what that allows.
+
+## Sessions and teams
+
+A session lasts 24 hours. It starts in the person's team when they belong to exactly one. A person with several memberships has no current team until they choose one with `session.selectTeam`, and until then every team-scoped operation returns `teamSelectionRequired`.
+
+## Request limits
+
+PostgreSQL holds every counter in the `auth_request_limits` table, so the limits hold across several app processes. Each budget is a fixed 60-second window that starts with its first request. A refused request gets 429 with `Retry-After: 60`.
+
+| Route                              | Budget per window                                             |
+| ---------------------------------- | ------------------------------------------------------------- |
+| Sending or checking a sign-in code | 20 per client address across both                             |
+| Sending a sign-in code             | 3 per email address                                           |
+| Checking a sign-in code            | 10 per email address                                          |
+| Both sign-in routes together       | `RELAY_AUTH_GLOBAL_LIMIT` in total, 10,000 by default         |
+| Demo sign-in                       | 20 per client address, and `RELAY_AUTH_GLOBAL_LIMIT` in total |
+| Web form                           | 10 per client address                                         |
+| Web form, all callers              | 1,000 in total                                                |
+| Reconcile and outbox job routes    | 5 wrong secrets per client address, counted per route         |
+
+The server checks the client budget first, then the email budget, then the total. A refusal stops the checks, so one flooding client uses up its own 20 and cannot spend the total that every other caller shares. `RELAY_AUTH_GLOBAL_LIMIT` accepts 21 to 1,000,000, which keeps the total above one client's budget. A valid job secret does not count against the wrong-secret budget.
+
+One SQL statement takes a request from a budget. It inserts or increments the row, restarts an expired window, and deletes up to 100 other expired rows that no other statement has locked. A budget at its limit matches no row to update, so the statement returns nothing and the request is refused. The cost is one write per budget on every request to a limited route. In return the limits need no cache and no second service.
 
 ## Request body limits
 
-`pnpm exec vitest run --project unit apps/web/test/http.test.ts` verifies the shared streaming reader's exact boundary.
-Auth, tRPC and the public form accept at most 100,000 body bytes and return 413 above that limit.
-The reader checks the declared length first, then counts actual bytes, including chunked bodies,
-and cancels the stream when the limit is exceeded. Auth and tRPC parse only the bounded copy.
-`pnpm test:prod` sends JSON containing 2,000,000 padding characters to those routes, including sign-out, and expects 413.
-The signed Meta webhook keeps its separate 1,000,000-byte limit, checked by
-`pnpm exec vitest run --project unit apps/web/test/meta-webhook.test.ts`.
+Every route that reads a request body reads it through `readBody` in `apps/web/src/server/http.ts`. The limit is 100,000 bytes, and 1,000,000 bytes for the Meta webhook. A larger body gets 413.
 
-## Generate an authentication secret
+`readBody` refuses a larger declared `Content-Length` without reading the stream. It then counts the bytes it receives and cancels the stream past the limit, so a chunked body with no declared length is held to the same limit. The sign-in routes and `/api/trpc` parse only the copy that passed the count.
 
-Generate a secret locally, then put it in your deployment environment and untracked `.env`.
+## Error responses
+
+A refusal the product intends, such as `accessDenied` or `stalePreview`, reaches the client as a typed code with a message written for a person. [The API page](api.md#refusals) lists the codes.
+
+Anything unexpected returns the fixed message `Something went wrong.` and a generated `requestId`. The server logs the error's class name and its database or Prisma error code beside that ID. It logs neither the error message nor the submitted data, because either can carry an email address. No response contains a stack trace.
+
+## Client addresses and proxies
+
+The per-client budgets need the caller's real address. `RELAY_TRUSTED_PROXY_COUNT` says how many proxies stand in front of the app. It defaults to 0 and accepts 0 to 32.
+
+- With 0, the server uses the address of the TCP connection and ignores `X-Forwarded-For`.
+- With a positive count, the server takes the entry that many places from the right of `X-Forwarded-For`. A caller controls only the left of that header, so entries a caller adds are never read. A missing, short or malformed header falls back to the TCP address.
+
+With a positive count, the app's port must be reachable only through the proxy, and each proxy must append the address it saw or overwrite the header. The deployment's network rules have to enforce that. A caller who can reach the port directly can write the whole header and choose their own address.
+
+The server writes IPv4-mapped IPv6 addresses as IPv4 and every IPv6 address in one spelling before it counts.
+
+`pnpm dev` and `pnpm start` run `apps/web/scripts/serve.ts`, which records each connection's address before Next.js handles the request. Development binds `127.0.0.1`. Production binds `HOST`, which defaults to `0.0.0.0`. Running `next start` directly skips that entry point. A request then has no address, and every route that needs one refuses it with the fixed error response and logs the configuration error once.
+
+## Secrets
+
+`AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`, `RELAY_RECONCILE_SECRET` and `RELAY_OUTBOX_SECRET` each need at least 32 characters and 12 distinct characters. No two of them may be equal, and none may be the placeholder in `.env.example`. The server refuses to start otherwise. These checks catch a repeated letter or a copied example. They do not measure randomness, so generate each secret.
 
 ```sh
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-`pnpm exec vitest run --project unit apps/web/test/env.test.ts` verifies that `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`,
-`RELAY_RECONCILE_SECRET` and `RELAY_OUTBOX_SECRET` each need at least
-32 characters and 12 distinct characters, and refuses the exact placeholder in `.env.example`.
-Configured secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather
-than a phrase that happens to pass the checks. `pnpm test:prod` verifies startup refusal for a
-repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-in off when
-`AUTH_URL` and SMTP are also unset.
+Put each value in the deployment environment and the untracked `.env`.
+
+## Tests for the sections above
+
+- Sign-in, unknown addresses, code expiry, guesses, the sign-in budgets and the fixed error message with its logged request ID: `pnpm exec dotenv -- vitest run --project integration apps/web/test/auth.int.test.ts`
+- The web form budgets across two endpoint instances: `pnpm exec dotenv -- vitest run --project integration apps/web/test/web-form.int.test.ts -t "budget|limits anonymous"`
+- The body limit at exactly 100,000 and 100,001 bytes: `pnpm exec vitest run --project unit apps/web/test/http.test.ts`
+- Forwarded headers, hop counting and address spelling: `pnpm exec vitest run --project unit apps/web/test/client-address.test.ts`
+- Secret rules, the proxy count range and the bind address: `pnpm exec vitest run --project unit apps/web/test/env.test.ts`
+
+## The two database roles
+
+`packages/store/scripts/setup-roles.sql` creates two PostgreSQL roles.
+
+- `relay_owner` owns the schema and every table. Migrations, the demo seed and test setup connect as the owner through `MIGRATION_DATABASE_URL`. The owner may create databases, which the integration tests need, and is neither a superuser nor able to create roles.
+- `relay_app` is the role the running app uses through `DATABASE_URL`. It owns nothing, belongs to no other role and has no superuser, `CREATEDB`, `CREATEROLE` or `BYPASSRLS` attribute.
+
+The serving app never receives the owner's credentials. A compromised app process is then limited to the grants below. It cannot drop a table, disable a trigger, or update or delete a ledger line.
+
+Eleven history tables are append-only for both roles. A trigger refuses `UPDATE`, `DELETE` and `TRUNCATE` on `activities`, `audit_log`, `distribution_previews`, `idempotency_records`, `intake_events`, `ledger_accounts`, `ledger_lines`, `ledger_transactions`, `payment_events`, `payment_makers` and `webhook_inbox`. Only the owner can disable such a trigger. The app cannot read `audit_log`. It can only add to it. Row-level security on `job_leases` shows the app the reconcile and outbox rows and hides the lease that the demo reset holds.
+
+The grants do not make the app's credentials harmless. [Limits](limits.md#what-the-apps-database-credentials-can-still-do) lists what they can still do.
+
+```sh
+pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts packages/store/test/append-only.int.test.ts
+```
+
+The first file compares the grants PostgreSQL reports with the tables below. The second attempts an update and a delete on every append-only table as the owner.
 
 ### Application grants
 
@@ -118,6 +164,8 @@ repeated-letter secret and for the placeholder. Empty `AUTH_SECRET` leaves sign-
 | `teams`                 | `SELECT`                               |
 | `users`                 | `INSERT`, `SELECT`, `UPDATE`           |
 | `webhook_inbox`         | `INSERT`, `SELECT`                     |
+
+The app may also update these single columns.
 
 | Column                         | Additional privilege |
 | ------------------------------ | -------------------- |
