@@ -3,7 +3,8 @@ import { expect } from "vitest";
 import { PaymentId, type Actor, type Role } from "@relay/domain";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/client.ts";
-import { readAccountLedger } from "../src/payments.ts";
+import { openStore } from "../src/index.ts";
+import { listPayments, readAccountLedger } from "../src/payments.ts";
 import { test, type TestDatabase } from "../src/testing/index.ts";
 
 const money = { minor: 39500n, currency: "GBP" } as const;
@@ -276,8 +277,13 @@ test("each payment group reports its scoped total beyond the row limit", async (
       }
     }
   }
-  const view = await db.store.listPayments(agent, 1);
-  const next = await db.store.listPayments(agent, 1, 1);
+  const view = await db.store.listPayments(agent, { limit: 1, at: new Date(), timeZone: "UTC" });
+  const next = await db.store.listPayments(agent, {
+    limit: 1,
+    offset: 1,
+    at: new Date(),
+    timeZone: "UTC",
+  });
   expect(view.counts).toEqual({
     waitingForApproval: 3,
     waitingForProvider: 3,
@@ -447,6 +453,95 @@ test("ledger entries batch completion provenance for both system callers and the
       code: "accessDenied",
     });
     expect((await db.store.listAccounts(agent, { limit: 10 })).items[0]?.balances).toBeNull();
+  } finally {
+    await client.$disconnect();
+  }
+});
+
+test("payment pages use the caller's local week and batch their approval detail", async ({
+  db,
+}) => {
+  const manager = await person(db, "manager");
+  const first = await account(db, manager);
+  const second = await account(db, manager);
+  const at = new Date("2031-03-31T12:00:00Z");
+  for (const [accountId, decidedAt] of [
+    [first, "2031-03-30T22:59:59Z"],
+    [second, "2031-03-30T23:00:00Z"],
+  ] as const) {
+    const created = await db.store.createPayment(
+      manager,
+      { key: randomUUID(), accountId, money, kind: "first", mode: "drop" },
+      0,
+      randomUUID(),
+    );
+    const timed = openStore({
+      connectionString: db.connectionString,
+      clock: () => new Date(decidedAt),
+    });
+    try {
+      await timed.closePaymentCheckout(manager, created.id, "Closed checkout", randomUUID());
+    } finally {
+      await timed.close();
+    }
+  }
+  const input = { at, timeZone: "Europe/London", limit: 10 };
+  const view = await db.store.listPayments(manager, input);
+  expect(view.counts.decidedThisWeek).toBe(1);
+  expect(view.decidedThisWeek.map((p) => p.accountId)).toEqual([second]);
+  expect(
+    (await db.store.listPayments(manager, { ...input, timeZone: "UTC" })).counts.decidedThisWeek,
+  ).toBe(0);
+  const recorder = await person(db, "manager");
+  const checker = await person(db, "accountant");
+  const add = async (receipt: string) => {
+    const accountId = await account(db, manager);
+    return db.store.recordManualPayment(
+      recorder,
+      {
+        key: randomUUID(),
+        accountId,
+        money,
+        kind: "first",
+        receiptHash: receipt.repeat(64),
+        reference: null,
+      },
+      randomUUID(),
+    );
+  };
+  const one = await add("a");
+  await db.store.approveManualPayment(
+    checker,
+    { id: one.id, version: 0, roleVersion: 0 },
+    randomUUID(),
+  );
+  let queries = 0;
+  const client = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: db.connectionString }),
+    log: [{ emit: "event", level: "query" }],
+  });
+  client.$on("query", () => {
+    queries += 1;
+  });
+  const read = async () => {
+    queries = 0;
+    const page = await listPayments(client, manager, input);
+    return { page, queries };
+  };
+  try {
+    const single = await read();
+    await add("b");
+    const multiple = await read();
+    expect(multiple.queries).toBe(single.queries);
+    expect(multiple.page.waitingForApproval).toHaveLength(2);
+    const listed = multiple.page.waitingForApproval.find((p) => p.id === one.id);
+    expect(listed?.approvals[0]?.approver?.id).toBe(checker.userId);
+    expect(
+      listed?.cannotApprove.some(
+        (entry) => entry.user?.id === recorder.userId && entry.reason === "paymentRecorder",
+      ),
+    ).toBe(true);
+    expect(listed?.actions.approve).toBe(true);
   } finally {
     await client.$disconnect();
   }

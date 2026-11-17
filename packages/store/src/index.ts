@@ -138,8 +138,15 @@ export function openStore(config: {
     cancelSandboxCheckout: (id: string) => cancelSandboxCheckout(db, id),
     getPayment: (actor: Actor, id: PaymentId) =>
       getPayment(db, actor, id, config.receipts?.lifetimeAttemptLimit),
-    listPayments: (actor: Actor, limit: number, offset = 0) =>
-      listPayments(db, actor, limit, config.receipts?.lifetimeAttemptLimit, offset),
+    listPayments: (
+      actor: Actor,
+      input: {
+        readonly at: Date;
+        readonly timeZone: string;
+        readonly limit: number;
+        readonly offset?: number;
+      },
+    ) => listPayments(db, actor, input, config.receipts?.lifetimeAttemptLimit),
     accountLedger: (actor: Actor, id: AccountId) => accountLedger(db, actor, id),
     createSandboxCheckout: (input: {
       readonly paymentId: string;

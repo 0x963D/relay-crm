@@ -1,4 +1,4 @@
-import { receiptDetail } from "./outbox.ts";
+import { approvalDetails } from "./payment-detail.ts";
 import { randomUUID } from "node:crypto";
 import {
   RECEIPT_LIFETIME_ATTEMPTS,
@@ -10,7 +10,6 @@ import {
   recordScope,
   transitionPayment,
   type Actor,
-  type AccessFailure,
   type PaymentEvent,
   type Money,
   type PaymentState,
@@ -714,7 +713,7 @@ export async function getPayment(
     });
     return {
       ...payment(row),
-      ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
+      ...required((await approvalDetails(tx, current, [row], lifetimeAttemptLimit)).get(row.id)),
       events: events.map((event) => ({
         ...event,
         actor: actors.find((actor) => actor.id === actorId(event.detail)) ?? null,
@@ -740,9 +739,13 @@ export async function readAccountPayments(tx: Tx, accountId: AccountId) {
 export async function listPayments(
   db: Db,
   actor: Actor,
-  limit: number,
+  input: {
+    readonly at: Date;
+    readonly timeZone: string;
+    readonly limit: number;
+    readonly offset?: number;
+  },
   lifetimeAttemptLimit = RECEIPT_LIFETIME_ATTEMPTS,
-  offset = 0,
 ) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
@@ -751,9 +754,11 @@ export async function listPayments(
       include: { lead: { select: { name: true, email: true } } },
     });
     const accountId = { in: accounts.map((a) => a.id) };
-    const week = new Date();
-    week.setUTCHours(0, 0, 0, 0);
-    week.setUTCDate(week.getUTCDate() - ((week.getUTCDay() + 6) % 7));
+    const [boundary] = await tx.$queryRaw<
+      { week: Date }[]
+    >`SELECT date_trunc('week', ${input.at}::timestamptz AT TIME ZONE ${input.timeZone}) AT TIME ZONE ${input.timeZone} AS week`;
+    const week = required(boundary).week;
+    const { limit, offset = 0 } = input;
     const rows: Payment[] = [];
     const filters = {
       waitingForApproval: { status: "pendingApproval" },
@@ -795,15 +800,14 @@ export async function listPayments(
       },
       select: { id: true, name: true },
     });
-    const items = await Promise.all(
-      rows.map(async (row) => ({
-        ...payment(row),
-        ...(await approvalDetail(tx, current, row, lifetimeAttemptLimit)),
-        account: accounts.find((a) => a.id === row.accountId)?.lead ?? null,
-        recordedBy: users.find((u) => u.id === row.recordedById) ?? null,
-        soldBy: users.find((u) => u.id === row.soldById) ?? null,
-      })),
-    );
+    const details = await approvalDetails(tx, current, rows, lifetimeAttemptLimit);
+    const items = rows.map((row) => ({
+      ...payment(row),
+      ...required(details.get(row.id)),
+      account: accounts.find((a) => a.id === row.accountId)?.lead ?? null,
+      recordedBy: users.find((u) => u.id === row.recordedById) ?? null,
+      soldBy: users.find((u) => u.id === row.soldById) ?? null,
+    }));
     return {
       counts,
       waitingForApproval: items.filter((p) => p.state.status === "pendingApproval").slice(0, limit),
@@ -1226,110 +1230,4 @@ export async function editManualPayment(
     });
     return payment(updated);
   });
-}
-async function approvalDetail(tx: Tx, actor: Actor, row: Payment, lifetimeAttemptLimit: number) {
-  const recordedBy = await tx.user.findUnique({
-    where: { id: row.recordedById },
-    select: { id: true, name: true },
-  });
-  const ownUser = required(await tx.user.findUnique({ where: { id: actor.userId } }));
-  const approvals = await tx.paymentApproval.findMany({
-    where: { paymentId: row.id },
-    orderBy: [{ at: "asc" }, { id: "asc" }],
-  });
-  const users = await tx.user.findMany({
-    where: { id: { in: approvals.map((a) => a.approverId) } },
-    select: { id: true, name: true, role: true },
-  });
-  const history = approvals.map((a) => ({
-    ...a,
-    approver: users.find((u) => u.id === a.approverId),
-  }));
-  const mayApprove = recordScope(actor, "payment", "approve").kind === "all";
-  const maker = await isMaker(tx, row.id, actor.userId);
-  const makers = await tx.paymentMaker.findMany({
-    where: { paymentId: row.id },
-  });
-  const makerUsers = await tx.user.findMany({
-    where: { id: { in: makers.map((entry) => entry.userId) } },
-    select: { id: true, name: true },
-  });
-  const refusal: AccessFailure | null =
-    row.recordedById === actor.userId
-      ? "paymentRecorder"
-      : maker
-        ? "paymentMaker"
-        : approvals.some((a) => a.approverId === actor.userId && a.voidedAt === null)
-          ? "alreadyApproved"
-          : !mayApprove
-            ? "accessDenied"
-            : row.status !== "pendingApproval"
-              ? "refreshConflict"
-              : null;
-  const waiting = row.status === "pendingApproval";
-  const receipt = await receiptDetail(tx, row.id);
-  const editable =
-    row.status === "pendingApproval" &&
-    (await tx.account.findFirst({
-      where: { id: row.accountId, ...scopeWhere(recordScope(actor, "payment", "edit")) },
-    }));
-  return {
-    receipt,
-    receiptAttemptLimit: lifetimeAttemptLimit,
-    recordedBy,
-    approvals: history,
-    cannotApprove: [
-      { user: recordedBy, reason: "paymentRecorder" as const, at: row.createdAt },
-      ...makers
-        .filter((entry) => entry.userId !== row.recordedById)
-        .map((entry) => ({
-          user: makerUsers.find((user) => user.id === entry.userId) ?? null,
-          reason: "paymentMaker" as const,
-          at: entry.at,
-        })),
-      ...history
-        .filter(
-          (a) =>
-            a.voidedAt === null ||
-            (a.approver !== undefined &&
-              recordScope(
-                {
-                  userId: required(UserId.parse(a.approver.id)),
-                  role: a.approver.role,
-                  team: null,
-                },
-                "payment",
-                "approve",
-              ).kind !== "all"),
-        )
-        .map((a) => ({
-          user: a.approver ?? null,
-          reason: a.voidedAt ? ("roleChanged" as const) : ("alreadyApproved" as const),
-          at: a.voidedAt ?? a.at,
-        })),
-    ],
-    actions: {
-      closeReview:
-        row.status === "needsReview" && recordScope(actor, "payment", "closeReview").kind === "all",
-      closeCheckout:
-        row.status === "checkoutCreated" &&
-        Boolean(
-          await tx.account.findFirst({
-            where: { id: row.accountId, ...scopeWhere(recordScope(actor, "account", "edit")) },
-          }),
-        ),
-      editManual: Boolean(editable),
-      requeueReceipt:
-        mayApprove &&
-        receipt !== null &&
-        ["failed", "unknown"].includes(receipt.state) &&
-        !receipt.processing &&
-        receipt.attempts < lifetimeAttemptLimit,
-      approve: row.method === "manual" && refusal === null,
-      approvalRefusal: refusal,
-      reject: waiting && mayApprove && !maker,
-      cancel: waiting && row.recordedById === actor.userId,
-      roleVersion: ownUser.roleVersion,
-    },
-  };
 }

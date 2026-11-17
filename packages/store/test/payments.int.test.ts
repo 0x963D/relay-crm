@@ -139,7 +139,9 @@ test("scope hides other accounts and all ledger lines from agents", async ({ db 
   const other: Actor = { userId: await db.seedUser("agent"), role: "agent", team: null };
   await db.store.receivePaymentWebhook(event);
   await expect(db.store.getPayment(other, id)).rejects.toMatchObject({ code: "accessDenied" });
-  expect(await db.store.listPayments(other, 100)).toEqual({
+  expect(
+    await db.store.listPayments(other, { limit: 100, at: new Date(), timeZone: "UTC" }),
+  ).toEqual({
     counts: { waitingForApproval: 0, waitingForProvider: 0, needsReview: 0, decidedThisWeek: 0 },
     waitingForApproval: [],
     waitingForProvider: [],

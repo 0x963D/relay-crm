@@ -240,7 +240,14 @@ export const appRouter = t.router({
     list: authenticated
       .input(Paged)
       .query(({ ctx, input }) =>
-        paymentResponse(ctx, ctx.store.listPayments(ctx.actor, input.limit, input.offset)),
+        paymentResponse(
+          ctx,
+          ctx.store.listPayments(ctx.actor, {
+            ...input,
+            at: new Date(),
+            timeZone: ctx.timeZone ?? "UTC",
+          }),
+        ),
       ),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
