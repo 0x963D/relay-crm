@@ -120,12 +120,11 @@ export function Workspace({
         <Link
           key={item.href}
           href={item.href}
-          aria-label={item.label}
           aria-current={pathname.startsWith(item.href) ? "page" : undefined}
           className="relative flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md px-1 py-2 text-xs font-medium md:min-h-9 md:flex-none md:flex-row md:justify-start md:gap-2 md:px-3 md:text-sm text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground aria-[current=page]:bg-background aria-[current=page]:text-primary"
         >
           <Icon name={item.icon} />
-          <span className="md:hidden">
+          <span aria-hidden="true" className="md:hidden">
             {
               {
                 "/pool": "Pool",
@@ -137,10 +136,11 @@ export function Workspace({
               }[item.href]
             }
           </span>
-          <span className="hidden md:inline">{item.label}</span>
+          <span className="sr-only md:not-sr-only">{item.label}</span>
           {counts[item.href] !== undefined && (
             <span
               aria-hidden="true"
+              data-slot="nav-count"
               className="absolute end-1 top-1 text-xs tabular-nums md:static md:ms-auto md:text-caption"
             >
               {counts[item.href]}
