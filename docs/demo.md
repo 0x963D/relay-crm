@@ -68,7 +68,17 @@ Do not publish PostgreSQL or bind the app or the inbox to all interfaces.
 
 ## First-run measurements
 
-The timer in `pnpm demo:check <evidence-directory> --cold` starts at `docker compose up` and ends after readiness, role sign-ins and initial queue, payment and ledger reads. The check then tests webhook delivery, scheduled recovery, SMTP delivery and an owner-side reset. It needs the development dependencies from `pnpm install --frozen-lockfile`.
+A fresh-clone run on 17 November 2026 took **146,660 ms**. Service images were already present. The application build cache was empty in a dedicated builder. This is one run on one machine, not a timing guarantee.
+
+| Image                            |      Bytes |
+| -------------------------------- | ---------: |
+| App                              |  410629247 |
+| Maintenance                      | 2731518828 |
+| All five required images, summed | 4181959252 |
+
+The maintenance image retains migration and seed tools. The app contains standalone output and runs as `node`. The sum counts shared layers more than once. The dedicated build cache reported **2.815 GB**. Database and inbox volumes are additional. These are Docker-reported image and cache sizes, not an exact increase in host disk use. The commands below produced the timing and size reports. Use fresh names for a repeat run.
+
+The timer in `pnpm demo:check <evidence-directory> --cold` starts at `docker compose up` and ends after readiness, role sign-ins and initial queue, payment and ledger reads. The check then tests webhook delivery, scheduled recovery, SMTP delivery and an owner-side reset. It needs the development dependencies from `pnpm install --frozen-lockfile`. Add `--browser` to run the browser journeys too. That option also needs `pnpm db:generate` and `pnpm exec playwright install chromium` in the host clone.
 
 To repeat the timing with an empty application build cache, choose fresh builder and project names.
 

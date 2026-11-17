@@ -17,12 +17,12 @@ docker compose up
 
 Wait for the app to become healthy, then open [Relay CRM](http://127.0.0.1:3107). Choose **Manager** for Priya, **Agent** for Dele or **Accountant** for Esther. The [mail inbox](http://127.0.0.1:8127) holds sign-in codes and receipts.
 
-Measure first-run time with `pnpm demo:check ../relay-demo-evidence --cold` and image sizes with `docker image inspect`. The [demo guide](docs/demo.md) gives the full measurement commands, hosting settings and cleanup steps.
+One fresh-clone run took **146,660 ms** with `pnpm demo:check ../relay-demo-evidence --cold`. `docker image inspect` reported **4,181,959,252 bytes** across the five required images, plus a **2.815 GB** build cache from `docker buildx du`. Image sizes count shared layers more than once; database and inbox volumes are extra. See the [measurement commands and cache conditions](docs/demo.md#first-run-measurements).
 
 ## Three things to try
 
 1. As Manager, select leads in **Lead pool**, choose **Round-robin**, press **Preview** and then **Assign** to see each owner before anything moves.
-2. Switch to Agent, open **Hye-jin Park**, log **Spoke to them** with a note, then **Close lead** and **Won** to see the lead leave the queue and an account open.
+2. Switch to Agent, open **Hye-jin Park**, log **Spoke to them** with a note, then **Close lead**, **Won** and **Close as won** to see the lead leave the queue and an account open.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pool-dark.png">
@@ -49,7 +49,7 @@ TypeScript, Next.js, React, tRPC, TanStack Query, Prisma and PostgreSQL, package
 ## What is proven, and where
 
 - Concurrent submissions become one lead. [Intake race](packages/store/test/intake-races.int.test.ts), `for one new email: one lead is created and the other attaches to it`. Run `pnpm test:int -- packages/store/test/intake-races.int.test.ts`.
-- One scope function decides reads, edits and assignments. [Access](packages/domain/test/access.test.ts), `never lets a $role in $situation edit a lead they cannot read`. Run `pnpm test -- packages/domain/test/access.test.ts`.
+- One scope function decides record reads, edits and assignments. [Access](packages/domain/test/access.test.ts), `never lets a $role in $situation edit a lead they cannot read`. Run `pnpm test -- packages/domain/test/access.test.ts`.
 - A payment credits once across duplicate, late or missing webhooks. [Payment races](packages/store/test/payments.int.test.ts), `a webhook, its duplicate and the reconciler collide and credit exactly once` and `a lost webhook is reconciled and a late webhook changes no money or audit`. Run `pnpm test:int -- packages/store/test/payments.int.test.ts`.
 - Manual payments need two approvers who did not set the terms. [Manual payments](packages/store/test/manual-payments.int.test.ts), `the last editor is a maker and editing voids existing approvals`. Run `pnpm test:int -- packages/store/test/manual-payments.int.test.ts`.
 - The app's database role cannot change a ledger line. [Database role](packages/store/test/database-role.int.test.ts), `the app role refuses UPDATE ledger_lines SET amount=amount+1`. Run `pnpm test:int -- packages/store/test/database-role.int.test.ts`.
