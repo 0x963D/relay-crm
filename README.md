@@ -17,7 +17,7 @@ docker compose up
 
 Wait for the app to become healthy, then open [Relay CRM](http://127.0.0.1:3107). Choose **Manager** for Priya, **Agent** for Dele or **Accountant** for Esther. The [mail inbox](http://127.0.0.1:8127) holds sign-in codes and receipts.
 
-One fresh-clone run took **146,660 ms** with `pnpm demo:check ../relay-demo-evidence --cold`. `docker image inspect` reported **4,181,959,252 bytes** across the five required images, plus a **2.815 GB** build cache from `docker buildx du`. Image sizes count shared layers more than once; database and inbox volumes are extra. See the [measurement commands and cache conditions](docs/demo.md#first-run-measurements).
+A first run builds the app image, so it takes about two and a half minutes and about 4.2 GB of images. One fresh-clone run measured 146,660 ms with `pnpm demo:check ../relay-demo-evidence --cold`, and `docker image inspect` reported 4,181,959,252 bytes across the five images. See the [measurement commands and cache conditions](docs/demo.md#first-run-measurements).
 
 ## Three things to try
 
