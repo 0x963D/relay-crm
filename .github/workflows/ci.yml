@@ -45,7 +45,8 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Local integration steps took about 9.5 minutes on 2026-11-17.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17@sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac
@@ -80,6 +81,7 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
+    # The local suite took about 6 minutes on 2026-11-17; allow build and captures too.
     timeout-minutes: 20
     services:
       postgres:

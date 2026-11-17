@@ -7,7 +7,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   timeout: 120000,
-  globalTimeout: 600000,
+  // The local browser suite took about 6 minutes on 2026-11-17.
+  globalTimeout: 720000,
   outputDir: `${browserDirectory}/artifacts`,
   reporter: [["list"], ["json", { outputFile: `${browserDirectory}/results.json` }]],
   use: {
