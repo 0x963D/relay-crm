@@ -107,12 +107,18 @@ A `key` is 1 to 200 characters and belongs to the signed-in person. The store sa
 
 A replay still needs a valid session. The lead work operations check the caller's current access before they replay. `distribution.submit` returns its saved result even after the caller's role or scope has changed, so a retry reports what the first call did.
 
+## Server
+
+`server.info` is a public GET query with no input. It returns exactly `demo` and `demoAgentName`. In a demo these are `true` and `"Dele Akinwale"`; otherwise they are `false` and `null`. The values come from server configuration and the fixed demo identity, without a database read. Cookies and authorization headers do not change the result, even when invalid. The demo's 503 readiness gate still applies.
+
+The anonymous web sign-in page shows whether demo sign-in is enabled and the demo people's names. It does not show the organisation or configured time zone, so `server.info` omits both.
+
 ## Session
 
 | Operation            | Input                         | Result                                                                   |
 | -------------------- | ----------------------------- | ------------------------------------------------------------------------ |
 | `session.current`    | None                          | The session, its expiry, the role, every membership and the current team |
-| `session.profile`    | None                          | The same role and teams, with the person's name                          |
+| `session.profile`    | None                          | The same role and teams, with the person's name and email                |
 | `session.selectTeam` | `teamId`, or null to clear it | `{ selected: true }`. A team the caller does not belong to is refused    |
 
 ## Leads

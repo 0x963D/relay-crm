@@ -49,7 +49,7 @@ export async function sessionProfile(db: Db, actor: Actor) {
           current.userId === DEMO_PEOPLE[role].id &&
           user.email === DEMO_PEOPLE[role].email,
       ) ?? null;
-    return { ...current, name: user.name, demoRole };
+    return { ...current, name: user.name, email: user.email, demoRole };
   });
 }
 

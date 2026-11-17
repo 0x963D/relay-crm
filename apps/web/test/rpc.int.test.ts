@@ -292,3 +292,19 @@ test("normal RPC refusals use their code at info level without request data", as
     refused.mockRestore();
   }
 });
+
+test("session.profile returns the signed-in person's current email", async ({ db }) => {
+  const userId = await db.seedUser("agent");
+  const context = { store: db.store, principal: principal({ userId, role: "agent", team: null }) };
+  const response = await rpc(context, "session.profile", {});
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    result: { data: { json: { userId, email: "user-1@team.example", name: "agent user" } } },
+  });
+  await db.rows("UPDATE users SET email='changed@team.example' WHERE id=$1", [userId]);
+  expect(await (await rpc(context, "session.profile", {})).json()).toHaveProperty(
+    "result.data.json.email",
+    "changed@team.example",
+  );
+  expect((await rpc({ store: db.store, principal: null }, "session.profile", {})).status).toBe(401);
+});

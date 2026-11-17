@@ -15,7 +15,7 @@ import {
   normalizePhone,
   type SessionPrincipal,
 } from "@relay/domain";
-import { AccessError, isAccessError, type Store } from "@relay/store";
+import { AccessError, DEMO_PEOPLE, isAccessError, type Store } from "@relay/store";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
@@ -154,6 +154,12 @@ const ClosingInput = z.discriminatedUnion("kind", [
 ]);
 
 export const appRouter = t.router({
+  server: t.router({
+    info: t.procedure.query(({ ctx }) => ({
+      demo: ctx.demo ?? false,
+      demoAgentName: ctx.demo ? DEMO_PEOPLE.agent.name : null,
+    })),
+  }),
   payments: t.router({
     receiptUse: authenticated
       .input(z.object({ hash: ManualTermsInput.receiptHash }).strict())
@@ -489,13 +495,15 @@ export type AppRouter = typeof appRouter;
 
 export async function handleRpc(
   incoming: Request,
-  context: () => Promise<RpcContext>,
+  context: (options: { readonly publicQuery: boolean }) => Promise<RpcContext>,
   origin: string,
 ): Promise<Response> {
   const request = await boundedRequest(incoming);
   if (request === null) return new Response(null, { status: 413 });
+  const paths = new URL(request.url).pathname.replace(/^\/api\/trpc\//, "").split(",");
+  const publicQuery = request.method === "GET" && paths.every((path) => path === "server.info");
   const credentials = sessionCredentials(request.headers);
-  if (credentials.kind === "refused") return new Response(null, { status: 403 });
+  if (!publicQuery && credentials.kind === "refused") return new Response(null, { status: 403 });
   if (
     request.method === "POST" &&
     credentials.kind !== "bearer" &&
@@ -507,7 +515,7 @@ export async function handleRpc(
     endpoint: "/api/trpc",
     req: request,
     router: appRouter,
-    createContext: async () => ({ ...(await context()), requestId }),
+    createContext: async () => ({ ...(await context({ publicQuery })), requestId }),
   });
   response.headers.set("x-request-id", requestId);
   return response;

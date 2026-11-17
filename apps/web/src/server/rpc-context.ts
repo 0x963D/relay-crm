@@ -2,13 +2,13 @@ import { composition } from "./composition";
 import { resolvePrincipal } from "./actor";
 import type { RpcContext } from "./rpc";
 
-export async function rpcContext(headers: Headers): Promise<RpcContext> {
+export async function rpcContext(headers: Headers, publicQuery = false): Promise<RpcContext> {
   const app = composition();
   return {
     store: app.store,
     demo: app.env.demo,
     timeZone: app.env.timeZone,
-    principal: await resolvePrincipal(app, headers),
+    principal: publicQuery ? null : await resolvePrincipal(app, headers),
     payments:
       app.payments && app.env.payments
         ? {

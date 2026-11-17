@@ -50,6 +50,15 @@ databaseTest(
         const firstPage = await signedOut.text();
         expect(signedOut.status).toBe(200);
         expect(firstPage).not.toContain("RELAY_DEV_ACTOR");
+        for (const headers of [{}, { authorization: "Bearer invalid", origin }]) {
+          const info = await fetch(server.url("/api/trpc/server.info"), { headers });
+          expect(info.status).toBe(200);
+          expect(await info.json()).toEqual({
+            result: {
+              data: { json: { demo, demoAgentName: demo ? DEMO_PEOPLE.agent.name : null } },
+            },
+          });
+        }
         if (demo) {
           for (const role of ["manager", "agent", "accountant"] as const)
             expect(firstPage).toContain(DEMO_PEOPLE[role].name);
