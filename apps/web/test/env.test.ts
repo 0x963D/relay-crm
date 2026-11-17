@@ -276,3 +276,17 @@ it("accepts an organisation time zone and refuses an unknown one", () => {
     /RELAY_TIME_ZONE/,
   );
 });
+
+it("unbundled commands allow the local sandbox but keep the production guard", () => {
+  const values = {
+    DATABASE_URL,
+    RELAY_SANDBOX: "1",
+    RELAY_SANDBOX_URL: "http://127.0.0.1:3000",
+    RELAY_PAYMENT_WEBHOOK_SECRET: "fake-sandbox-signature-secret-for-tests",
+    RELAY_RECONCILE_SECRET: "fake-reconciler-authentication-secret-for-tests",
+  };
+  expect(parseEnv(values).payments).not.toBeNull();
+  expect(parseEnv({ ...values, NODE_ENV: "development" }).payments).not.toBeNull();
+  expect(() => parseEnv({ ...values, NODE_ENV: "production" })).toThrow(/RELAY_DEMO/);
+  expect(() => parseEnv({ ...values, NODE_ENV: "development" }, false)).toThrow(/RELAY_DEMO/);
+});

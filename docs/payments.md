@@ -98,7 +98,7 @@ The sandbox sends the webhook from the serving process after it has answered the
 
 ### The reconciler
 
-The reconciler runs from `pnpm reconcile` or from `POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`. The route answers with `checked` and `changed` counts and no record IDs. The command reads its settings the way a production server does, so it needs the sandbox settings below and `RELAY_DEMO=1`.
+The reconciler runs from `pnpm reconcile` or from `POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`. The route answers with `checked` and `changed` counts and no record IDs. The command needs the sandbox settings below. It needs `RELAY_DEMO=1` only when `NODE_ENV=production`.
 
 It scans for card payments whose next check is due, then handles each in three steps.
 

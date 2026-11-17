@@ -196,7 +196,9 @@ function authEnv(v: z.infer<typeof Variables>, smtp: Env["smtp"]): AuthEnv | nul
 
 export function parseEnv(
   variables: Readonly<Record<string, string | undefined>>,
-  developmentBuild = process.env.RELAY_DEVELOPMENT_BUILD === "true",
+  developmentBuild = process.env.RELAY_DEVELOPMENT_BUILD === undefined
+    ? variables.NODE_ENV !== "production"
+    : process.env.RELAY_DEVELOPMENT_BUILD === "true",
 ): Env {
   const parsed = Variables.safeParse(withoutEmpty(variables));
   if (!parsed.success) {
