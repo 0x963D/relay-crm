@@ -16,7 +16,9 @@ test.describe.serial("lead work journeys", () => {
   test.beforeEach(({ page }) => {
     errors = browserErrors(page);
   });
-  test.afterEach(() => expect(errors).toEqual([]));
+  test.afterEach(() => {
+    expect(errors).toEqual([]);
+  });
   test("a public enquiry is assigned by a manager and reaches the agent queue", async ({
     page,
   }) => {
