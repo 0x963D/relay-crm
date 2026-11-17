@@ -233,6 +233,7 @@ test("round-robin assigns exactly the preview and announces a stale refusal", as
   await page.getByRole("button", { name: "Assign 2 leads", exact: true }).click();
   const repreview = page.getByRole("button", { name: "Preview the remaining 1 lead", exact: true });
   await expect(repreview).toBeFocused();
+  await expect(repreview).toBeEnabled();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toContainText(
     "Not assigned yet",
