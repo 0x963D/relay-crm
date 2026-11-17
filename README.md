@@ -50,12 +50,12 @@ Three packages, each with one job and one thing it must not do. Docker Compose p
 
 ## What is proven, and where
 
-- Concurrent submissions become one lead. [Intake race](packages/store/test/intake-races.int.test.ts), `for one new email: one lead is created and the other attaches to it`. Run `pnpm test:int -- packages/store/test/intake-races.int.test.ts`.
-- One scope function decides record reads, edits and assignments. [Access](packages/domain/test/access.test.ts), `never lets a $role in $situation edit a lead they cannot read`, which runs once for every role and team situation. Run `pnpm test -- packages/domain/test/access.test.ts`.
-- A payment credits once across duplicate, late or missing webhooks. [Payment races](packages/store/test/payments.int.test.ts), `a webhook, its duplicate and the reconciler collide and credit exactly once` and `a lost webhook is reconciled and a late webhook changes no money or audit`. Run `pnpm test:int -- packages/store/test/payments.int.test.ts`.
-- Manual payments need two approvers who did not set the terms. [Manual payments](packages/store/test/manual-payments.int.test.ts), `the last editor is a maker and editing voids existing approvals`. Run `pnpm test:int -- packages/store/test/manual-payments.int.test.ts`.
-- The app's database role cannot change a ledger line. [Database role](packages/store/test/database-role.int.test.ts), `the app role refuses UPDATE ledger_lines SET amount=amount+1`. Run `pnpm test:int -- packages/store/test/database-role.int.test.ts`.
-- Every open lead appears in exactly one queue group. [Queue partition](packages/domain/test/work.test.ts), `open leads match an independent partition across offsets, DST changes and midnight`. Run `pnpm test -- packages/domain/test/work.test.ts`.
+- Concurrent submissions become one lead. [Intake race](packages/store/test/intake-races.int.test.ts), `for one new email: one lead is created and the other attaches to it`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/intake-races.int.test.ts`.
+- One scope function decides record reads, edits and assignments. [Access](packages/domain/test/access.test.ts), `never lets a $role in $situation edit a lead they cannot read`, which runs once for every role and team situation. Run `pnpm exec vitest run --project unit packages/domain/test/access.test.ts`.
+- A payment credits once across duplicate, late or missing webhooks. [Payment races](packages/store/test/payments.int.test.ts), `a webhook, its duplicate and the reconciler collide and credit exactly once` and `a lost webhook is reconciled and a late webhook changes no money or audit`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts`.
+- Manual payments need two approvers who did not set the terms. [Manual payments](packages/store/test/manual-payments.int.test.ts), `the last editor is a maker and editing voids existing approvals`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts`.
+- The app's database role cannot change a ledger line. [Database role](packages/store/test/database-role.int.test.ts), `the app role refuses UPDATE ledger_lines SET amount=amount+1`. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts`.
+- Every open lead appears in exactly one queue group. [Queue partition](packages/domain/test/work.test.ts), `open leads match an independent partition across offsets, DST changes and midnight`. Run `pnpm exec vitest run --project unit packages/domain/test/work.test.ts`.
 
 ## Limits
 
