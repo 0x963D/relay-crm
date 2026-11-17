@@ -2,276 +2,224 @@
 
 [Back to Relay CRM](../README.md)
 
+This page covers how a card payment and a manual payment reach the ledger, and how a receipt is sent afterwards. The idea to keep is that every completion, whatever triggers it, runs one function inside one transaction. A duplicate webhook, a late webhook, the reconciler and a second approver can all arrive together, and the account is still credited once.
+
 ## The money invariant
 
-A completed payment credits its account exactly once through a balanced, immutable ledger posting.
-Webhook redelivery, reconciliation and the final manual approval use the same settlement function, so concurrent completion cannot credit it again.
-It writes the payment, ledger posting, audit and completion outbox row in one transaction.
+A completed payment has exactly one ledger posting, and the posting credits the customer's account with the payment's amount. Three things can complete a payment: a provider webhook, the reconciler and the second approval of a manual payment. All three call `settlePayment` in `packages/store/src/payments.ts`.
 
-The real-PostgreSQL test [payments.int.test.ts](../packages/store/test/payments.int.test.ts),
-`a webhook, its duplicate and the reconciler collide and credit exactly once`, holds a database
-write gate until every caller has reached it. Run it with
-`pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts -t "collide and credit exactly once"`.
+`settlePayment` runs these steps in the caller's transaction.
 
-The manual collision test in [manual-payments.int.test.ts](../packages/store/test/manual-payments.int.test.ts)
-forces two approvers to reach the payment write together. Run both proving tests with
-`pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
+1. It reads the payment row again and asks the transition table in `packages/domain/src/payment.ts` for the next state.
+2. If the state does not change, it stops. A replay writes no state, no posting, no audit row and no receipt.
+3. For a completion it inserts the posting, updates the payment, writes the audit rows, inserts the two ledger lines, queues the receipt in the outbox and appends a settlement event. Any other state change updates the payment and writes one audit row.
 
-A ledger line has a `side` of `debit` or `credit` and a positive amount in minor units.
-A posting balances when debits equal credits. Customer accounts are liabilities, so a payment
-credits the customer. The card provider and bank are assets, so the payment debits them.
-A customer balance is credits minus debits. The database checks both sides against the payment.
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts`
-to check postings and balances.
+The transaction commits all of that or none of it. Two callers that complete the same payment at once cannot both commit, because [every transaction is SERIALIZABLE](development.md#every-transaction-is-serializable-and-retried) and `ledger_transactions` has a unique index on the payment. The store runs the loser again. On its second run the loser reads a completed payment and stops at step 2.
 
-## Payments and receipts
+PostgreSQL enforces the same rule without the app. Constraint triggers that run at commit refuse a completed payment unless it has one posting, two lines that balance and match the payment's account, currency and amount, and one outbox row. A trigger on `payments` refuses every state change the transition table does not allow.
 
-For the guarantees enforced by PostgreSQL, see [the money invariant](#the-money-invariant).
-For the limits of direct database access, see [operational limits](limits.md#operational-limits).
-
-### Card payments
-
-Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` to the app's HTTP
-origin, and distinct `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` values. The sandbox
-moves no real money. A production build refuses sandbox startup without `RELAY_DEMO=1`.
-With that setting, payment API responses and account ledger responses carry `demo: true` for
-screens to show a demo banner. The flag is false otherwise. [Environment tests](#verification)
-and [payment HTTP tests](#verification)
-check the startup rule and response flag. The sandbox stores its checkout status separately from the CRM payment and signs
-webhooks over the timestamp, a period and the raw body with HMAC-SHA256.
-
-`payments.createCheckout` takes `accountId`, a request `key`, `amount` as a positive integer string
-in minor units, `currency`, `kind` of `first` or `repeat`, and an optional sandbox `mode`.
-Modes are `normal`, `drop`, `twice`, `late` and `differentAmount`. The last reports an amount greater
-than the requested amount. The returned checkout URL has a plain pay form. The account's existing
-edit scope decides who may create it. The request receipt is immutable; a replay can retry provider
-checkout creation after an interrupted request. The provider gives each checkout its own random ID.
-The pay URL contains a random bearer token. Only its SHA-256 hash is stored. Only the authorized
-creation response returns the URL. Later reads and creation replays return no token or pay URL.
-If that response is lost after provider creation, close the waiting payment and create another.
-Creation replays recheck current account edit access.
-[payment HTTP tests](#verification) checks
-that an accountant cannot pay with a disclosed payment ID, and that tokens use 32 random bytes.
-`recordedById` and `soldById` are fixed at creation.
-
-`payments.list` groups scoped results as `waitingForApproval`, `waitingForProvider`, `needsReview`
-and `decidedThisWeek`.
-The last group uses the UTC calendar week. `limit` bounds each group. `counts` gives each full
-scoped group total before that limit. `payments.get` returns the customer in `account`, the
-attributed agent in `soldBy`, and `providerReference`, the checkout ID returned by the provider.
-It also returns state and an event log ordered by its database sequence. Each accepted webhook delivery has an event,
-including duplicates and late arrivals, with the observed money and whether state changed.
-It includes the posting only for accountants, managers, admins and owners. Those roles can call
-`accounts.ledger`, whose entries and running balances come from immutable lines, grouped by currency.
-An empty ledger has no currency balances. Agents can read their own payments but receive no posting
-and cannot read the ledger endpoint.
-
-The SERIALIZABLE settlement function re-reads the payment. Matching provider money can complete it.
-Mismatched amount or currency moves it to `needsReview` without a posting. `payments.closeReview`
-takes an ID and a written reason; accountants and management may close review as `failed`.
-The audit preserves the reported money and the review reason, either `amount mismatch`,
-`currency mismatch` or `paid after close`. Review has no transition to completed.
-A paid report after `expired` or `failed` moves the payment to `needsReview` without credit.
-That is the only exit from either closed state. `completed` has no exit.
-
-`payments.closeCheckout` lets an account editor close a waiting checkout as `failed` with a written
-reason. When sandbox payments are enabled it then cancels the provider checkout.
-When they are disabled it records that the provider was not asked. Reconciliation resumes when
-they return. If the provider reports that it was already paid, the same request moves it to review.
-A paid report from either a late webhook or the reconciler also moves a closed payment to review.
-The reconciler watches closed card payments until the provider reports a final state.
-An active creation request has a token and a 30-second deadline. Only its owner can finish it.
-Reconciliation waits for creation to finish or its deadline to pass, even when the first check delay is zero.
-The provider refuses creation after the payment leaves `checkoutCreated`. Unknown provider checkouts fail with `the checkout was never created at the provider`.
-Checkouts expire after `RELAY_CHECKOUT_TTL_MS`, default 86400000 milliseconds.
-Run [payment HTTP tests](#verification)
-for expiry, missing checkouts and staff closure.
-
-PostgreSQL checks the payment state shape and transitions. Deferred constraint triggers require a
-completed payment to have a posting with balanced lines matching its account, currency and amount,
-and exactly one outbox row. Outbox rows cannot be deleted, truncated or moved to another payment.
-The unique payment index refuses another posting. Triggers refuse updates, deletes and truncation on ledger
-accounts, postings and lines. The worker delivers the receipt after commit.
-A replay writes no new state, posting, audit or outbox row; delivery/check history remains observable.
-
-Run `pnpm reconcile` using the repository environment. A scheduler can instead send
-`POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`.
-The reconcile HTTP route returns only `checked` and `changed` counts. The outbox HTTP route returns
-only `processed`, `sent`, `failed`, `suppressed`, `unknown`, `superseded` and `recordingFailed` counts. Neither returns record IDs.
-[payment HTTP tests](#verification) verifies that.
-`pnpm exec dotenv -- vitest run --project integration apps/web/test/job-routes.int.test.ts packages/store/test/jobs.int.test.ts`
-checks both HTTP routes. Each allows five failed authentication attempts per client address per
-60-second window, then returns 429 with `Retry-After: 60`. Valid secrets do not consume that failed
-attempt budget. The route guard only stops overlapping scheduled calls to the same route.
-An overlapping call returns 429. The outbox and reconcile routes use separate lease rows, with
-leases of 15 seconds for reconciliation and 60 seconds for the outbox, renewed every third of their
-lease while they run. The database clock sets and checks expiry. Finishing or failing releases the caller's lease token.
-A stopped caller's lease expires. The callback holds no transaction open and is never retried
-by the guard. `pnpm exec dotenv -- vitest run --project integration packages/store/test/jobs.int.test.ts`
-checks expiry, token ownership and the absence of a transaction during the callback.
-
-The command-line jobs do not acquire the route guard. Every entry point protects individual rows.
-Reconciliation conditionally claims each due payment and checks its claim token before settlement.
-The outbox leases each receipt using the database clock and skips rows held by another sender.
-Settlement still enforces the single posting when competing jobs observe the same payment.
-
-Both reconcile entry points scan candidates outside settlement, then claim each due payment with a conditional update.
-A competing job that loses the claim skips the provider call. The claim moves `nextCheckAt` forward,
-so a stopped job becomes eligible again. Provider read errors record an unsuccessful check and
-leave the payment for its next check. Provider failures and expiry close the payment without credit.
-
-[environment tests](#verification) verifies the timing defaults. `RELAY_RECONCILE_FIRST_MS`
-defaults to 900000 and `RELAY_RECONCILE_INTERVAL_MS` to 300000. `RELAY_SANDBOX_LATE_MS` defaults to 30000. For a local interview run, set the first delay to zero and the late delay long enough to
-call the reconciler before delivery. Signature, timestamp tolerance and replay behavior run in
-[payment HTTP tests](#verification).
-
-Sandbox delivery runs after the pay response in the serving process. A process exit can lose that
-delivery; reconciliation recovers the completed provider status. This is a sandbox failure mode,
-not a durable notification worker. `pnpm test:prod` signs in an agent through SMTP, submits the
-sandbox form, reconciles a late delivery, and checks duplicate delivery and an amount mismatch
-through the production API. Its `LIVE_PAYMENT` output records each event log, posting and balance.
-
-### Manual payments
-
-`payments.recordManual` takes `accountId`, an idempotency `key`, positive minor-unit `amount`,
-`currency`, `kind`, a `receiptHash` of 64 lowercase hexadecimal characters and an optional
-`reference`. The caller supplies the hash. The app compares it as a string to prevent the same
-receipt being entered twice by mistake. It stores no receipt file, does not check that a file
-exists, and does not prove that a transfer happened. Two independent approvers checking the
-payment are the control. Two approvers acting together can approve a fabricated receipt.
-
-The owning agent or another person with account edit access may record a payment. It starts in
-`pendingApproval`. One partial unique index allows one payment in progress per account across
-`pendingApproval` and `checkoutCreated`. A second manual payment or card checkout returns
-`pendingPayment` with "This account already has a payment in progress."
-Another index allows one live manual payment per receipt hash. Rejected and cancelled payments
-release the hash. A person who already holds a receipt hash and can submit a payment can learn
-whether a live payment uses it, because `receiptUsed` must explain the duplicate refusal.
-Reusing the original request key replays its stored result.
-
-`payments.approve` takes `id`, the displayed terms `version` and the signed-in person's
-`roleVersion` from `payments.get`. Two different accountants, managers, admins or owners must
-approve. Neither the recorder nor anyone who edited the terms may approve. The second
-approval calls settlement inside its approval transaction. Manual settlement debits
-"Bank transfers and cash" and credits the customer. There is no posting before the second approval.
-
-Each approval records its approver, role version, payment version and time. A role-change trigger
-increments the user's role version and voids that person's approvals on waiting payments.
-Completed payments keep their historical approvals. The approving transaction reloads both
-approvers' roles and versions. The database checks eligibility on approval insert and independently
-requires two current approvals from people other than the makers at completion. User emails are
-unique ignoring case.
-
-`payments.editManual` accepts money, receipt hash and reference while the payment waits. The
-account is immutable. The edit checks the displayed version, adds the editor to the append-only maker set, increments
-the version and voids every active approval in the same transaction. Earlier approvals therefore
-cannot approve the new terms. Editing and approval serialize on the payment. A request whose
-terms version became stale must refresh.
-
-`payments.get` and `payments.list` include the recorder, approval history and the
-signed-in person's actions. Typed errors include `pendingPayment`, `receiptUsed`, `paymentRecorder`,
-`paymentMaker`, `alreadyApproved`, `roleChanged` and `refreshConflict`.
-`payments.reject` and `payments.cancel` take `id`, `version` and a nonempty written `reason`.
-Only the recorder may cancel. Only someone with approval access who is not a maker may reject.
-Both decisions are final and credit nothing. Events and audits retain the actor, reason and request ID.
-
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts packages/store/test/payment-guards.int.test.ts`
-for approval races, maker refusals, role versions, term changes, account and receipt collisions,
-standalone truncate guards, direct SQL refusals and active-approval uniqueness.
-`pnpm test:mutations <output-directory> <name-prefix>` removes the selected guards, requires their
-named behavior tests to fail, restores the source and reruns the baseline. The optional prefix
-selects mutations such as `payment-`, `receipt-lease` or `truncate-`.
-
-### Receipt delivery
-
-Run `pnpm outbox` with the repository environment. It uses `SMTP_URL` and `SMTP_FROM` and needs
-no sign-in settings. `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts -t "outbox command"`
-checks SMTP delivery without sign-in settings. A scheduler
-can call `POST /api/payments/outbox` with `Authorization: Bearer <RELAY_OUTBOX_SECRET>`.
-The route is disabled without its secret or SMTP configuration. Sign-in codes keep their direct
-mailer path.
-
-The worker claims due rows with `FOR UPDATE SKIP LOCKED` and stores a lease token and expiry.
-An unexpired lease prevents another lease or a requeue. Sending happens outside the transaction.
-The worker aborts each send within `RELAY_RECEIPT_SEND_TIMEOUT_MS`, default 30000 milliseconds,
-including time spent preparing its attempt. `RELAY_RECEIPT_LEASE_MS` defaults to 60000 milliseconds.
-Settings refuse a send timeout that is not shorter than the lease. The SMTP transport closes its
-connection on abort. The database clock sets and checks every lease expiry. The lease and timeout exclude simultaneous
-sends through the shipped SMTP adapter even if the worker's database session disappears. There is no session advisory lock.
-
-Delivery is at most once per attempt. A crash after leasing but before recording an attempt leaves
-a pending row that becomes eligible after lease expiry. A crash between recording the attempt and
-the send leaves the receipt unsent until a person requeues it. A crash after the send leaves a sent
-receipt marked `unknown`. Once the sent outcome commits, the worker will not retry it.
-A duplicate needs a person to requeue a receipt that had in fact arrived.
-
-| State        | Behavior                                                                                                                                                                                                |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sent`       | SMTP confirmed acceptance. No retry. Acceptance does not prove inbox placement.                                                                                                                         |
-| `suppressed` | The address is suppressed, or no address exists. No send or retry. A missing address records "no address".                                                                                              |
-| `failed`     | A failure before DATA, including connection refusal, DNS failure and greeting timeout, or a clear SMTP refusal. Retries after 5, 10 and 20 minutes, up to four attempts per cycle and the lifetime cap. |
-| `unknown`    | DATA was sent without a clear answer, or the worker stopped before recording the outcome. No automatic retry.                                                                                           |
-
-The SMTP adapter observes whether message data started. A connection error's command can still be
-`CONN` after DATA, so its code alone cannot establish that retrying is safe. If recording one
-outcome fails, the worker leaves the attempt unknown, records a `receiptRecordingFailed` event and
-continues the batch. If the database also refuses that event, the worker result says the failure
-could not be recorded. A lost lease token produces `superseded`, not a claim that the send was recorded.
-
-`RELAY_RECEIPT_LIFETIME_ATTEMPTS` defaults to 12. Automatic retries and manual requeues share this
-limit. The payment API returns receipt state, recipient, attempts, history and the next retry time.
-Accountants, managers, admins and owners may call `payments.requeueReceipt` with a payment `id`
-for a failed or unknown receipt whose lease has ended. Every accepted requeue records an audit and
-event, starts a new retry cycle and preserves the lifetime attempt count. At the cap, it returns
-`receiptAttemptLimit` with "This receipt has reached its lifetime attempt limit."
-Receipt delivery never changes payment completion or the ledger. The app can update only outbox
-state, the retry-cycle counter, lease fields and next-attempt time. It cannot change a recipient,
-receipt identity or lifetime count. Inserting a positive numbered receipt attempt advances the
-lifetime count through an owner trigger. Its number must be the next lifetime attempt. It can finish an attempt by
-updating its state, reason and finish time, and cannot renumber it or change its start time.
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts packages/store/test/outbox.int.test.ts`
-for the effective column grants and direct SQL refusals.
-
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/outbox.int.test.ts`
-for retry timing, attempt limits, worker collisions, database-session loss, suppression, failed
-outcome recording and audited requeue. `pnpm exec vitest run --project unit apps/web/test/mailer.test.ts`
-uses local SMTP and DNS servers for acceptance, refusal, timeouts and connection loss. Every attempt
-uses the same Message-ID derived from the outbox ID. A mail server may deduplicate it, but SMTP
-does not guarantee exactly-once delivery.
-
-`pnpm test:prod` signs people in through a local SMTP receiver and exercises the production HTTP
-API in demo mode. Its `LIVE_MANUAL` output records an editor's refused approval, completion by two
-other people, a card checkout refused while a manual payment waits, a refused SMTP connection,
-delivery after the receiver restarts, suppression, unknown delivery and a lifetime-cap refusal.
-The retry test checks the stored delay, then makes only its fixture row due to avoid waiting.
-
-`accounts.ledger` returns each entry's `completion` with `by` and `at`. A manual completion also
-includes the second approver's name in `approver`, read from the final ordered approval event. System
-completions identify `reconciler` or `providerWebhook`. The reader batches payments, approval events,
-people and postings without a query per payment. Agents still receive no ledger or balance.
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payment-reads.int.test.ts`
-for detail fields, scoped group totals, completion provenance and query counts with one payment and several payments.
-
-## Sandbox navigation and delivery
-
-`RELAY_SANDBOX_DELIVERY_URL` sets the origin the serving process uses to deliver webhooks. It defaults to `RELAY_SANDBOX_URL`. Compose sets it to the app's internal address, so changing the published port does not break delivery. The public pay link still uses `RELAY_SANDBOX_URL`.
-
-The creation panel shows the pay link once. Opening it creates a new tab with no opener or referrer. Every sandbox response sends `Referrer-Policy: no-referrer`. Returning to the app replaces the sandbox history entry. Reloading or opening the payment elsewhere does not recover the token.
-
-Payment records show the sold-by agent and the signed-in person's available actions. Review panels compare money only for a money mismatch. Paid-after-close panels compare the states and say when the amount and currency match. The event log runs oldest first and groups consecutive unchanged checks.
-
-`payments.receiptUse` finds the payment using a receipt hash within the caller's read scope. The duplicate-receipt refusal links it when that read succeeds.
-
-## Verification
-
-Run the payment HTTP tests for sandbox startup, response flags, checkout privacy, expiry, staff closure, webhook signatures and job responses.
+The test `a webhook, its duplicate and the reconciler collide and credit exactly once` in [payments.int.test.ts](../packages/store/test/payments.int.test.ts) holds every caller at a database gate until all of them have arrived, then releases them together.
 
 ```sh
-pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts
+pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts -t "collide and credit exactly once"
 ```
 
-Run the environment tests for startup requirements and timing defaults.
+## The ledger
+
+The ledger is double-entry and append-only. A posting is one row in `ledger_transactions` and two rows in `ledger_lines`. Each line has a `side` of `debit` or `credit` and a positive amount in minor units, stored as a 64-bit integer. Amounts are never floats and never rounded.
+
+A customer's account is a liability, because the company owes the customer what they paid for. A payment therefore credits the customer. The other line debits an asset account. That account is `Card provider, sandbox` for a card payment and `Bank transfers and cash` for a manual one. A customer's balance is their credits minus their debits. Nothing stores a balance. Every read adds up the lines, per currency.
+
+The app's database role cannot update or delete a ledger row, and triggers refuse the same for the table owner. [Access and security](access-security.md#the-two-database-roles) lists those grants.
+
+An approver reads postings and balances through `accounts.ledger`. [Roles and scope](access-security.md#roles-and-scope) says who is an approver and who may edit an account. An agent can read their own payments, without the posting, and cannot call `accounts.ledger`.
+
+v0.1 has no reversal, so a posting made in error cannot be corrected inside the app.
+
+## Payment states
+
+| State             | Method | Meaning                                                                  | Next states                                     |
+| ----------------- | ------ | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| `checkoutCreated` | Card   | The checkout exists and the provider has not reported a result           | `completed`, `needsReview`, `failed`, `expired` |
+| `pendingApproval` | Manual | Recorded and waiting for two approvals                                   | `completed`, `rejected`, `cancelled`            |
+| `completed`       | Both   | Credited, with one posting                                               | None                                            |
+| `needsReview`     | Card   | The provider reported money the app will not credit by itself            | `failed`                                        |
+| `failed`          | Card   | The provider failed it or never had it, or staff closed it with a reason | `needsReview`                                   |
+| `expired`         | Card   | The checkout passed its lifetime unpaid                                  | `needsReview`                                   |
+| `rejected`        | Manual | An approver refused it with a reason                                     | None                                            |
+| `cancelled`       | Manual | Its recorder withdrew it with a reason                                   | None                                            |
+
+One account has at most one payment in `checkoutCreated` or `pendingApproval`. A partial unique index enforces it, and a second attempt returns `pendingPayment`.
+
+## Card payments
+
+The payment provider is a sandbox inside the app. It moves no real money. It has its own table, its own checkout IDs and its own page, and the CRM talks to it only through the `PaymentProvider` interface, a signed webhook and a status read.
+
+### From checkout to credit
+
+1. A person who can edit the account calls `payments.createCheckout`. The store inserts the payment in `checkoutCreated` and the provider creates a checkout with its own ID.
+2. The response carries a pay link. The link contains a random 32-byte token, and the database stores only its SHA-256 hash. No later read or replay returns the link, so a person who can read the payment cannot pay it.
+3. The customer pays on the provider's page.
+4. The provider posts a signed webhook to `/api/payments/webhook`. The app calls `settlePayment` with the money the provider reported.
+5. If no webhook arrives, the reconciler asks the provider for the checkout's status and calls `settlePayment` with the answer.
+
+Step 5 is why a lost webhook delays a payment and does not lose it. The webhook is the fast path and the reconciler is the guarantee. A webhook that arrives after the reconciler has completed the payment is recorded in the event log and changes no money.
+
+If the response in step 2 is lost after the provider created the checkout, the link is gone. Close the waiting payment and create another.
+
+### What the provider can report
+
+`settlePayment` compares the reported amount and currency with the payment before it looks at the status.
+
+| Provider report                                | Result                                                |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| Paid, with the expected money                  | `completed`, with one posting                         |
+| Any status with a different amount or currency | `needsReview`, with no posting                        |
+| Still pending                                  | No change                                             |
+| Failed or expired                              | `failed` or `expired`                                 |
+| No such checkout                               | `failed`, because creation never reached the provider |
+| Paid, after the payment was closed or expired  | `needsReview` with the reason `paid after close`      |
+
+Review never credits, and no transition leads from review to `completed`. The audit row keeps the reported money and the reason. An approver closes the review as `failed` with a written reason through `payments.closeReview`. The app does not decide what a mismatch means. It stops and leaves the decision to a person.
+
+### Closing a checkout
+
+`payments.closeCheckout` lets an account editor close a waiting checkout as `failed` with a written reason. The app then cancels the checkout at the provider and reads its status. If the customer had already paid, the same request moves the payment to `needsReview` and says so. With sandbox payments turned off, the app records that it did not ask the provider.
+
+A checkout expires after `RELAY_CHECKOUT_TTL_MS`. The reconciler keeps checking a closed or expired card payment until the provider gives a final answer, so a late payment still reaches review.
+
+### The webhook
+
+The provider signs each webhook with HMAC-SHA256 over the timestamp, a full stop and the raw body, under `RELAY_PAYMENT_WEBHOOK_SECRET`. The app refuses a wrong signature or a timestamp more than five minutes from its own clock with 401.
+
+Each webhook carries an event ID. The app stores the ID with a hash of the body in `webhook_inbox`. A redelivery of the same event settles nothing and adds an event marked as a duplicate. The same ID with a different body gets 409. Every accepted delivery, including duplicates and late arrivals, appears in the payment's event log with the money it reported and whether the state changed.
+
+The sandbox sends the webhook from the serving process after it has answered the pay request. If that process stops first, the webhook is lost and the reconciler recovers the payment.
+
+### The reconciler
+
+The reconciler runs from `pnpm reconcile` or from `POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`. The route answers with `checked` and `changed` counts and no record IDs. The command reads its settings the way a production server does, so it needs the sandbox settings below and `RELAY_DEMO=1`.
+
+It scans for card payments whose next check is due, then handles each in three steps.
+
+1. In one transaction it claims the payment with a conditional update that stores a claim token and moves the next check forward by the interval. A second reconciler that loses the claim skips the payment and never calls the provider.
+2. It asks the provider, outside any transaction.
+3. In a second transaction it checks that its token is still the current one, then calls `settlePayment`. A superseded check records the provider's answer and settles nothing.
+
+A reconciler that stops between steps leaves nothing locked. The payment becomes due again at its next check time. A provider read that fails records an unsuccessful check and leaves the payment for the next run.
+
+A new payment is not checked while its checkout is still being created. Creation holds a token with a 30-second deadline, and the reconciler waits for the creation to finish or the deadline to pass. Without that wait, a reconciler with no first-check delay could ask the provider before the checkout exists and fail a good payment.
+
+| Setting                       | Default  | Meaning                                                 |
+| ----------------------------- | -------- | ------------------------------------------------------- |
+| `RELAY_RECONCILE_FIRST_MS`    | 900000   | Delay before a new payment's first check                |
+| `RELAY_RECONCILE_INTERVAL_MS` | 300000   | Delay between later checks of the same payment          |
+| `RELAY_CHECKOUT_TTL_MS`       | 86400000 | Lifetime of an unpaid checkout                          |
+| `RELAY_SANDBOX_LATE_MS`       | 30000    | How long the sandbox holds a webhook in its `late` mode |
+
+Payment reads return the first-check delay and the interval, so a screen can say when the next check is due.
+
+### Turning the sandbox on
+
+Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` to the app's public HTTP origin, and `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` to two different [generated secrets](access-security.md#secrets). `RELAY_SANDBOX_DELIVERY_URL` sets the origin the app uses to deliver webhooks to itself. It defaults to `RELAY_SANDBOX_URL`.
+
+A production build refuses to start with the sandbox on unless `RELAY_DEMO=1` is also set. With `RELAY_DEMO=1`, payment and ledger responses carry `demo: true`, and the provider's page shows five choices for what happens to the webhook.
+
+| Mode              | What the sandbox does after payment                    |
+| ----------------- | ------------------------------------------------------ |
+| `normal`          | Sends the webhook once                                 |
+| `drop`            | Sends nothing, so the reconciler completes the payment |
+| `twice`           | Sends the same webhook two times                       |
+| `late`            | Waits `RELAY_SANDBOX_LATE_MS`, then sends the webhook  |
+| `differentAmount` | Reports one minor unit more than the payment's amount  |
+
+The provider's page opens in a new tab with no opener, and every response from it sends `Referrer-Policy: no-referrer`, so the token in its address does not leak to another site.
+
+## Manual payments
+
+A manual payment records money that arrived outside the app, by bank transfer or in cash. The app cannot see the bank account, so the control is two people who did not set the terms.
+
+### From record to credit
+
+1. A person who can edit the account calls `payments.recordManual` with the amount, a `receiptHash` and an optional `reference`. The payment starts in `pendingApproval`.
+2. An approver calls `payments.approve`. The store adds one approval.
+3. A second, different person approves. Inside that same transaction the store counts two valid approvals and calls `settlePayment`, which debits `Bank transfers and cash` and credits the customer.
+
+Nothing is posted before the second approval.
+
+### Who may approve
+
+A maker is anyone who recorded the payment or edited its terms. A maker can never approve that payment. The set of makers only grows. A trigger adds the recorder when the payment is created and each editor when they edit, and the table refuses updates and deletes.
+
+Editing changes what is being approved, so `payments.editManual` raises the payment's version and voids every approval already given. An approver must send the version they are looking at. If the terms changed underneath them, the request fails with `refreshConflict` and they read the payment again.
+
+A role change voids approvals too. Each person has a role version that rises when their role changes. An approval stores the approver's role version, and a trigger voids that person's approvals on waiting payments when the version rises. The second approval also reloads the first approver's role, so a person demoted between the two approvals does not count.
+
+The database checks the same rules by itself. A trigger on `payment_approvals` refuses an approval from a maker, from a person whose role is not an approver's, or with a stale version. A constraint trigger at commit refuses to complete a manual payment without two current approvals from people who are not makers.
+
+`payments.reject` and `payments.cancel` end a waiting payment with a written reason and credit nothing. Only an approver who is not a maker may reject. Only the recorder may cancel. Both release the account for a new payment.
+
+### What the receipt hash does and does not prove
+
+`receiptHash` is 64 lowercase hexadecimal characters that the caller supplies. A unique index allows one live manual payment per hash, so the same receipt cannot be entered twice by mistake. A rejected or cancelled payment releases its hash.
+
+The app stores no receipt file. It does not check that a file exists or that a transfer happened. Two approvers acting together can approve an invented receipt. A person who can record payments and already holds a hash can also learn whether a live payment uses it, because the `receiptUsed` refusal has to say why it refused.
+
+The test `the last editor is a maker and editing voids existing approvals` in [manual-payments.int.test.ts](../packages/store/test/manual-payments.int.test.ts) covers the edit rule, and `two different approvals collide and credit exactly once` forces two approvers to reach the payment together.
 
 ```sh
-pnpm exec vitest run --project unit apps/web/test/env.test.ts
+pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts -t "editing voids existing approvals"
 ```
+
+## Receipts
+
+Settlement queues a receipt and does not send it. The outbox row commits with the posting, and a separate worker sends the email afterwards. A mail server that is down therefore cannot block or undo a payment, and a receipt never goes out for a payment that rolled back.
+
+### The worker
+
+The worker runs from `pnpm outbox` or from `POST /api/payments/outbox` with `Authorization: Bearer <RELAY_OUTBOX_SECRET>`. Both need `SMTP_URL` and `SMTP_FROM`, and neither needs sign-in to be configured. The route answers with counts and no record IDs.
+
+For each due receipt the worker runs four steps.
+
+1. It leases the row with `FOR UPDATE SKIP LOCKED` and stores a lease token and an expiry taken from the database clock. A second worker skips a leased row.
+2. In a second transaction it records a numbered attempt in the state `unknown`.
+3. It sends the email outside any transaction, and aborts the send at `RELAY_RECEIPT_SEND_TIMEOUT_MS`.
+4. It records the outcome and clears the lease.
+
+If step 4 fails for one receipt, the worker leaves that attempt `unknown`, appends a `receiptRecordingFailed` event to the payment and carries on with the rest of the batch.
+
+Step 2 comes before the send on purpose. If the worker dies during the send, the row already says `unknown`, and the worker never retries an `unknown` receipt by itself. The choice is between a customer who might get no receipt and one who might get two, and the app picks the first because a person can requeue it.
+
+| State        | Meaning                                                                     | What happens next                                      |
+| ------------ | --------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `sent`       | The mail server accepted the message                                        | Nothing. Acceptance does not prove it reached an inbox |
+| `suppressed` | The address is on the suppression list, or the account has no address       | Nothing is sent                                        |
+| `failed`     | The send failed before any message data left, or the server clearly refused | Retries after 5, 10 and 20 minutes                     |
+| `unknown`    | Message data left and no clear answer came back, or the worker stopped      | Waits for a person to requeue it                       |
+
+A failed receipt gets four attempts in a cycle. `payments.requeueReceipt` lets an approver start a new cycle for a `failed` or `unknown` receipt, and every requeue writes an audit row. `RELAY_RECEIPT_LIFETIME_ATTEMPTS`, 12 by default, caps attempts across all cycles. At the cap a requeue returns `receiptAttemptLimit`.
+
+Every attempt for one receipt uses the same Message-ID, so a mail server that deduplicates can drop a second copy. SMTP itself does not promise that.
+
+### Leases and timeouts
+
+`RELAY_RECEIPT_LEASE_MS` defaults to 60000 and `RELAY_RECEIPT_SEND_TIMEOUT_MS` to 30000. The server refuses to start unless the timeout is shorter than the lease. A send that has not finished by the timeout is aborted while the worker still holds the lease, so a second worker cannot start the same receipt while the first is still sending. The timeout clock starts before the lease is taken, so slow preparation counts against it.
+
+The app's database role can change a receipt's state, lease and retry time. It cannot change the recipient, move the receipt to another payment or set the attempt count. The count rises only when a trigger sees the next numbered attempt inserted.
+
+## One run at a time
+
+The two job routes take a lease before they work, so two scheduled calls to the same route do not overlap. The lease is one row per route in `job_leases`, with a token and an expiry set from the database clock. Reconciliation leases for 15 seconds and the outbox for 60, and a running job renews its lease every third of that. A second call while the lease is live gets 429. A caller that stops without releasing loses the lease when it expires, and a job that fails to renew is aborted.
+
+The lease only spaces out scheduled calls. Correctness does not depend on it. `pnpm reconcile` and `pnpm outbox` take no route lease, and the per-payment claim and the per-receipt lease still stop two workers from handling the same row.
+
+[Access and security](access-security.md#request-limits) covers the limit on wrong secrets for both routes.
+
+## Tests for this page
+
+- Settlement races, lost and late webhooks, and what the database refuses: `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts`
+- Approvals, makers, role versions, edits and receipt collisions: `pnpm exec dotenv -- vitest run --project integration packages/store/test/manual-payments.int.test.ts packages/store/test/payment-guards.int.test.ts`
+- Retry timing, the lifetime cap, worker collisions and requeue: `pnpm exec dotenv -- vitest run --project integration packages/store/test/outbox.int.test.ts`
+- Job leases, expiry and renewal: `pnpm exec dotenv -- vitest run --project integration packages/store/test/jobs.int.test.ts apps/web/test/job-routes.int.test.ts`
+- Webhook signatures, the pay link, expiry, staff closure and job responses over HTTP: `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
+- SMTP acceptance, refusal, timeouts and connection loss against local servers: `pnpm exec vitest run --project unit apps/web/test/mailer.test.ts`
