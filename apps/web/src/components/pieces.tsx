@@ -35,7 +35,7 @@ export function Avatar({
   );
 }
 const slipVariants = cva(
-  "max-w-full gap-1 whitespace-normal rounded-sm px-2 py-0.5 text-start text-xs font-medium",
+  "shrink-0 gap-1 whitespace-nowrap rounded-sm px-2 py-0.5 text-start text-xs font-medium",
   {
     variants: {
       kind: {

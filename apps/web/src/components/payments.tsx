@@ -31,11 +31,7 @@ export function PaymentsScreen({
   const opened = useQuery(
     trpc.payments.get.queryOptions({ id: selected ?? "" }, { enabled: !!selected }),
   );
-  const narrowPanel =
-    form ||
-    opened.data?.state.status === "pendingApproval" ||
-    opened.data?.state.status === "checkoutCreated";
-  const compact = !!selected && !narrowPanel;
+  const compact = !!selected || form;
   const query = usePagedQuery(trpc.payments.list.queryOptions({ limit, offset: 0 }), "payments", {
     limit,
     read: (page, signal) => api.payments.list.query(page, { signal }),
@@ -223,16 +219,7 @@ export function PaymentsScreen({
             </div>
           )}
         </section>
-        {children && (
-          <div
-            className={cn(
-              "min-w-0 flex-1 overflow-auto",
-              narrowPanel && "xl:w-payment-form xl:flex-none",
-            )}
-          >
-            {children}
-          </div>
-        )}
+        {children && <div className="min-w-0 flex-1 overflow-auto">{children}</div>}
       </div>
     </>
   );
