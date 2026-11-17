@@ -51,7 +51,7 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
 
    The app has schema usage and sequence usage. The [access reference](access-security.md#application-grants) lists its table grants and additional column updates. Memberships, teams and email suppressions are read-only.
    Authentication tables and request limits allow deletion. No app table grants `TRUNCATE`,
-   DDL or trigger control. `pnpm test -- packages/store/test/readme.test.ts` checks these tables
+   DDL or trigger control. `pnpm exec vitest run --project unit packages/store/test/readme.test.ts` checks these tables
    against `packages/store/test/app-privileges.ts`.
 
    The statement-level `BEFORE TRUNCATE` triggers remain a second defence, including for the owner.
@@ -181,10 +181,10 @@ Both commands stop their servers and drop only their own test database when they
 `/agents/[agentId]` and `/agents/[agentId]/leads/[leadId]`. `/pool` handles assignment.
 `/payments` shows payment groups and records. `/payments/new/[accountId]/[method]` hosts both money forms. `/accounts` opens account details and ledgers. `/funnel` shows campaign totals and exports them as CSV. `/accountant` redirects to Payments. `/` redirects to the role's home.
 Links use normal browser navigation, including modified clicks. Queue layouts stay mounted when
-the lead changes. Each route segment has loading and error boundaries.
+the lead changes. List routes have loading boundaries. Payment records resolve access before streaming so an unavailable record returns 404. Route segments have error boundaries.
 
 The server resolves the session once per render, starts independent reads through tRPC's query
-options, and streams results through Suspense into the hydrated cache. The browser keeps one QueryClient.
+options, and settles the initial workspace reads before hydration. Record content streams through Suspense. The browser keeps one QueryClient.
 Components use the same router-generated options and mutation hooks. A completed save invalidates
 the affected record, queue, pool and agent counts. A business refusal also refreshes those reads.
 A transport failure preserves the draft and its request key for a retry.
@@ -194,7 +194,7 @@ They contain no screen selectors. Status slips use `waiting`, `refused`, `comple
 `neutral` and `outline` variants. Pane layouts respond to container width.
 `globals.css` defines the tokens and base layer; controls and screens compose Tailwind utilities.
 
-`pnpm lint` includes the style guard in `scripts/check-styles.mjs`. It rejects arbitrary properties and pixel utilities, default palette colours and shadows, parent-class overrides, unsupported font weights and inline style bypasses. The theme clears the default palette and shadow scale. The allow-list in `scripts/style-allowlist.json` permits the toggle group's spacing property and the sandbox's separate font weight, each with its reason. Inline styles need an allowed file and property. Literal CSS colours and sizes belong in the token definitions.
+`pnpm lint` includes the style guard in `scripts/check-styles.mjs`. It rejects arbitrary properties and pixel utilities, default palette colours and shadows, parent-class overrides, unsupported font weights and inline style bypasses. The theme clears the default palette and shadow scale. The allow-list in `scripts/style-allowlist.json` permits the sandbox's separate font weight, with its reason. Inline styles need an allowed file and property. Literal CSS colours and sizes belong in the token definitions.
 Run database-backed verification commands sequentially. They rebuild the same test template.
 
 `pnpm lint` also runs `scripts/check-docs.mjs`. It resolves relative links and Markdown heading fragments in the README and every Markdown page under `docs/`. It refuses a README above 8,000 bytes.

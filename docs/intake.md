@@ -68,7 +68,7 @@ By design, a new enquiry for a lost lead returns it to the pool and removes its 
 The intake system actor audits that change. No intake source reopens a dead lead, regardless
 of whether its reason is duplicate, wrong number or do not contact.
 
-`pnpm test:int -- apps/web/test/web-form.int.test.ts` verifies the form's shared PostgreSQL limits.
+`pnpm exec dotenv -- vitest run --project integration apps/web/test/web-form.int.test.ts` verifies the form's shared PostgreSQL limits.
 Each client may make 10 requests per 60-second fixed window. All clients share a separate
 1,000-request window. A refused request returns 429 with `Retry-After: 60` and records no intake.
 A client refused by its own budget does not consume the global budget. Invalid submissions count.
@@ -77,5 +77,5 @@ The shared counter uses one conditional PostgreSQL upsert. In that same statemen
 most 100 other expired windows, with locked rows skipped. Each window stores its duration, so
 cleanup preserves longer windows. `pnpm exec dotenv -- vitest run --project integration packages/store/test/distribution-contract.int.test.ts`
 checks the cleanup bound and duration handling. The row lock serializes increments
-and refuses increments past the budget. `pnpm test:int -- packages/store/test/distribution-contract.int.test.ts`
+and refuses increments past the budget. `pnpm exec dotenv -- vitest run --project integration packages/store/test/distribution-contract.int.test.ts`
 checks concurrent admission, saturation and expiry.

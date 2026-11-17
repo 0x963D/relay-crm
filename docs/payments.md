@@ -35,7 +35,7 @@ Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` 
 origin, and distinct `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` values. The sandbox
 moves no real money. A production build refuses sandbox startup without `RELAY_DEMO=1`.
 With that setting, payment API responses and account ledger responses carry `demo: true` for
-screens to show a demo banner. The flag is false otherwise. [environment tests](#verification)
+screens to show a demo banner. The flag is false otherwise. [Environment tests](#verification)
 and [payment HTTP tests](#verification)
 check the startup rule and response flag. The sandbox stores its checkout status separately from the CRM payment and signs
 webhooks over the timestamp, a period and the raw body with HMAC-SHA256.

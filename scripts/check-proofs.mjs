@@ -1,14 +1,16 @@
 import { readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
+import { evidenceDirectory } from "../apps/web/test/browser/paths.ts";
 
 const section = readFileSync("README.md", "utf8")
   .split("## What is proven, and where")[1]
   ?.split("\n## ")[0];
 if (!section) throw new Error("The README proof section is missing.");
-const commands = [...section.matchAll(/Run `([^`]+)`/g)].map((match) => match[1]);
+const commands = [...section.matchAll(/`(pnpm[^`]+)`/g)].map((match) => match[1]);
 if (!commands.length) throw new Error("The README proof section has no commands.");
-const parent = process.env.RELAY_EVIDENCE_DIR ?? "test-results/evidence";
+const parent = evidenceDirectory;
 mkdirSync(parent, { recursive: true });
 const directory = mkdtempSync(join(parent, "proof-"));
 try {

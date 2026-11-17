@@ -17,7 +17,7 @@
   Managers, admins and owners see and edit everything. Accountants read every account, including
   the name and email of the person it was opened for. They cannot read lead records, edit or assign. Edit and assignment scopes always stay within read scope.
 
-`RELAY_TRUSTED_PROXY_COUNT` defaults to 0. `pnpm test -- apps/web/test/client-address.test.ts`
+`RELAY_TRUSTED_PROXY_COUNT` defaults to 0. `pnpm exec vitest run --project unit apps/web/test/client-address.test.ts`
 checks that 0 ignores all forwarded headers and uses the TCP peer. A positive setting selects
 that many hops from the right of `X-Forwarded-For`. An invalid address or a shorter chain falls
 back to the TCP peer. When `RELAY_TRUSTED_PROXY_COUNT` is above zero, the app's port must be
@@ -27,16 +27,16 @@ must append the peer address or overwrite the header with a verified chain.
 IPv4-mapped IPv6 and IPv6 spellings are canonicalized before counting.
 
 Use `pnpm dev` and `pnpm start`. Development always binds `127.0.0.1`. Production uses `HOST`,
-defaulting to `0.0.0.0`. `pnpm test -- apps/web/test/env.test.ts` checks those choices. Their Node HTTP entry point captures the connection address
+defaulting to `0.0.0.0`. `pnpm exec vitest run --project unit apps/web/test/env.test.ts` checks those choices. Their Node HTTP entry point captures the connection address
 in request-local storage before Next handles the request. Running `next start` directly lacks
 that context. A request without either a socket address or a trusted forwarded address is refused
 with the fixed error response. The server logs the missing-address configuration error once.
 No shared fallback budget is created. `pnpm test:prod` checks this through plain `next start`.
-`pnpm test -- apps/web/test/env.test.ts` checks that the proxy count is an integer from 0 to 32.
+`pnpm exec vitest run --project unit apps/web/test/env.test.ts` checks that the proxy count is an integer from 0 to 32.
 
 ## Sign-in request limits
 
-`pnpm test:int -- apps/web/test/auth.int.test.ts` verifies these PostgreSQL budgets.
+`pnpm exec dotenv -- vitest run --project integration apps/web/test/auth.int.test.ts` verifies these PostgreSQL budgets.
 All use 60-second fixed windows and return the same 429 body and `Retry-After: 60` for known
 and unknown email addresses. Timing padding also applies to a refused request.
 
@@ -47,12 +47,12 @@ The client budget is checked first, then the email budget, then the global circu
 A refusal stops those checks, so it cannot consume the later budgets.
 
 `RELAY_AUTH_GLOBAL_LIMIT` defaults to 10,000 requests per window across both operations.
-`pnpm test -- apps/web/test/env.test.ts` verifies that its configured value is an integer from
+`pnpm exec vitest run --project unit apps/web/test/env.test.ts` verifies that its configured value is an integer from
 21 to 1,000,000. Its minimum stays above a single client's budget.
 
 ## Error responses
 
-`pnpm test:int -- apps/web/test/rpc.int.test.ts apps/web/test/auth.int.test.ts` verifies that
+`pnpm exec dotenv -- vitest run --project integration apps/web/test/rpc.int.test.ts apps/web/test/auth.int.test.ts` verifies that
 unexpected failures return `Something went wrong.` and a generated `requestId`. The server
 logs the error class and code with that ID, without its message or submitted data.
 The tRPC formatter preserves typed domain failures in
@@ -62,13 +62,13 @@ The auth and intake HTTP boundaries catch unexpected exceptions. The form keeps 
 
 ## Request body limits
 
-`pnpm test -- apps/web/test/http.test.ts` verifies the shared streaming reader's exact boundary.
+`pnpm exec vitest run --project unit apps/web/test/http.test.ts` verifies the shared streaming reader's exact boundary.
 Auth, tRPC and the public form accept at most 100,000 body bytes and return 413 above that limit.
 The reader checks the declared length first, then counts actual bytes, including chunked bodies,
 and cancels the stream when the limit is exceeded. Auth and tRPC parse only the bounded copy.
 `pnpm test:prod` sends JSON containing 2,000,000 padding characters to those routes, including sign-out, and expects 413.
 The signed Meta webhook keeps its separate 1,000,000-byte limit, checked by
-`pnpm test -- apps/web/test/meta-webhook.test.ts`.
+`pnpm exec vitest run --project unit apps/web/test/meta-webhook.test.ts`.
 
 ## Generate an authentication secret
 
@@ -78,7 +78,7 @@ Generate a secret locally, then put it in your deployment environment and untrac
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-`pnpm test -- apps/web/test/env.test.ts` verifies that `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`,
+`pnpm exec vitest run --project unit apps/web/test/env.test.ts` verifies that `AUTH_SECRET`, `RELAY_PAYMENT_WEBHOOK_SECRET`,
 `RELAY_RECONCILE_SECRET` and `RELAY_OUTBOX_SECRET` each need at least
 32 characters and 12 distinct characters, and refuses the exact placeholder in `.env.example`.
 Configured secrets must be pairwise distinct. These checks reject obvious weak values. They do not measure entropy. Use the generator rather

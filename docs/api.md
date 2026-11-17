@@ -95,7 +95,7 @@ current assignment time, newest first. Notes do not count as attempts. Reassignm
 after reopening start a new attempt window. Rows include the intake `source`, campaign and
 `assignedAt`. `limit` bounds each group. `counts` gives each full group count and `nextCallbackAt`
 gives the earliest future callback, including one due later today.
-Run `pnpm test -- packages/domain/test/work.test.ts` for the five-group property and the organisation's
+Run `pnpm exec vitest run --project unit packages/domain/test/work.test.ts` for the five-group property and the organisation's
 midnight boundary. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts`
 for scoped queues, reassignment, reopening and local-day boundaries in Tokyo and Los Angeles.
 
