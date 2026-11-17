@@ -53,7 +53,13 @@ test("composer choices are radios and the form adds no tab-panel stop", async ({
   const won = page.getByRole("radio", { name: "Won", exact: true });
   await expect(won).toBeVisible();
   await won.focus();
+  await page.evaluate(() => {
+    const schedule = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+      schedule(handler, delay === undefined ? 1000 : delay, ...args)) as typeof window.setTimeout;
+  });
   await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Lost", exact: true })).toBeFocused();
   await expect(page.getByRole("radio", { name: "Lost", exact: true })).toBeChecked();
   await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.getByRole("tabpanel")).toHaveCount(0);
