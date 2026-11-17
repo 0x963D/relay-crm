@@ -40,6 +40,30 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
       },
     ),
   );
+  const observed = useRef({ id, status: payment.state.status });
+  useEffect(() => {
+    const previous = observed.current;
+    observed.current = { id, status: payment.state.status };
+    if (previous.id !== id || previous.status === payment.state.status) return;
+    void Promise.all([
+      client.invalidateQueries(
+        { queryKey: trpc.payments.list.queryKey() },
+        { cancelRefetch: false },
+      ),
+      client.invalidateQueries(
+        { queryKey: trpc.accounts.get.queryKey({ id: payment.accountId }) },
+        { cancelRefetch: false },
+      ),
+      client.invalidateQueries(
+        { queryKey: trpc.accounts.list.queryKey() },
+        { cancelRefetch: false },
+      ),
+      client.invalidateQueries(
+        { queryKey: trpc.accounts.ledger.queryKey({ id: payment.accountId }) },
+        { cancelRefetch: false },
+      ),
+    ]);
+  }, [client, trpc, id, payment.state.status, payment.accountId]);
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const result = useRef<HTMLDivElement>(null);
