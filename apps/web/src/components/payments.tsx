@@ -63,8 +63,8 @@ export function PaymentsScreen({
           </Button>
         }
       >
-        {data.counts.waitingForApproval} waiting for approval · {data.counts.waitingForProvider}{" "}
-        waiting for the provider
+        {data.counts.needsReview} need review � {data.counts.waitingForApproval} waiting for
+        approval · {data.counts.waitingForProvider} waiting for the provider
       </PageHeader>
       <div className="flex min-h-0 flex-1">
         <section

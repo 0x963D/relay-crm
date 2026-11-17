@@ -17,7 +17,8 @@ test("workspace hydration stays error-free through demo sign-in, checkout and em
     .filter({ hasText: "Leila Farouk" })
     .click();
   const before = await rpc(page).payments.list.query({});
-  const paymentCount = Object.values(before.counts).reduce((sum, count) => sum + count, 0);
+  const paymentCount =
+    before.counts.needsReview + before.counts.waitingForApproval + before.counts.waitingForProvider;
   await page.getByRole("link", { name: "Create card checkout", exact: true }).click();
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("395.00");
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
@@ -114,7 +115,35 @@ test("reconciled payment refreshes its detail, list, header and navigation witho
       .getByRole("navigation", { name: "Main" })
       .getByRole("link", { name: "Payments", exact: true })
       .locator("[data-slot=nav-count]"),
-  ).toHaveText(String(Object.values(after.counts).reduce((sum, count) => sum + count, 0)));
+  ).toHaveText(
+    String(
+      after.counts.needsReview + after.counts.waitingForApproval + after.counts.waitingForProvider,
+    ),
+  );
   expect(navigations).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("payment header and navigation count every action group and exclude decided payments", async ({
+  page,
+}) => {
+  await signIn(page, "accountant");
+  const { counts } = await rpc(page).payments.list.query({});
+  expect(counts.needsReview).toBeGreaterThan(0);
+  expect(counts.decidedThisWeek).toBeGreaterThan(0);
+  await expect(page.locator("main > header")).toContainText(
+    `${String(counts.needsReview)} need review`,
+  );
+  await expect(page.locator("main > header")).toContainText(
+    `${String(counts.waitingForApproval)} waiting for approval`,
+  );
+  await expect(page.locator("main > header")).toContainText(
+    `${String(counts.waitingForProvider)} waiting for the provider`,
+  );
+  await expect(
+    page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Payments", exact: true })
+      .locator("[data-slot=nav-count]"),
+  ).toHaveText(String(counts.needsReview + counts.waitingForApproval + counts.waitingForProvider));
 });

@@ -29,7 +29,7 @@ const agentCount = (data: Outputs["leads"]["agents"]) =>
 const queueCount = (data: Outputs["leads"]["queue"]) =>
   Object.values(data.counts).reduce((sum, n) => sum + n, 0);
 const paymentCount = (data: Outputs["payments"]["list"]) =>
-  Object.values(data.counts).reduce((sum, n) => sum + n, 0);
+  data.counts.needsReview + data.counts.waitingForApproval + data.counts.waitingForProvider;
 const accountCount = (data: Outputs["accounts"]["list"]) => data.total;
 export function Workspace({
   profile,
