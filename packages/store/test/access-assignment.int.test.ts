@@ -159,6 +159,35 @@ describe("assignment under contention", () => {
     expect(await auditCount(db)).toEqual([{ activities: 0, audit: 0, distributions: 0 }]);
   });
 
+  test("round-robin deals the longest-waiting lead first, to the emptiest queue", async ({
+    db,
+  }) => {
+    const w = await world(db);
+    const freshId = await db.seedUser("agent");
+    await db.ownerRows("INSERT INTO memberships(user_id, team_id, is_lead) VALUES ($1,$2,false)", [
+      freshId,
+      w.agent.teamId,
+    ]);
+    const fresh: Assignment = { ownerId: freshId, teamId: w.agent.teamId };
+    const pool = (email: string, createdAt: Date) =>
+      db.seedLead({
+        email,
+        createdAt,
+        lifecycle: { state: { status: "new" }, firstAssignedAt: null, previousOwnerId: null },
+      });
+    const seededFirst = await pool("newest@example.com", new Date("2026-11-16T12:00:00Z"));
+    const seededLast = await pool("oldest@example.com", new Date("2026-11-10T09:00:00Z"));
+    const preview = await db.store.previewDistribution(w.actor, {
+      leadIds: [seededFirst, seededLast],
+      agents: [w.agent, fresh],
+      excludePreviousOwner: false,
+    });
+    expect(preview.items).toEqual([
+      { leadId: seededLast, to: fresh },
+      { leadId: seededFirst, to: w.agent },
+    ]);
+  });
+
   test("concurrent submits and later replays return the first result without new rows", async ({
     db,
   }) => {

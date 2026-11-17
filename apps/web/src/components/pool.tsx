@@ -303,13 +303,15 @@ export function PoolScreen({ zone }: { zone: string }) {
                           ) : person ? (
                             <span className="flex items-center gap-1.5 font-semibold">
                               <Icon name="next" size="small" />
-                              {person.name}
-                              {agents.filter((agent) => agent.ownerId === person.ownerId).length >
-                                1 && (
-                                <span className="block text-xs font-normal text-muted-foreground">
-                                  {person.team}
-                                </span>
-                              )}
+                              <span className="whitespace-nowrap">
+                                {person.name}
+                                {agents.filter((agent) => agent.ownerId === person.ownerId).length >
+                                  1 && (
+                                  <span className="block text-xs font-normal text-muted-foreground">
+                                    {person.team}
+                                  </span>
+                                )}
+                              </span>
                             </span>
                           ) : (
                             "Not selected"
@@ -460,8 +462,8 @@ export function PoolScreen({ zone }: { zone: string }) {
                         <fieldset className="space-y-2">
                           <legend className="text-caption font-semibold">Share between</legend>
                           <p className="text-caption text-secondary-foreground">
-                            Leads are dealt one at a time, in turn. The agent with the fewest open
-                            leads goes first.
+                            The lead that has waited longest goes first, to the agent with the
+                            fewest open leads. The rest follow one at a time, in turn.
                           </p>
                           <div className="grid gap-2 @xs/assignment:grid-cols-2">
                             {people.map((agent) => (

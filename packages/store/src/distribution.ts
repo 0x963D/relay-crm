@@ -140,12 +140,18 @@ export async function previewDistribution(
     const current = await currentActor(tx, actor);
     if (!scopeHasRecords(recordScope(current, "lead", "assign")))
       throw new AccessError("accessDenied");
-    const leads: DistributionLead[] = [];
+    const waiting: { lead: DistributionLead; since: Date }[] = [];
     for (const id of [...new Set(request.leadIds)].sort()) {
       const row = await scopedLead(tx, current, id, "assign");
       if (row.status !== "new") throw new AccessError("conflict");
-      leads.push({ id, version: row.version, lifecycle: lifecycleFromRow(row) });
+      waiting.push({
+        lead: { id, version: row.version, lifecycle: lifecycleFromRow(row) },
+        since: row.createdAt,
+      });
     }
+    const leads = waiting
+      .sort((a, b) => a.since.getTime() - b.since.getTime() || a.lead.id.localeCompare(b.lead.id))
+      .map((entry) => entry.lead);
     const agents = [...request.agents].sort(
       (a, b) => a.ownerId.localeCompare(b.ownerId) || a.teamId.localeCompare(b.teamId),
     );
