@@ -6,6 +6,7 @@
 
 A completed payment credits its account exactly once through a balanced, immutable ledger posting.
 Webhook redelivery, reconciliation and the final manual approval use the same settlement function, so concurrent completion cannot credit it again.
+It writes the payment, ledger posting, audit and completion outbox row in one transaction.
 
 The real-PostgreSQL test [payments.int.test.ts](../packages/store/test/payments.int.test.ts),
 `a webhook, its duplicate and the reconciler collide and credit exactly once`, holds a database
@@ -25,15 +26,8 @@ to check postings and balances.
 
 ## Payments and receipts
 
-A payment credits its account exactly once. Webhooks, reconciliation and the final manual approval
-call one settle function. It writes the payment, balanced ledger posting, audit and completion
-outbox row in the same transaction. The [card race](../packages/store/test/payments.int.test.ts) and
-[manual approval race](../packages/store/test/manual-payments.int.test.ts) exercise this on PostgreSQL.
-Run them with `pnpm exec dotenv -- vitest run --project integration packages/store/test/payments.int.test.ts packages/store/test/manual-payments.int.test.ts -t "collide and credit exactly once"`.
-
-Someone holding the app's database credentials can record approvals in two eligible people's names and complete a manual payment, because the database checks who is named as approver and not who is connected.
-Someone holding the app's database credentials can change a closed lead's owner or account, or reopen a lost lead by inserting an intake event, because the database guards status changes and not the intake's origin.
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/payment-guards.int.test.ts packages/store/test/work.int.test.ts -t "database credentials"` to check these limits.
+For the guarantees enforced by PostgreSQL, see [the money invariant](#the-money-invariant).
+For the limits of direct database access, see [operational limits](limits.md#operational-limits).
 
 ### Card payments
 
@@ -41,8 +35,8 @@ Sandbox payments are off by default. Set `RELAY_SANDBOX=1`, `RELAY_SANDBOX_URL` 
 origin, and distinct `RELAY_PAYMENT_WEBHOOK_SECRET` and `RELAY_RECONCILE_SECRET` values. The sandbox
 moves no real money. A production build refuses sandbox startup without `RELAY_DEMO=1`.
 With that setting, payment API responses and account ledger responses carry `demo: true` for
-screens to show a demo banner. The flag is false otherwise. `pnpm test -- apps/web/test/env.test.ts`
-and `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
+screens to show a demo banner. The flag is false otherwise. [environment tests](#verification)
+and [payment HTTP tests](#verification)
 check the startup rule and response flag. The sandbox stores its checkout status separately from the CRM payment and signs
 webhooks over the timestamp, a period and the raw body with HMAC-SHA256.
 
@@ -56,7 +50,7 @@ The pay URL contains a random bearer token. Only its SHA-256 hash is stored. Onl
 creation response returns the URL. Later reads and creation replays return no token or pay URL.
 If that response is lost after provider creation, close the waiting payment and create another.
 Creation replays recheck current account edit access.
-`pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts` checks
+[payment HTTP tests](#verification) checks
 that an accountant cannot pay with a disclosed payment ID, and that tokens use 32 random bytes.
 `recordedById` and `soldById` are fixed at creation.
 
@@ -90,22 +84,21 @@ An active creation request has a token and a 30-second deadline. Only its owner 
 Reconciliation waits for creation to finish or its deadline to pass, even when the first check delay is zero.
 The provider refuses creation after the payment leaves `checkoutCreated`. Unknown provider checkouts fail with `the checkout was never created at the provider`.
 Checkouts expire after `RELAY_CHECKOUT_TTL_MS`, default 86400000 milliseconds.
-Run `pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`
+Run [payment HTTP tests](#verification)
 for expiry, missing checkouts and staff closure.
 
 PostgreSQL checks the payment state shape and transitions. Deferred constraint triggers require a
 completed payment to have a posting with balanced lines matching its account, currency and amount,
 and exactly one outbox row. Outbox rows cannot be deleted, truncated or moved to another payment.
 The unique payment index refuses another posting. Triggers refuse updates, deletes and truncation on ledger
-accounts, postings and lines. Settlement writes the state, posting, audit and `paymentCompleted`
-outbox row in the same transaction. The worker delivers the receipt after commit.
+accounts, postings and lines. The worker delivers the receipt after commit.
 A replay writes no new state, posting, audit or outbox row; delivery/check history remains observable.
 
 Run `pnpm reconcile` using the repository environment. A scheduler can instead send
 `POST /api/payments/reconcile` with `Authorization: Bearer <RELAY_RECONCILE_SECRET>`.
 The reconcile HTTP route returns only `checked` and `changed` counts. The outbox HTTP route returns
 only `processed`, `sent`, `failed`, `suppressed`, `unknown`, `superseded` and `recordingFailed` counts. Neither returns record IDs.
-`pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts` verifies that.
+[payment HTTP tests](#verification) verifies that.
 `pnpm exec dotenv -- vitest run --project integration apps/web/test/job-routes.int.test.ts packages/store/test/jobs.int.test.ts`
 checks both HTTP routes. Each allows five failed authentication attempts per client address per
 60-second window, then returns 429 with `Retry-After: 60`. Valid secrets do not consume that failed
@@ -127,10 +120,10 @@ A competing job that loses the claim skips the provider call. The claim moves `n
 so a stopped job becomes eligible again. Provider read errors record an unsuccessful check and
 leave the payment for its next check. Provider failures and expiry close the payment without credit.
 
-`pnpm test -- apps/web/test/env.test.ts` verifies the timing defaults. `RELAY_RECONCILE_FIRST_MS`
+[environment tests](#verification) verifies the timing defaults. `RELAY_RECONCILE_FIRST_MS`
 defaults to 900000 and `RELAY_RECONCILE_INTERVAL_MS` to 300000. `RELAY_SANDBOX_LATE_MS` defaults to 30000. For a local interview run, set the first delay to zero and the late delay long enough to
 call the reconciler before delivery. Signature, timestamp tolerance and replay behavior run in
-`pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts`.
+[payment HTTP tests](#verification).
 
 Sandbox delivery runs after the pay response in the serving process. A process exit can lose that
 delivery; reconciliation recovers the completed provider status. This is a sandbox failure mode,
@@ -268,3 +261,17 @@ The creation panel shows the pay link once. Opening it creates a new tab with no
 Payment records show the sold-by agent and the signed-in person's available actions. Review panels compare money only for a money mismatch. Paid-after-close panels compare the states and say when the amount and currency match. The event log runs oldest first and groups consecutive unchanged checks.
 
 `payments.receiptUse` finds the payment using a receipt hash within the caller's read scope. The duplicate-receipt refusal links it when that read succeeds.
+
+## Verification
+
+Run the payment HTTP tests for sandbox startup, response flags, checkout privacy, expiry, staff closure, webhook signatures and job responses.
+
+```sh
+pnpm exec dotenv -- vitest run --project integration apps/web/test/payments.int.test.ts
+```
+
+Run the environment tests for startup requirements and timing defaults.
+
+```sh
+pnpm exec vitest run --project unit apps/web/test/env.test.ts
+```

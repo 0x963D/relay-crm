@@ -2,7 +2,7 @@
 
 [Back to Relay CRM](../README.md)
 
-### How intake stays correct under concurrency
+## How intake stays correct under concurrency
 
 `resolveIntake` in the domain is a pure function. It takes what the database holds for a
 submission and returns one decision. `store.intake` loads that snapshot, calls the function and

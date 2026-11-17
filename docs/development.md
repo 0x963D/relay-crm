@@ -117,7 +117,7 @@ Database test files run sequentially.
 System scopes are `system:<job name>`. The helper canonicalizes JSON object keys, preserves array
 order, and compares both the request hash and operation name before replaying. It runs inside the
 caller's transaction and does not authorize the operation. Callers authorize new work before writing.
-Distribution uses this helper. Its former receipt table and lookup no longer exist.
+Distribution uses this helper.
 
 `Principal` includes the named system actors `intake`, `providerWebhook` and `reconciler`.
 `recordScope` grants intake only lead identity lookup and reopening. It denies full-record reads,
@@ -171,7 +171,7 @@ The browser CI job runs these checks and the capture script. A failing check fai
 
 `capture` writes 2x images under `test-results/evidence/built/`. Set `RELAY_EVIDENCE_DIR` to use another directory. Logs, accessibility results and failure traces stay beside them.
 `pnpm capture:readme` writes the six queue, pool and payment images under `docs/images/` at twice the pixel density. The capture seed and browser share a fixed date. Counts, names, dates and assignment results
-come from the seeded API, so they can differ from the illustrative board.
+come from the seeded API.
 Both commands stop their servers and drop only their own test database when they finish.
 
 ### Routes and data

@@ -2,7 +2,7 @@
 
 [Back to Relay CRM](../README.md)
 
-### Read the API
+## Read the API
 
 These three POSIX-shell commands use curl and Node.js. The first signs in as a manager and saves a
 local cookie file. The second reads Dele's queue. The third finds Jonas's account and reads its
@@ -56,7 +56,7 @@ The tRPC router is exported as `AppRouter` from `apps/web/src/server/rpc.ts`.
 It serves these operations under `/api/trpc`.
 
 - `leads.list`, `leads.get` and `leads.edit` read or update contact fields within scope.
-- `accounts.list` and `accounts.get` read accounts within scope. Account writes are not exposed yet.
+- `accounts.list` and `accounts.get` read accounts within scope. The router exposes no account-write operation.
 - `leads.assign` assigns pool lead IDs to an agent's sales team. `leads.reassign` keeps the lead's status.
 - `distribution.preview` takes lead IDs, chosen agents and `excludePreviousOwner`.
 - `distribution.submit` takes `previewId`, `fingerprint` and an idempotency `key`.
