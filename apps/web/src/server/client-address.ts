@@ -12,8 +12,12 @@ function canonicalAddress(value: string): string | null {
   const address = value.trim().toLowerCase();
   if (isIP(address) === 4) return address;
   if (isIP(address) !== 6) return null;
-  const mapped = address.replace(/^::ffff:/, "");
-  return isIP(mapped) === 4 ? mapped : new URL(`http://[${address}]/`).hostname;
+  // The URL parser gives each address one spelling, and a mapped IPv4 address two hex groups.
+  const spelling = new URL(`http://[${address}]/`).hostname;
+  const mapped = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/.exec(spelling);
+  if (!mapped) return spelling;
+  const [high, low] = [parseInt(mapped[1] ?? "", 16), parseInt(mapped[2] ?? "", 16)];
+  return [high >> 8, high & 255, low >> 8, low & 255].join(".");
 }
 
 export class ClientAddressError extends Error {

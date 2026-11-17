@@ -26,6 +26,11 @@ describe("client addresses", () => {
   it("canonicalizes equivalent IPv6 client addresses", () => {
     expect(address("2001:db8:0:0:0:0:0:1", 1)).toBe(address("2001:db8::1", 1));
   });
+  it("writes a mapped IPv4 address as IPv4 in either spelling", () => {
+    expect(address("::ffff:192.0.2.1", 1)).toBe("192.0.2.1");
+    expect(address("::ffff:c000:201", 1)).toBe("192.0.2.1");
+    expect(address("0:0:0:0:0:ffff:c000:0201", 1)).toBe("192.0.2.1");
+  });
 });
 
 it("refuses an unknown client with a fixed error and logs the configuration once", async () => {
