@@ -273,3 +273,22 @@ test("work endpoints parse commands, preserve callback dates and carry the HTTP 
   });
   expect((await caller.leads.get({ id })).lostNote).toBe("Starts next year");
 });
+
+test("normal RPC refusals use their code at info level without request data", async ({ db }) => {
+  const failed = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const refused = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  try {
+    const response = await rpc({ store: db.store, principal: null }, "leads.list", { limit: 10 });
+    expect(response.status).toBe(401);
+    expect(failed).not.toHaveBeenCalled();
+    expect(refused).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "rpc.UNAUTHORIZED",
+        requestId: response.headers.get("x-request-id"),
+      }),
+    );
+  } finally {
+    failed.mockRestore();
+    refused.mockRestore();
+  }
+});

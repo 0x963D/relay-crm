@@ -22,6 +22,7 @@ import superjson from "superjson";
 import { z } from "zod";
 import { boundedRequest } from "./http.ts";
 import { reportFailure } from "./errors.ts";
+import { logToConsole } from "./log.ts";
 
 export interface RpcContext {
   readonly timeZone?: string;
@@ -51,7 +52,21 @@ const t = initTRPC.context<RpcContext>().create({
   transformer: superjson,
   errorFormatter: ({ shape, error, ctx }) => {
     const accessFailure = isAccessError(error.cause) ? error.cause.code : null;
-    const failure = accessFailure
+    const refused =
+      accessFailure ||
+      [
+        "UNAUTHORIZED",
+        "FORBIDDEN",
+        "BAD_REQUEST",
+        "NOT_FOUND",
+        "CONFLICT",
+        "TOO_MANY_REQUESTS",
+        "PAYLOAD_TOO_LARGE",
+        "METHOD_NOT_SUPPORTED",
+      ].includes(error.code);
+    if (refused)
+      logToConsole(`rpc.${accessFailure ?? error.code}`, { requestId: ctx?.requestId }, "info");
+    const failure = refused
       ? null
       : reportFailure("rpc.failed", error.cause ?? error, undefined, ctx?.requestId);
     return {
