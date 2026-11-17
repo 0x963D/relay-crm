@@ -2,12 +2,11 @@
 
 [Back to Relay CRM](../README.md)
 
-## Read the API
+Every screen reads and writes through one tRPC router at `/api/trpc`, and a script can call the same operations. This page lists each operation with its input, its result and the ways it refuses. A refusal is a typed code and never a bare error string, so a client can tell a product rule from a failure. An operation that appends history takes an idempotency key, so a retry after a lost response writes nothing twice.
 
-These three POSIX-shell commands use curl and Node.js. The first signs in as a manager and saves a
-local cookie file. The second reads Dele's queue. The third finds Jonas's account and reads its
-ledger, so it does not rely on an account ID that changes after reset. If you changed the app port,
-set `RELAY_ORIGIN` to that app URL before running them.
+## Read it with curl
+
+With the demo running, these three commands sign in as the manager, read an agent's queue and read one account's ledger. They need curl and Node.js in a POSIX shell. If you changed the app's port, set `RELAY_ORIGIN` to its address first.
 
 ```sh
 (umask 077; curl -fsS -c relay-demo.cookies \
@@ -32,169 +31,198 @@ curl -fsS -b relay-demo.cookies --get \
   "${RELAY_ORIGIN:-http://127.0.0.1:3107}/api/trpc/accounts.ledger"
 ```
 
-A tRPC read needs a URL-encoded `input` parameter containing the SuperJSON envelope `{"json":...}`.
-`--get --data-urlencode` performs that encoding, including braces and quotes. Sending the inner
-object alone is not equivalent. Responses also use SuperJSON, including metadata for dates and
-minor-unit bigint values. The manager session may read the queue and ledger; an agent session may
-read only its allowed queue and payments and has no ledger access.
+The second command uses Dele Akinwale's fixed demo ID. The third looks Jonas Weber's account up by name, because account IDs change at every reset.
 
-## Sign in and assign through the API
+## How a call works
 
-Staff users and their memberships must already exist. There is no provisioning screen.
-Set `AUTH_SECRET` and `AUTH_URL` to enable sign-in. Set `SMTP_URL` and `SMTP_FROM` to deliver codes
-through SMTP. Without SMTP, only development can enable sign-in and print a code to the console.
-Production refuses that configuration. A build reads no auth configuration and needs no database.
+- A query is a `GET` with one URL-encoded `input` parameter. A mutation is a `POST` with a JSON body.
+- Both wrap their input in the SuperJSON envelope `{"json": ...}`. Sending the inner object alone fails input parsing. `--get --data-urlencode` does the URL encoding in the commands above.
+- Responses use the same envelope. Dates and money come back as strings in `json`, and `meta` names the fields that are dates or 64-bit integers.
+- A `POST` must carry an `Origin` header equal to the origin of `AUTH_URL`, or it gets 403. A request without a session gets 401.
+- The response to each call has an `X-Request-ID` header. The audit rows and timeline entries a write creates carry the same ID.
+- Inputs are strict. An unknown field, a malformed UUID or an out-of-range number is refused before any operation runs.
+- `limit` is 1 to 100 wherever it appears.
 
-Request a code at `POST /api/auth/email-otp/send-verification-otp` with
-`{"email":"staff@example.com","type":"sign-in"}`. Submit it to `POST /api/auth/sign-in/email-otp`
-with `{"email":"staff@example.com","otp":"123456"}`, then keep the session cookie.
-Send JSON and an `Origin` header matching `AUTH_URL` on auth and tRPC mutations.
-`POST /api/auth/sign-out` ends the session. Other auth endpoints are closed except session read.
-Sign-in code delivery runs after the response. It keeps its own mailer path and does not enter the receipt outbox.
+The router's type is exported as `AppRouter` from `apps/web/src/server/rpc.ts`. [Access and security](access-security.md) covers sign-in, scope and the limit on body size.
 
-The tRPC router is exported as `AppRouter` from `apps/web/src/server/rpc.ts`.
-It serves these operations under `/api/trpc`.
+## Refusals
 
-- `leads.list`, `leads.get` and `leads.edit` read or update contact fields within scope.
-- `accounts.list` and `accounts.get` read accounts within scope. The router exposes no account-write operation.
-- `leads.assign` assigns pool lead IDs to an agent's sales team. `leads.reassign` keeps the lead's status.
-- `distribution.preview` takes lead IDs, chosen agents and `excludePreviousOwner`.
-- `distribution.submit` takes `previewId`, `fingerprint` and an idempotency `key`.
-  Keys belong to the authenticated user. The same key, operation and request hash return exactly
-  the stored first result, including its original owners, after a role or scope change.
-  A valid session for that same actor is still required. Another actor cannot replay its receipt.
-  Different input or a different operation returns `idempotencyConflict` with the message
-  "The key was already used for a different request."
-- `session.current` returns the principal, current team and available memberships.
-- `session.selectTeam` selects a current membership or clears it. A sole membership is selected
-  again on the next session load. An unselected user with several memberships must choose before
-  using team-scoped operations.
+A refused operation returns its code in `error.json.data.accessFailure`, with a message written for the person at the screen.
 
-Out-of-scope records return access denied. A changed preview returns a typed conflict.
-The API error includes `data.accessFailure` for these domain refusals.
+| Code                        | Status | Meaning                                                         |
+| --------------------------- | ------ | --------------------------------------------------------------- |
+| `accessDenied`              | 403    | The record is outside the caller's scope, or does not exist     |
+| `teamSelectionRequired`     | 400    | The caller belongs to several teams and has not chosen one      |
+| `conflict`                  | 409    | The record is not in the state the operation needs              |
+| `stalePreview`              | 409    | A lead in the preview changed, or the preview is someone else's |
+| `idempotencyConflict`       | 409    | The key was already used for a different request                |
+| `invalidAgent`              | 400    | The target is not an agent in a sales team                      |
+| `noEligibleAgent`           | 400    | Round-robin excluded every chosen agent for one of the leads    |
+| `leadClosed`                | 400    | The lead is won, lost or dead                                   |
+| `invalidTransition`         | 400    | The lead has not been worked, so it cannot be won or lost       |
+| `callbackInPast`            | 400    | The callback time is not in the future                          |
+| `callbackNotSet`            | 400    | There is no callback to clear                                   |
+| `wrongNumberNeedsAnAttempt` | 400    | No attempt is recorded in the lead's current assignment         |
+| `pendingPayment`            | 409    | The account already has a payment in progress                   |
+| `receiptUsed`               | 409    | A live manual payment already uses this receipt hash            |
+| `refreshConflict`           | 409    | The payment changed since the caller read it                    |
+| `paymentRecorder`           | 400    | The caller recorded this payment and cannot approve it          |
+| `paymentMaker`              | 400    | The caller edited this payment and cannot approve it            |
+| `alreadyApproved`           | 400    | The caller already approved this payment                        |
+| `roleChanged`               | 400    | An approver's role changed since the approval was prepared      |
+| `receiptAttemptLimit`       | 409    | The receipt has reached its lifetime attempt limit              |
+
+An unexpected failure has no code. [Error responses](access-security.md#error-responses) says what it returns.
+
+## Idempotency keys
+
+A `key` is 1 to 200 characters and belongs to the signed-in person. The store saves the first result under the key, with a hash of the input.
+
+- The same key with the same operation and input returns the saved result and writes nothing.
+- The same key with a different operation or input returns `idempotencyConflict`.
+- Another person cannot replay the key, because keys are scoped to their owner.
+
+A replay still needs a valid session. The lead work operations check the caller's current access before they replay. `distribution.submit` returns its saved result even after the caller's role or scope has changed, so a retry reports what the first call did.
+
+## Session
+
+| Operation            | Input                         | Result                                                                   |
+| -------------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| `session.current`    | None                          | The session, its expiry, the role, every membership and the current team |
+| `session.profile`    | None                          | The same role and teams, with the person's name                          |
+| `session.selectTeam` | `teamId`, or null to clear it | `{ selected: true }`. A team the caller does not belong to is refused    |
+
+## Leads
+
+| Operation        | Input                                       | Result                                                                               |
+| ---------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `leads.list`     | `limit`                                     | Leads in read scope, newest first, each with its original source and campaign        |
+| `leads.get`      | `id`                                        | One lead with its custody, attribution and timeline                                  |
+| `leads.pool`     | `limit`, `offset`                           | Unassigned leads the caller may assign, the pool's `total` and `oldestAt`            |
+| `leads.agents`   | `offset`                                    | Agents in sales teams within the caller's scope, each with an open-lead count        |
+| `leads.queue`    | Optional `agentId`, `limit`, `offset`       | One agent's open leads in [five groups](#the-queue)                                  |
+| `leads.edit`     | `id`, `name`, `phone`                       | The lead with its new name and phone. The email is the identity and cannot be edited |
+| `leads.assign`   | `leadIds`, `to` with `ownerId` and `teamId` | Assigns pool leads to one agent. A lead that left the pool returns `conflict`        |
+| `leads.reassign` | `leadId`, `to`                              | Moves an owned lead and keeps its status, stage and callback                         |
+
+Reassigning a lead to the agent who already holds it returns `changed: false` with no items and writes no history.
+
+`leads.get` returns `custody`, which says where the lead came from, who assigned it last and who holds it now. Its `timeline` runs newest first. Each entry has the actor's name, the submitted command and the request ID. An attempt entry also has its callback time and the count of unanswered attempts up to that point. `contactedAt` is null until someone has spoken to the person.
+
+## The queue
+
+`leads.queue` reads the open leads one agent owns and puts each in exactly one group. The server supplies the current instant and the organisation's time zone from `RELAY_TIME_ZONE`, so every viewer sees the same grouping.
+
+| Group              | Holds                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| `overdueCallbacks` | Callbacks before now, including ones from earlier today                  |
+| `dueToday`         | Callbacks later on the current local calendar day                        |
+| `later`            | Callbacks after the current local calendar day                           |
+| `noCallbackSet`    | No callback, and an attempt recorded since the lead's current assignment |
+| `notYetCalled`     | No callback, and no attempt since the lead's current assignment          |
+
+The callback groups run soonest first. `notYetCalled` runs by assignment time, newest first. A note is not an attempt, and attempts made before a reassignment do not count for the new owner. `limit` bounds each group, `counts` gives each group's full size, and `nextCallbackAt` is the earliest callback still in the future.
+
+The default target is the caller. Only an agent has a queue. A team lead can open the queue of an agent in their current sales team, and managers, admins and owners can open any agent's. Every row still has to pass the viewer's own read scope.
+
+The partition is the README's last proof, and `work.int.test.ts` repeats it against PostgreSQL in Tokyo and Los Angeles time.
+
+The queue loads every open lead of the agent with its full activity history on each request, groups them in memory and then applies `limit`. Its cost grows with the agent's open leads and their history, not with the page size.
 
 ## Working a lead
 
-The queue reads all of an agent's open leads with their activity history on each request, then applies the per-group limit.
+Four operations record work. Each takes the lead `id` and a `key`, and returns the lead's `id` and an `accountId` that is null unless the lead was won.
 
-Only agents have a work queue. A sales team lead can view an agent's queue on their selected team.
-Managers, admins and owners can request any agent's queue. Each row still passes the viewer's
-record read scope. The default target is the signed-in agent.
+| Operation           | Further input                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `leads.logAttempt`  | `channel` of `call` or `whatsApp`, `outcome` of `noAnswer` or `spokeToThem`, a `note`, an optional `callback` |
+| `leads.addNote`     | A `note`                                                                                                      |
+| `leads.setCallback` | `change`, either `{ "kind": "set", "at": <date> }` or `{ "kind": "clear" }`                                   |
+| `leads.close`       | `closing`, one of `won`, `lost` with a `note`, or `dead` with a `reason`                                      |
 
-Every open lead owned by that agent appears in exactly one of five groups. The server supplies
-the current instant and `RELAY_TIME_ZONE`, the organisation's IANA time zone, which defaults to UTC.
+An agent works their own leads. Anyone else needs edit scope, and a team lead's read access to a teammate's lead does not include it.
 
-- `overdueCallbacks` holds callbacks before the current instant, including earlier today.
-- `dueToday` holds remaining callbacks on the current local calendar day.
-- `noCallbackSet` holds leads with a recorded attempt in their current assignment and no callback.
-- `notYetCalled` holds leads with no recorded attempt since their current assignment and no callback.
-- `later` holds callbacks after the current local calendar day.
+The lead's state follows one transition table in `packages/domain/src/lead.ts`.
 
-Callback groups are ordered by callback time, soonest first. `notYetCalled` is ordered by the
-current assignment time, newest first. Notes do not count as attempts. Reassignment and assignment
-after reopening start a new attempt window. Rows include the intake `source`, campaign and
-`assignedAt`. `limit` bounds each group. `counts` gives each full group count and `nextCallbackAt`
-gives the earliest future callback, including one due later today.
-Run `pnpm exec vitest run --project unit packages/domain/test/work.test.ts` for the five-group property and the organisation's
-midnight boundary. Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts`
-for scoped queues, reassignment, reopening and local-day boundaries in Tokyo and Los Angeles.
+| State      | Means                                                          | Leaves by                                   |
+| ---------- | -------------------------------------------------------------- | ------------------------------------------- |
+| `new`      | In the pool with no owner                                      | Assignment, or a dead close                 |
+| `assigned` | Owned and not yet worked                                       | An attempt or a callback, or a dead close   |
+| `working`  | Owned, with a stage of ready, contacted, callback or no answer | A won, lost or dead close                   |
+| `won`      | Closed with an account                                         | Nothing                                     |
+| `lost`     | Closed with a written note                                     | A new enquiry, which returns it to the pool |
+| `dead`     | Closed as duplicate, wrong number or do not contact            | Nothing                                     |
 
-The typed API exposes these writes. Each takes a lead `id` and an idempotency `key`.
+Five rules decide most refusals.
 
-- `leads.logAttempt` takes `channel` of `call` or `whatsApp`, `outcome` of `noAnswer` or
-  `spokeToThem`, and a nonempty `note`. An optional `callback` saves with the attempt.
-- `leads.addNote` takes a nonempty `note`.
-- `leads.setCallback` takes `change` of `{ kind: "set", at: Date }` or `{ kind: "clear" }`.
-  Setting also moves an existing callback. The time must be in the future.
-- `leads.close` takes a `closing` union. `won` has no reason. `lost` takes only a nonempty written `note`. `dead` takes `duplicate`, `wrongNumber` or `doNotContact`.
+- Only `spokeToThem` records contact. An unanswered call or message does not.
+- Winning and losing need a `working` lead, so at least one attempt or callback comes first.
+- A `wrongNumber` close needs an attempt in the current assignment. A `duplicate` or `doNotContact` close does not.
+- A callback must be in the future. Setting one over an existing callback moves it.
+- A closed lead refuses further work with `leadClosed`.
 
-Only `spokeToThem` records contact. A call or WhatsApp attempt alone does not.
-The transition table decides the working stage. Clearing a callback moves a lead that was waiting
-on it to working in `ready`, without claiming contact. Clearing an unset callback returns
-`callbackNotSet` and writes no history. `noAnswerCount` on the queue and detail counts the recorded
-no-answer attempts across callbacks. Every lead in this schema has recorded work history. The `noAnswer` stage's `count` is the consecutive count from
-the transition table. Setting a callback replaces that stage, but preserves the attempt history.
+Winning creates the account in the same transaction, owned by the lead's agent and team. If two people win the same lead at once, the second transaction runs again, finds the lead won and returns the existing account. It creates no second account and no second closing entry.
 
-An agent can work their own lead. Anyone else needs its existing edit scope. A team lead's team
-read scope does not grant edits to a teammate's lead. Closed leads refuse further work.
-Winning or losing requires a working lead. A wrong-number close requires a recorded attempt in
-the current assignment, including after reassignment. Otherwise it returns `wrongNumberNeedsAnAttempt`
-with a message asking the agent to try contacting the lead first. Duplicate and do-not-contact
-closures also work before an attempt.
-Every accepted write commits its activity and audit with the acting user and HTTP request ID.
-A replay rechecks current access and adds no history. Reusing a key with different input refuses
-with `idempotencyConflict`.
+PostgreSQL enforces the same states without the app. A CHECK constraint admits only the column combinations these states allow and requires a won lead to have an account. A trigger refuses any status change out of `won` or `dead`, and lets a `lost` lead return to `new` only in a transaction that also records the reopening intake event.
 
-Winning creates an account owned by the lead's current agent and team in the same serializable
-transaction. The global lead email identity and `leads_account_id_key` link that person to an
-account. The `leads_state_shape` CHECK requires a won lead to have an account, and its foreign key
-requires that account to exist. A competing win retries the whole transaction and returns the
-existing account. It creates no further account or closing activity. A later enquiry for that
-person links to the account through intake. Run
-`pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts`
-for the forced win collision, win against reassignment, close against intake and direct SQL refusal.
-The database refuses every status change out of won or dead. A lost lead can only return to new
-with its previous owner recorded and a new reopening intake event in the same transaction.
-Intake attachments update the lead before appending history so their sequence reflects the order
-of the lead decisions.
+## Assignment
 
-`leads.get` includes custody, original attribution and the timeline in descending database sequence.
-Custody gives the original intake source and receipt time, the latest assigner and assignment time,
-and the current holder. Missing custody is null. Timeline entries include actor names,
-the submitted command and the request ID. Attempt summaries return `callbackAt` as a date and
-`noAnswerCount` at that entry. Activity snapshots are JSON objects. Entries remain append-only.
+Team leads and managers assign pool leads by hand with `leads.assign`, or deal them out with the two distribution operations.
 
-`contactedAt` is null when no contact is recorded. The timeline retains each observed attempt
-at its recorded time.
+| Operation              | Input                                       | Result                                                                           |
+| ---------------------- | ------------------------------------------- | -------------------------------------------------------------------------------- |
+| `distribution.preview` | `leadIds`, `agents`, `excludePreviousOwner` | A stored preview with its `id`, `fingerprint` and the planned owner of each lead |
+| `distribution.submit`  | `previewId`, `fingerprint`, `key`           | The assignments that were applied                                                |
 
-## Campaign funnel and accounts
+Round-robin deals one lead at a time, starting with the lead that has waited longest. The agent with the fewest open leads takes the first turn, and equal counts go by ascending user ID. With `excludePreviousOwner`, a lead skips the agent who held it before it returned to the pool.
 
-`reports.funnel` is available to managers, admins and owners. Accountants, agents and team leads
-cannot read it. It returns `rows`, `campaignCount` and `otherSourceCount`. Each row groups the
-original intake source and campaign, so a form and an ad with the same campaign name stay separate.
-Each row gives leads received, still unassigned, contacted,
-won and conversion as won divided by received. It counts each lead once under its creating intake,
-including leads later closed as dead and leads later reopened or reassigned. Repeat submissions and enquiries linked to accounts add no received
-leads. Leads without recorded attribution have null source and campaign. `campaignCount` counts
-named Meta Lead Ads campaign rows. `otherSourceCount` counts distinct remaining sources, including
-unattributed leads as a null source. A Meta Lead Ads row without a campaign is also an other source.
+The preview is the contract. It stores each lead's version, and a submit applies exactly the stored plan or nothing. If any lead changed after the preview, even back to the same state, the submit returns `stalePreview` and assigns none of them. The manager confirms what they saw, and never a plan recomputed after the click.
 
-A campaign's `contacted` counts leads with a recorded conversation. An unanswered attempt does not count.
+Every changed assignment commits the new owner, a timeline entry and an audit row in one transaction. A submit's audit rows also reference its idempotency record.
 
-`accounts.list` returns `items` and the scoped `total` before the limit. For an accountant, accounts with ledger postings come first. Within each group it orders by the person's name, then email, then account ID. Other roles use that name order for the whole list. Each item includes the owner, the person's name and email,
-and the creating intake's campaign. An accountant can read this identity without access to lead
-records. Every caller who can list an account can also read its payment summary. `paymentCount`
-counts all payments, and `paymentInProgress` is the state of a pending approval or card checkout,
-or null when none is in progress. The existing payment decoder supplies the states.
+## Accounts and the funnel
 
-Callers who may read the ledger also receive `balances` by currency from the existing ledger
-reader. Agents and team leads receive `balances: null`. An account without ledger entries has an
-empty balance list. There is no stored balance or separate balance calculation.
-Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts apps/web/test/rpc.int.test.ts`
-for role scope, account balances, boundary parsing and request correlation.
+| Operation         | Input             | Result                                                        |
+| ----------------- | ----------------- | ------------------------------------------------------------- |
+| `accounts.list`   | `limit`, `offset` | `items`, the scoped `total` and the `order` used              |
+| `accounts.get`    | `id`              | One account in the same shape as a list item                  |
+| `accounts.ledger` | `id`              | Each currency's balance and its entries with running balances |
+| `reports.funnel`  | None              | `rows`, `campaignCount` and `otherSourceCount`                |
 
-Run `pnpm test:mutations <output-directory> work-` to remove the selected work checks in turn,
-require each named test to fail, restore its source and rerun the baseline.
-Run `pnpm test:prod` for the signed-in production journey. Its `LIVE_WORK` output records form
-intake, manager assignment, the agent's queue, no answer, a callback, confirmed contact, a win,
-and read-back of the timeline, account and funnel. `LIVE_QUEUE_FIXES` records a worked lead
-remaining in the queue, reassignment, reopening and assignment, written lost closure, a dated
-timeline callback, separate intake sources and the manager and agent account responses.
+An account item has its owner, the customer's name and email, the campaign that created the lead, `paymentCount` and `paymentInProgress`. Callers who may read the ledger also get `balances` by currency. Agents and team leads get `balances: null`. An accountant's list puts accounts that have postings first, and every list orders by the customer's name, then email. The router has no operation that writes an account. Winning a lead is the only way to open one.
 
-## Payment API
+A ledger entry's `completion` says who completed the payment. It is `providerWebhook`, `reconciler` or `manualApproval`, and a manual completion also names the second approver.
 
-The [payment reference](payments.md) covers card checkouts, manual approval, receipt reads, the event log and the ledger. `payments.get` returns the signed-in person's actions, including `closeReview`. Forms use those decisions instead of deriving access from a role name.
+`reports.funnel` is for managers, admins and owners. Each row is one original source and campaign, so a web form and an ad with the same campaign name stay apart. A row counts leads received, still unassigned, contacted and won, and gives conversion as won divided by received. A lead counts once, under the intake that created it, however often it was reassigned or reopened. A repeat enquiry adds no lead. `contacted` counts leads with a recorded conversation, not leads with an attempt.
 
-## Assignment guarantees
+## Payments
 
-- Team leads and management manually assign pool leads, individually or in a batch.
-  Round-robin deals the leads one at a time to the selected agents in turn, starting with the lead that has waited longest. The agent with the fewest open leads goes first, and ties go by ascending user ID. It skips a lead's previous owner when asked, and stores an immutable preview with a fingerprint. Changed leads invalidate the preview,
-  even if a lead returns to its earlier state. A matching idempotency key and request replays the
-  stored result. A different request under the same key returns `idempotencyConflict`.
-  The planner can exclude previous owners. Reassignment preserves status and follow-up detail.
-  Reassigning the current owner returns `changed: false` with no items and writes no history.
-- Every changed assignment commits ownership, an activity and an append-only audit row together.
-  Intake reopening also audits the removed owner. Audit snapshots are JSON objects, with typed
-  subjects, database-enforced actions and a request ID. Distribution audits also reference their
-  idempotency receipt. These writes share the operation's serializable transaction.
-  A typed tRPC API parses inputs and uses SuperJSON for dates.
+[Payments](payments.md) explains what these operations do. This table gives their inputs. [Roles and scope](access-security.md#roles-and-scope) says who is an account editor and who is an approver.
+
+| Operation                 | Input                                                                                 | Who may call it                                     |
+| ------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `payments.list`           | `limit`, `offset`                                                                     | Anyone, for accounts in their scope                 |
+| `payments.get`            | `id`                                                                                  | Anyone who can read the account                     |
+| `payments.createCheckout` | `key`, `accountId`, `amount`, `currency`, `kind`, optional `mode`                     | An account editor                                   |
+| `payments.closeCheckout`  | `id`, `reason`                                                                        | An account editor                                   |
+| `payments.closeReview`    | `id`, `reason`                                                                        | An approver                                         |
+| `payments.recordManual`   | `key`, `accountId`, `amount`, `currency`, `kind`, `receiptHash`, optional `reference` | An account editor                                   |
+| `payments.editManual`     | `id`, `version`, `amount`, `currency`, `receiptHash`, `reference`                     | An account editor                                   |
+| `payments.approve`        | `id`, `version`, `roleVersion`                                                        | An approver who is not a maker                      |
+| `payments.reject`         | `id`, `version`, `reason`                                                             | The same people as approve                          |
+| `payments.cancel`         | `id`, `version`, `reason`                                                             | The recorder                                        |
+| `payments.requeueReceipt` | `id`                                                                                  | An approver                                         |
+| `payments.receiptUse`     | `hash`                                                                                | Anyone. Returns the payment only within their scope |
+
+`amount` is a string of digits in minor units, so `"39500"` in `GBP` is £395.00. `currency` is one of `AED`, `EUR`, `GBP`, `JPY`, `KWD` and `USD`. `kind` is `first` or `repeat`.
+
+`payments.list` returns four groups: `waitingForApproval`, `waitingForProvider`, `needsReview` and `decidedThisWeek`. The last holds payments decided since Monday 00:00 UTC. `limit` bounds each group and `counts` gives each group's full size.
+
+`payments.get` returns the state, the customer, the agent credited with the sale, the provider's checkout ID, the receipt with its attempts, the approval history and an event log in database order. It also returns `actions`, which says what the signed-in person may do to this payment and, when they may not approve, why. Screens show or hide controls from `actions` and never from the role name. The posting is included only for callers who may read the ledger.
+
+## Tests for this page
+
+- Input parsing, typed refusals and request IDs over HTTP: `pnpm exec dotenv -- vitest run --project integration apps/web/test/rpc.int.test.ts`
+- Queues, lead work, wins under contention, the funnel and account lists: `pnpm exec dotenv -- vitest run --project integration packages/store/test/work.int.test.ts`
+- Assignment races, stale previews, replays and scope: `pnpm exec dotenv -- vitest run --project integration packages/store/test/access-assignment.int.test.ts packages/store/test/distribution-contract.int.test.ts`
+- The lead transition table, cell by cell: `pnpm exec vitest run --project unit packages/domain/test/lead.test.ts`
