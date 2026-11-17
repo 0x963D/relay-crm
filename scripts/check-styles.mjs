@@ -1,10 +1,12 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "typescript";
 
 const root = process.argv[2] ?? "apps/web/src";
 const allow = JSON.parse(readFileSync("scripts/style-allowlist.json", "utf8"));
 const violations = [];
+for (const entry of allow)
+  if (!existsSync(entry.file)) violations.push(`${entry.file}: stale style exception`);
 const counts = {
   arbitraryValues: 0,
   classCoupling: 0,
@@ -81,7 +83,14 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
             property.startsWith("--") &&
             blocks.some((block) => block === ":root" || block.startsWith("@theme"));
           const resolved = value.replace(/var\(--[\w-]+\)/g, "");
+          const namedColour =
+            /(?:color$|^background$|^fill$|^stroke$)/.test(property) &&
+            resolved.trim() !== "" &&
+            !/^(?:inherit|initial|unset|revert|currentColor|transparent|none|Canvas|CanvasText)$/i.test(
+              resolved.trim(),
+            );
           const colour =
+            namedColour ||
             /#(?:[\da-f]{3,8})\b|\b(?:rgb|hsl|oklch|oklab|lab|lch|color)\(/i.test(resolved) ||
             (/^(?:color|background(?:-color)?|border(?:-[\w]+)?|fill|stroke|outline(?:-color)?)$/.test(
               property,

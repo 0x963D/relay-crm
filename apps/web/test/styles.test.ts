@@ -102,6 +102,7 @@ test("the style guard rejects plain CSS colours and sizes outside tokens", () =>
       ".fixture { color: #123456; }",
       ".fixture { width: 13px; }",
       ".fixture { color: red; }",
+      ".fixture { color: chartreuse; }",
       ".fixture { margin: 1rem; }",
     ]) {
       writeFileSync(join(root, "fixture.css"), source);
