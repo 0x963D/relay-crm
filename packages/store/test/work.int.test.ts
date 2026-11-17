@@ -605,7 +605,11 @@ test("account lists share ledger balances and withhold them from lead workers", 
         : ledger.balances.map(({ currency, balance }) => ({ currency, balance })),
     );
   }
-  expect(await db.store.listAccounts(w.other, { limit: 100 })).toEqual({ items: [], total: 0 });
+  expect(await db.store.listAccounts(w.other, { limit: 100 })).toEqual({
+    items: [],
+    total: 0,
+    order: "name",
+  });
 });
 
 test("the database refuses winning without an account", async ({ db }) => {
@@ -856,7 +860,11 @@ test("account lists sort by person name with a scoped total and payment summary"
     });
     if (actor === w.agent) expect(result.items[0]?.balances).toBeNull();
   }
-  expect(await db.store.listAccounts(w.other, { limit: 1 })).toEqual({ items: [], total: 0 });
+  expect(await db.store.listAccounts(w.other, { limit: 1 })).toEqual({
+    items: [],
+    total: 0,
+    order: "name",
+  });
 });
 
 test("the queue filters an admitted agent's leads by the viewer's selected team", async ({
