@@ -5,22 +5,19 @@ import { Workspace } from "@/components/workspace";
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   const { profile, demo } = await requireSession();
   const client = getQueryClient();
-  void client
-    .query(trpc.accounts.list.queryOptions({ limit: 20, offset: 0 }))
-    .catch(() => undefined);
-  void client
-    .query(trpc.payments.list.queryOptions({ limit: 20, offset: 0 }))
-    .catch(() => undefined);
+  const reads: Promise<unknown>[] = [
+    client.query(trpc.accounts.list.queryOptions({ limit: 20, offset: 0 })),
+    client.query(trpc.payments.list.queryOptions({ limit: 20, offset: 0 })),
+  ];
   if (isLeadManager(profile.role)) {
-    void client
-      .query(trpc.leads.pool.queryOptions({ limit: 14, offset: 0 }))
-      .catch(() => undefined);
-    void client.query(trpc.leads.agents.queryOptions({ offset: 0 })).catch(() => undefined);
+    reads.push(
+      client.query(trpc.leads.pool.queryOptions({ limit: 14, offset: 0 })),
+      client.query(trpc.leads.agents.queryOptions({ offset: 0 })),
+    );
   } else if (profile.role === "agent") {
-    void client
-      .query(trpc.leads.queue.queryOptions({ agentId: profile.userId, limit: 20 }))
-      .catch(() => undefined);
+    reads.push(client.query(trpc.leads.queue.queryOptions({ agentId: profile.userId, limit: 20 })));
   }
+  await Promise.allSettled(reads);
   return (
     <HydrateClient>
       <Workspace profile={profile} demo={demo}>

@@ -17,5 +17,9 @@ export function useCachedCount<T>(
     const data = rows[0]?.[1];
     return data ? count(data) : undefined;
   };
-  return useSyncExternalStore((notify) => client.getQueryCache().subscribe(notify), read, read);
+  return useSyncExternalStore(
+    (notify) => client.getQueryCache().subscribe(notify),
+    read,
+    () => undefined,
+  );
 }
