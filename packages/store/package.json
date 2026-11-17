@@ -4,6 +4,7 @@
   "private": true,
   "description": "Every SQL statement and every transaction. Exports operations, never the Prisma client.",
   "license": "MIT",
+  "author": "Dan Doca",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

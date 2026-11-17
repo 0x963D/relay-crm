@@ -4,6 +4,7 @@
   "private": true,
   "description": "HTTP: the intake sources, their routes and the lead list.",
   "license": "MIT",
+  "author": "Dan Doca",
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.ts --dev",

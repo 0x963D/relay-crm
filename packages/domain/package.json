@@ -4,6 +4,7 @@
   "private": true,
   "description": "The CRM's rules as pure TypeScript: no dependencies, no clock, no I/O.",
   "license": "MIT",
+  "author": "Dan Doca",
   "type": "module",
   "sideEffects": false,
   "exports": {
