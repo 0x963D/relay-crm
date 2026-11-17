@@ -56,11 +56,15 @@ Native apps and scripts can use these four JSON routes. Each requires `Content-T
 | `POST /api/auth/native/demo`      | `{"role":"agent"}`                             | The same token result. Returns 404 unless `RELAY_DEMO=1`    |
 | `POST /api/auth/native/sign-out`  | `{}`                                           | `{"success":true}` after deleting the authenticated session |
 
-Sign-in and demo return `token`, `expiresAt`, and `user` with `id`, `name`, and `role`. Send `Authorization: Bearer <token>` to `GET /api/auth/get-session`, every tRPC call, and native sign-out. A bearer tRPC mutation needs no `Origin`. Invalid tokens produce the same tRPC `UNAUTHORIZED` body as no session. The session read returns `null` for both. Native sign-out returns 401 without a valid token.
+Native sign-in and demo return `token`, `expiresAt`, and `user` with `id`, `name`, and `role`. Send `Authorization: Bearer <token>` to `GET /api/auth/get-session`, every tRPC call, and native sign-out. A bearer tRPC mutation needs no `Origin`. A missing, malformed, unknown, expired, signed-out, or browser token gives no session. Invalid tokens produce the same tRPC `UNAUTHORIZED` body as no session. The session read returns `null` for both. Native sign-out returns 401 without a valid native token. Browser `/api/auth/sign-out` refuses Bearer requests with 400 and leaves the native session alive.
 
-Every native route refuses any `Origin`, `Cookie`, or `Sec-Fetch-Site` header with 403, including an empty header. These browser-supplied headers distinguish browser requests and prevent login CSRF. Bearer requests to the session read and tRPC also get 403 if they carry `Origin` or `Cookie`. No route adds CORS headers, and native responses never set cookies.
+The bearer session read returns `session` with `id`, `userId`, `currentTeamId`, and `expiresAt`, and `user` with `id`, `name`, and `role`. This is a smaller response than the browser session read. Neither session read returns a token. Browser email sign-in also omits the token from its response body.
 
-Browser and native sign-in share the per-client, per-email, and global request budgets. Email requests retain the same timing floor. Tokens refer to the same database sessions as cookies, and each request reloads the person's role and memberships. [Token limits](limits.md#native-session-tokens) covers expiry and possession.
+Native routes read no ambient credential and set none. They ignore `Cookie`. Bearer requests authenticate by the token alone and ignore cookies, including a valid session cookie for another person. An invalid bearer never falls back to a cookie. Other authorization schemes, such as Basic, leave browser cookie handling unchanged.
+
+A browser cannot attach `Authorization: Bearer` across origins without a preflight that fails, because the server sends no CORS headers. Native routes also refuse any `Origin` or `Sec-Fetch-Site` header with 403, including an empty header. Bearer session reads and tRPC calls refuse any `Origin` header with 403. These header refusals are a second layer. Native responses never set cookies.
+
+Browser and native sign-in share the per-client, per-email, and global request budgets. Browser and native demo sign-in share their per-client and global budgets. Email requests retain the same timing floor. Each database session records whether it is native. A browser session and a native session cannot stand in for each other, even with the raw token or a valid cookie signature. Each request reloads the person's role and memberships. [Token limits](limits.md#native-session-tokens) covers expiry and possession.
 
 ## Refusals
 

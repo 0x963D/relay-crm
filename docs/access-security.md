@@ -35,7 +35,9 @@ Three system actors act without a person. `intake` may find a lead by email and 
 
 Existing staff sign in with a six-digit code sent by email. There is no sign-up and no screen for creating users, so a person and their team memberships must already exist in the database.
 
-Browser sign-in and cookie-authenticated tRPC mutations require an `Origin` equal to the origin of `AUTH_URL`. The [native routes](api.md#non-browser-clients) instead refuse every request carrying `Origin`, `Cookie`, or `Sec-Fetch-Site`, which prevents a browser page from signing someone in through them. Native clients use a bearer token without cookies or an origin. The server refuses mixed bearer and browser credentials and adds no CORS headers. Both paths share sessions, sign-in limits, and current role and membership checks.
+Browser sign-in and cookie-authenticated tRPC mutations require an `Origin` equal to the origin of `AUTH_URL`. The [native routes](api.md#non-browser-clients) read no ambient credential and set none. They ignore cookies. A bearer request authenticates by its token alone and never falls back to a cookie. Other authorization schemes, such as Basic, leave browser cookie handling unchanged.
+
+A browser cannot attach `Authorization: Bearer` across origins without a preflight that fails, because the server sends no CORS headers. Native routes also refuse any `Origin` or `Sec-Fetch-Site` header. Bearer requests refuse any `Origin` header. These header refusals are a second layer. Both paths share sign-in limits and current role and membership checks.
 
 1. The client posts `{"email":"staff@example.com","type":"sign-in"}` to `/api/auth/email-otp/send-verification-otp`.
 2. The server stores a hash of the code and sends the email after it has answered.
@@ -53,6 +55,8 @@ With `RELAY_DEMO=1` the server also accepts `POST /api/auth/demo` with `{"role":
 
 A session lasts 24 hours. It starts in the person's team when they belong to exactly one. A person with several memberships has no current team until they choose one with `session.selectTeam`, and until then every team-scoped operation returns `teamSelectionRequired`.
 
+Each session row records whether it was created by a native route. Only native sessions work as bearer credentials. Only browser sessions work as cookies. A browser session and a native session cannot stand in for each other, even with the raw token or a valid cookie signature. Browser sign-in and session response bodies omit tokens. Native sign-in and demo return the native token. Browser sign-out refuses Bearer requests with 400. Native sign-out requires a live native bearer token.
+
 ## Request limits
 
 PostgreSQL holds every counter in the `auth_request_limits` table, so the limits hold across several app processes. Each budget is a fixed 60-second window that starts with its first request. A refused request gets 429 with `Retry-After: 60`.
@@ -69,6 +73,8 @@ PostgreSQL holds every counter in the `auth_request_limits` table, so the limits
 | Reconcile and outbox job routes    | 5 wrong secrets per client address, counted per route         |
 
 The server checks the client budget first, then the email budget, then the total. A refusal stops the checks, so one flooding client uses up its own 20 and cannot spend the total that every other caller shares. `RELAY_AUTH_GLOBAL_LIMIT` accepts 21 to 1,000,000, which keeps the total above one client's budget. A valid job secret does not count against the wrong-secret budget.
+
+Browser and native code requests share these counters. Browser and native demo sign-in also share one per-client budget and one global budget.
 
 One SQL statement takes a request from a budget. It inserts or increments the row, restarts an expired window, and deletes up to 100 other expired rows that no other statement has locked. A budget at its limit matches no row to update, so the statement returns nothing and the request is refused. The cost is one write per budget on every request to a limited route. In return the limits need no cache and no second service.
 

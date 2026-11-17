@@ -409,6 +409,115 @@ definitions.push(
   })),
 );
 const filter = process.argv[3];
+const nativeTests = "apps/web/test/auth-native.int.test.ts";
+definitions.push(
+  {
+    name: "native-session-tag",
+    file: "apps/web/src/server/auth.ts",
+    before: "isNative: nativeRequest.getStore() ?? false",
+    after: "isNative: false",
+    test: "native email sign-in reads the queue, writes a note and revokes the same database session",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-bearer-session-kind",
+    file: "apps/web/src/server/auth.ts",
+    before: "!session?.session.isNative",
+    after: "session === null",
+    test: "browser database tokens cannot authenticate bearer reads, writes or native sign-out",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-cookie-principal",
+    file: "apps/web/src/server/auth.ts",
+    before: "session === null || session.session.isNative",
+    after: "session === null",
+    test: "a signed native token cannot authenticate or end a session through cookies",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-cookie-dispatch",
+    file: "apps/web/src/server/auth.ts",
+    before: 'headers.has("cookie") &&',
+    after: 'false && headers.has("cookie") &&',
+    test: "a signed native token cannot authenticate or end a session through cookies",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-browser-sign-in-token",
+    file: "apps/web/src/server/auth.ts",
+    before: 'if ("token" in body) delete body.token;',
+    after: "",
+    test: "browser response bodies omit session tokens",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-browser-session-token",
+    file: "apps/web/src/server/auth.ts",
+    before: "delete body.session.token;",
+    after: "void 0;",
+    test: "browser response bodies omit session tokens",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-bearer-scheme",
+    file: "apps/web/src/server/session-credentials.ts",
+    before: '!/^Bearer(?:\\s|$)/i.test(headers.get("authorization") ?? "")',
+    after: '!headers.has("authorization")',
+    test: "Basic authorization preserves browser cookie behavior for",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-origin",
+    file: "apps/web/src/server/auth.ts",
+    before: '["origin", "sec-fetch-site"]',
+    after: '["sec-fetch-site"]',
+    test: "every native route refuses the origin header, including empty values",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-fetch-site",
+    file: "apps/web/src/server/auth.ts",
+    before: '["origin", "sec-fetch-site"]',
+    after: '["origin"]',
+    test: "every native route refuses the sec-fetch-site header, including empty values",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-bearer-origin",
+    file: "apps/web/src/server/session-credentials.ts",
+    before: 'if (headers.has("origin")) return { kind: "refused" };',
+    after: "",
+    test: "bearer requests refuse Origin and cookie mutations still require the configured origin",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-bearer-expiry",
+    file: "apps/web/src/server/auth.ts",
+    before: "session.session.expiresAt <= new Date()",
+    after: "false",
+    test: "expired native sessions cannot be read or signed out and remain unrevoked",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-browser-sign-out",
+    file: "apps/web/src/server/auth.ts",
+    before:
+      'path === "/sign-out" && (credentials.kind === "bearer" || credentials.kind === "refused")',
+    after: "false",
+    test: "browser sign-out refuses bearer credentials without revoking the native session",
+    testFile: nativeTests,
+  },
+  {
+    name: "native-demo-budget",
+    file: "apps/web/src/server/auth.ts",
+    before: 'limitKey("demo:client", clientAddress(request, env.trustedProxyCount))',
+    after:
+      'limitKey(native ? "native:demo:client" : "demo:client", clientAddress(request, env.trustedProxyCount))',
+    test: "browser and native demo sign-in consume one per-client budget",
+    testFile: nativeTests,
+  },
+);
 definitions.push(
   {
     name: "receipt-database-clock",
