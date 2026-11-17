@@ -19,7 +19,7 @@ docker compose up
 
 Wait for the app to become healthy, then open [Relay CRM](http://127.0.0.1:3107). The sign-in page has a button for each of three people: Priya Raman the manager, Dele Akinwale the agent and Esther Okafor the accountant. The [mail inbox](http://127.0.0.1:8127) shows the receipts the demo sends, and the code if you sign in by email.
 
-A first run builds the app image, so it takes about two and a half minutes and about 4.2 GB of images. The [first-run measurements](docs/demo.md#first-run-measurements) give the exact figures and the commands that produced them.
+A first run builds the app image, taking about two and a half minutes and about 4.2 GB of images, excluding the time to download the base images. The [first-run measurements](docs/demo.md#first-run-measurements) give the exact figures and the commands that produced them.
 
 ## Three things to try
 
