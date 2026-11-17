@@ -13,7 +13,12 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
     .query(trpc.payments.list.queryOptions({ limit: 20, offset: 0 }))
     .catch(() => undefined);
   return (
-    <ReadResult query={query} back="/payments" title="This payment is unavailable">
+    <ReadResult
+      query={query}
+      back="/payments"
+      title="This payment is unavailable"
+      missingIsNotFound
+    >
       <PaymentsScreen zone={zone} selected={id}>
         <Suspense fallback={<Loading label="Loading payment" />}>
           <PaymentDetail key={id} id={id} zone={zone} />

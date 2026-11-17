@@ -180,7 +180,14 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
             ? "For a checkout the customer will not use. If the customer has already paid, it goes to review."
             : "A written reason is kept with your decision."}
       </p>
-      <Field label="Reason" hint="A written reason is required.">
+      <Field
+        label="Reason"
+        hint={
+          manualWaiting
+            ? "Required to reject or cancel. Approval does not need a reason."
+            : "A written reason is required to close this payment."
+        }
+      >
         {(control) => (
           <Textarea
             {...control}
@@ -252,13 +259,13 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
             <PaymentStatus payment={payment} reason />
           </div>
           <p className="mt-1 text-caption text-secondary-foreground">
-            {payment.kind === "first" ? "First" : "Repeat"} payment ·{" "}
+            {payment.kind === "first" ? "First" : "Repeat"} payment |{" "}
             <Link className="text-primary underline" href={`/accounts/${payment.accountId}`}>
               {payment.account?.name ?? "Account"}
             </Link>{" "}
-            · {payment.campaign ?? "No campaign"} ·{" "}
+            | {payment.campaign ?? "No campaign"} |{" "}
             {payment.method === "manual" ? "manual" : "card, sandbox provider"}
-            {" · "}Sold by {payment.soldBy?.name ?? "No seller recorded"}
+            {" | "}Sold by {payment.soldBy?.name ?? "No seller recorded"}
           </p>
         </div>
         <div className="grid gap-4 @lg/payment:grid-cols-3">
@@ -428,8 +435,6 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
                 <p>When the customer pays, the provider sends a signed webhook.</p>
                 <p>If no webhook arrives, the reconciler asks the provider.</p>
                 <dl className="grid grid-cols-label-value gap-x-4 gap-y-2 text-caption">
-                  <dt>Next check</dt>
-                  <dd>{shortDate(payment.nextCheckAt, zone)}</dd>
                   <dt>First check</dt>
                   <dd>
                     {payment.reconciliation
@@ -441,6 +446,8 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
                         )
                       : "Reconciliation is unavailable"}
                   </dd>
+                  <dt>Next check</dt>
+                  <dd>{shortDate(payment.nextCheckAt, zone)}</dd>
                   <dt>Check interval</dt>
                   <dd>
                     {payment.reconciliation
@@ -752,38 +759,42 @@ function Receipt({
             </p>
           )}
           {receipt.state === "suppressed" && (
-            <p className="text-caption">Delivery is suppressed. It will not retry.</p>
+            <p className="text-caption">
+              {receipt.history.find((attempt) => attempt.state === "suppressed")?.reason ??
+                "Delivery is suppressed."}{" "}
+              It will not retry.
+            </p>
           )}
           <ol className="space-y-2">
-            {receipt.history.map((attempt) => (
-              <li key={attempt.id} className="text-caption">
-                <strong>
-                  {attempt.number === 0 ? "Not sent" : `Attempt ${String(attempt.number)}`}
-                </strong>{" "}
-                · {shortDate(attempt.startedAt, zone)}{" "}
-                <Slip
-                  kind={
-                    attempt.state === "sent"
-                      ? "complete"
+            {receipt.history
+              .filter((attempt) => attempt.number > 0)
+              .map((attempt) => (
+                <li key={attempt.id} className="text-caption">
+                  <strong>{`Attempt ${String(attempt.number)}`}</strong> ·{" "}
+                  {shortDate(attempt.startedAt, zone)}{" "}
+                  <Slip
+                    kind={
+                      attempt.state === "sent"
+                        ? "complete"
+                        : attempt.state === "suppressed"
+                          ? "neutral"
+                          : "refused"
+                    }
+                    icon={attempt.state === "sent" ? "done" : "mail"}
+                  >
+                    {attempt.state === "unknown"
+                      ? "Delivery unknown"
                       : attempt.state === "suppressed"
-                        ? "neutral"
-                        : "refused"
-                  }
-                  icon={attempt.state === "sent" ? "done" : "mail"}
-                >
-                  {attempt.state === "unknown"
-                    ? "Delivery unknown"
-                    : attempt.state === "suppressed"
-                      ? "Not sent"
-                      : attempt.state === "sent"
-                        ? "Sent"
-                        : "Failed"}
-                </Slip>
-                {attempt.reason && (
-                  <p className="mt-1 text-secondary-foreground">{attempt.reason}</p>
-                )}
-              </li>
-            ))}
+                        ? "Not sent"
+                        : attempt.state === "sent"
+                          ? "Sent"
+                          : "Failed"}
+                  </Slip>
+                  {attempt.reason && (
+                    <p className="mt-1 text-secondary-foreground">{attempt.reason}</p>
+                  )}
+                </li>
+              ))}
           </ol>
           {payment.actions.requeueReceipt && (
             <Button variant="outline" busy={busy} onClick={sendAgain}>

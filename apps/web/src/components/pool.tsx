@@ -371,7 +371,9 @@ export function PoolScreen({ zone }: { zone: string }) {
                 Back to leads
               </Button>
               <h2 ref={panelHeading} tabIndex={-1} className="text-panel font-bold">
-                Assign {selected.length} {selected.length === 1 ? "lead" : "leads"}
+                {selected.length
+                  ? `Assign ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}`
+                  : "Select leads to assign"}
               </h2>
               <Tabs
                 value={method}
@@ -593,7 +595,9 @@ export function PoolScreen({ zone }: { zone: string }) {
                 >
                   {busy
                     ? "Please wait…"
-                    : `${method === "round" && plan.kind === "editing" ? "Preview" : "Assign"} ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}${method === "hand" && recipients[0] ? ` to ${recipients[0].name}` : ""}`}
+                    : !selected.length
+                      ? "Select leads to assign"
+                      : `${method === "round" && plan.kind === "editing" ? "Preview" : "Assign"} ${String(selected.length)} ${selected.length === 1 ? "lead" : "leads"}${method === "hand" && recipients[0] ? ` to ${recipients[0].name}` : ""}`}
                 </Button>
               )}
             </div>
@@ -609,7 +613,9 @@ export function PoolScreen({ zone }: { zone: string }) {
               setMobilePanel(true);
             }}
           >
-            Assign {selected.length} selected {selected.length === 1 ? "lead" : "leads"}
+            {selected.length
+              ? `Assign ${String(selected.length)} selected ${selected.length === 1 ? "lead" : "leads"}`
+              : "Select leads to assign"}
           </Button>
         </div>
       )}

@@ -94,7 +94,7 @@ export function AccountsScreen({
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-secondary-foreground">
                     <span className="truncate">
-                      {account.campaign ?? "No campaign"} ·{" "}
+                      {account.campaign ?? "No campaign"} |{" "}
                       {countLabel(account.paymentCount ?? 0, "payment")}
                     </span>
                     {account.paymentInProgress && (
@@ -162,7 +162,7 @@ export function AccountDetail({
           {account.person?.name ?? "Account"}
         </h2>
         <p className="text-caption text-secondary-foreground">
-          {account.campaign ?? "No campaign"} · {account.person?.email ?? "No email address"}
+          {account.campaign ?? "No campaign"} | {account.person?.email ?? "No email address"}
         </p>
         {account.balances !== null && (
           <div>

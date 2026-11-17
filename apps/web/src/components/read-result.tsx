@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { TRPCError } from "@trpc/server";
 import { isAccessError } from "@relay/store";
 import { HydrateClient } from "@/lib/trpc/server";
@@ -13,12 +14,14 @@ export async function ReadResult<T>({
   back,
   title,
   accessMessage,
+  missingIsNotFound = false,
 }: {
   query: Promise<T>;
   children: ReactNode | ((value: T) => ReactNode);
   back: string;
   title: string;
   accessMessage?: string;
+  missingIsNotFound?: boolean;
 }) {
   let value: T;
   try {
@@ -31,6 +34,7 @@ export async function ReadResult<T>({
           ? "accessDenied"
           : failureCode(error);
     if (!code) throw error;
+    if (missingIsNotFound && code === "accessDenied") notFound();
     return (
       <Empty
         icon="lock"

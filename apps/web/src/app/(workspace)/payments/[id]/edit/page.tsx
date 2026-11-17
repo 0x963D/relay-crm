@@ -11,7 +11,12 @@ export default async function EditPaymentPage({ params }: { params: Promise<{ id
     return payment;
   });
   return (
-    <ReadResult query={query} back="/payments" title="This payment is unavailable">
+    <ReadResult
+      query={query}
+      back="/payments"
+      title="This payment is unavailable"
+      missingIsNotFound
+    >
       {(payment) => (
         <PaymentsScreen zone={zone} form>
           <div className="p-4 md:p-6">

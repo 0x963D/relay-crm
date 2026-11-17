@@ -293,7 +293,17 @@ export function LeadDetail({ id, profile, zone }: { id: string; profile: Profile
           {message?.kind === "success" && (
             <p className="flex items-start gap-2 rounded-md bg-complete p-3 text-complete-foreground">
               <Icon name="check" />
-              {message.text}
+              <span>
+                {message.text}
+                {close.data?.accountId && (
+                  <>
+                    {" "}
+                    <Link className="underline" href={`/accounts/${close.data.accountId}`}>
+                      Open account
+                    </Link>
+                  </>
+                )}
+              </span>
             </p>
           )}
         </div>
