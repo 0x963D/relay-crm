@@ -22,6 +22,14 @@ export function rpc(page: Page) {
     ],
   });
 }
+export function browserErrors(page: Page) {
+  const errors: string[] = [];
+  page.context().on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.context().on("weberror", (event) => errors.push(event.error().message));
+  return errors;
+}
 const sessions = new Map<string, Awaited<ReturnType<BrowserContext["cookies"]>>>();
 export async function signIn(page: Page, role: "manager" | "agent" | "accountant") {
   const { url } = browserState();

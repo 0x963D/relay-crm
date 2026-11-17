@@ -1,18 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { signIn, latestCode, rpc } from "./support.ts";
+import { signIn, latestCode, rpc, browserErrors } from "./support.ts";
 import { browserState } from "./paths.ts";
 
 test("workspace hydration stays error-free through demo sign-in, checkout and emailed code", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(`${page.url()}: ${message.text()}`);
-  });
-  page.on("pageerror", (error) => {
-    console.log(error.message);
-    errors.push(`${page.url()}: ${error.message}`);
-  });
+  const errors = browserErrors(page);
   await signIn(page, "agent");
   await page
     .getByRole("navigation", { name: "Main" })
@@ -33,11 +26,12 @@ test("workspace hydration stays error-free through demo sign-in, checkout and em
     page
       .getByRole("navigation", { name: "Main" })
       .getByRole("link", { name: "Payments", exact: true })
-      .locator("span[aria-hidden]"),
-  ).toHaveText(`${paymentCount + 1}`);
+      .locator("[data-slot=nav-count]"),
+  ).toHaveText(String(paymentCount + 1));
   const href = await page
     .getByRole("link", { name: "Go to payment", exact: true })
     .getAttribute("href");
+  if (!href) throw new Error("Missing payment route");
   await page.getByRole("link", { name: "Go to payment", exact: true }).click();
   await expect(page.getByRole("article", { name: "Payment detail" })).toBeVisible();
   // Closing this checkout leaves the shared account available for the payment journeys.
@@ -64,6 +58,7 @@ test("workspace hydration stays error-free through demo sign-in, checkout and em
 test("reconciled payment refreshes its detail, list, header and navigation without a reload", async ({
   page,
 }) => {
+  const errors = browserErrors(page);
   await signIn(page, "agent");
   const api = rpc(page);
   const account = (await api.accounts.list.query({ limit: 100 })).items.find(
@@ -111,14 +106,15 @@ test("reconciled payment refreshes its detail, list, header and navigation witho
       .locator(`a[href="${href}"]`),
   ).toHaveCount(0);
   await expect(page.locator("main > header")).toContainText(
-    `${before.counts.waitingForProvider - 1} waiting for the provider`,
+    `${String(before.counts.waitingForProvider - 1)} waiting for the provider`,
   );
   const after = await api.payments.list.query({});
   await expect(
     page
       .getByRole("navigation", { name: "Main" })
       .getByRole("link", { name: "Payments", exact: true })
-      .locator("span[aria-hidden]"),
-  ).toHaveText(`${Object.values(after.counts).reduce((sum, count) => sum + count, 0)}`);
+      .locator("[data-slot=nav-count]"),
+  ).toHaveText(String(Object.values(after.counts).reduce((sum, count) => sum + count, 0)));
   expect(navigations).toEqual([]);
+  expect(errors).toEqual([]);
 });

@@ -1,9 +1,22 @@
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { accessibility, tabTo, latestCode, rpc, saveAttempt, signIn } from "./support.ts";
+import {
+  accessibility,
+  tabTo,
+  latestCode,
+  rpc,
+  saveAttempt,
+  signIn,
+  browserErrors,
+} from "./support.ts";
 import { browserState } from "./paths.ts";
 const leadName = "Browser Journey";
 test.describe.serial("lead work journeys", () => {
+  let errors: string[];
+  test.beforeEach(({ page }) => {
+    errors = browserErrors(page);
+  });
+  test.afterEach(() => expect(errors).toEqual([]));
   test("a public enquiry is assigned by a manager and reaches the agent queue", async ({
     page,
   }) => {
@@ -30,8 +43,8 @@ test.describe.serial("lead work journeys", () => {
       page
         .getByRole("navigation", { name: "Main" })
         .getByRole("link", { name: "Lead pool", exact: true })
-        .locator("span[aria-hidden]"),
-    ).toHaveText(`${poolBefore - 1}`);
+        .locator("[data-slot=nav-count]"),
+    ).toHaveText(String(poolBefore - 1));
     await page
       .getByRole("radiogroup", { name: "View the demo as" })
       .getByRole("radio", { name: "Agent", exact: true })
@@ -85,13 +98,22 @@ test.describe.serial("lead work journeys", () => {
     await expect(
       page.getByRole("status").filter({ hasText: "An account was opened" }),
     ).toBeFocused();
+    const accountLink = page
+      .getByRole("status")
+      .filter({ hasText: "An account was opened" })
+      .getByRole("link", { name: "Open account", exact: true });
+    await expect(accountLink).toHaveAttribute("href", /^\/accounts\//);
     const navigation = page.getByRole("navigation", { name: "Main" });
     await expect(
-      navigation.getByRole("link", { name: "Accounts", exact: true }).locator("span[aria-hidden]"),
-    ).toHaveText(`${accountsBefore + 1}`);
+      navigation
+        .getByRole("link", { name: "Accounts", exact: true })
+        .locator("[data-slot=nav-count]"),
+    ).toHaveText(String(accountsBefore + 1));
     await expect(
-      navigation.getByRole("link", { name: "My queue", exact: true }).locator("span[aria-hidden]"),
-    ).toHaveText(`${beforeTotal - 1}`);
+      navigation
+        .getByRole("link", { name: "My queue", exact: true })
+        .locator("[data-slot=nav-count]"),
+    ).toHaveText(String(beforeTotal - 1));
     const accounts = await rpc(page).accounts.list.query({ limit: 100 });
     expect(accounts.items.some((a) => a.person?.name === leadName)).toBe(true);
     const queue = await rpc(page).leads.queue.query({});
