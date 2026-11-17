@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { signIn } from "./support.ts";
-import { captureDirectory } from "./paths.ts";
+import { captureDirectory, browserState } from "./paths.ts";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -22,4 +22,14 @@ test("manager phone navigation fits one row with every destination visible", asy
   }
   await mkdir(captureDirectory, { recursive: true });
   await page.screenshot({ path: join(captureDirectory, "manager-phone.png") });
+});
+
+test("the framework serves the product favicon", async ({ page }) => {
+  await page.goto(browserState().url);
+  const icon = page.locator('link[rel="icon"]');
+  await expect(icon).toHaveAttribute("href", /favicon\.ico/);
+  const response = await page.request.get(`${browserState().url}/favicon.ico`);
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("image/");
+  expect((await response.body()).length).toBeGreaterThan(0);
 });
