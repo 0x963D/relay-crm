@@ -405,10 +405,15 @@ export const appRouter = t.router({
           .strict(),
       )
       .mutation(({ ctx, input }) =>
-        ctx.store.editLead(ctx.actor, input.id, {
-          name: normalizeName(input.name),
-          phone: normalizePhone(input.phone),
-        }),
+        ctx.store.editLead(
+          ctx.actor,
+          input.id,
+          {
+            name: normalizeName(input.name),
+            phone: normalizePhone(input.phone),
+          },
+          ctx.requestId,
+        ),
       ),
     assign: authenticated
       .input(z.object({ leadIds: LeadIds, to: Agent }).strict())

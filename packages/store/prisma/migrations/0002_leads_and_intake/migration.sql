@@ -2,6 +2,7 @@ CREATE TYPE public.activity_kind AS ENUM (
     'intake',
     'statusChange',
     'assignment',
+    'edit',
     'attempt',
     'note',
     'callback',
@@ -10,6 +11,7 @@ CREATE TYPE public.activity_kind AS ENUM (
 
 CREATE TYPE public.audit_action AS ENUM (
     'leadAssigned',
+    'leadEdited',
     'leadReopened',
     'checkoutCreated',
     'paymentStateChanged',

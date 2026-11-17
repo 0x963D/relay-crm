@@ -58,3 +58,57 @@ test("audit constraints refuse unknown actions, subjects, missing causes and enc
     code: "23503",
   });
 });
+
+test("lead detail edits commit their actor, snapshots and timeline once", async ({ db }) => {
+  const actor = { userId: await db.seedUser("manager"), role: "manager", team: null } as const;
+  const id = await db.seedLead({
+    email: "edit@example.com",
+    lifecycle: {
+      state: { status: "new" },
+      firstAssignedAt: null,
+      previousOwnerId: null,
+    },
+  });
+  const requestId = crypto.randomUUID();
+  const fields = { name: "New Name", phone: "+441234567890" };
+  await db.store.editLead(actor, id, fields, requestId);
+  expect(
+    await db.ownerRows(
+      "SELECT action, actor_id, before, after, request_id FROM audit_log WHERE subject_id=$1",
+      [id],
+    ),
+  ).toEqual([
+    {
+      action: "leadEdited",
+      actor_id: actor.userId,
+      before: { name: null, phone: null },
+      after: fields,
+      request_id: requestId,
+    },
+  ]);
+  const detail = await db.store.getLead(actor, id);
+  expect(detail.timeline).toHaveLength(1);
+  expect(detail.timeline[0]).toMatchObject({
+    kind: "edit",
+    actor: { id: actor.userId },
+    detail: {
+      before: { name: null, phone: null },
+      after: fields,
+      actorId: actor.userId,
+      requestId,
+    },
+  });
+  await db.store.editLead(actor, id, fields, crypto.randomUUID());
+  expect((await db.store.getLead(actor, id)).timeline).toHaveLength(1);
+  expect(
+    await db.ownerRows("SELECT count(*)::int AS count FROM audit_log WHERE subject_id=$1", [id]),
+  ).toEqual([{ count: 1 }]);
+  await db.ownerRows(
+    "ALTER TABLE audit_log ADD CONSTRAINT refuse_edit CHECK (action <> 'leadEdited') NOT VALID",
+  );
+  await expect(
+    db.store.editLead(actor, id, { name: "Rolled back", phone: null }, crypto.randomUUID()),
+  ).rejects.toThrow();
+  expect(await db.store.getLead(actor, id)).toMatchObject(fields);
+  expect((await db.store.getLead(actor, id)).timeline).toHaveLength(1);
+});

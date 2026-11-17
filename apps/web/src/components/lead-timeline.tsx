@@ -26,6 +26,21 @@ function timelineEntry(
     };
   if (entry.summary?.kind === "note")
     return { title: "Note added", body: entry.summary.note, icon: "edit" };
+  if (entry.kind === "edit") {
+    const before = object(detail?.before);
+    const after = object(detail?.after);
+    const changes = ["name", "phone"].filter((field) => before?.[field] !== after?.[field]);
+    return {
+      title: "Lead details changed",
+      body: changes
+        .map(
+          (field) =>
+            `Changed ${field} from ${String(before?.[field] ?? "empty")} to ${String(after?.[field] ?? "empty")}.`,
+        )
+        .join(" "),
+      icon: "edit",
+    };
+  }
   if (entry.kind === "assignment") {
     const to = object(detail?.to);
     const holder = to?.ownerId === lead.custody.heldBy?.id ? lead.custody.heldBy?.name : null;

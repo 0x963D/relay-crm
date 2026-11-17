@@ -83,6 +83,7 @@ enum ActivityKind {
   intake
   statusChange
   assignment
+  edit
 
   @@map("activity_kind")
 }
@@ -328,6 +329,7 @@ enum SystemActor {
 enum AuditAction {
   leadWorked
   leadAssigned
+  leadEdited
   leadReopened
   checkoutCreated
   paymentStateChanged

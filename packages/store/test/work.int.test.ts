@@ -829,7 +829,7 @@ test("account lists sort by person name with a scoped total and payment summary"
   const accountIds = [];
   for (const name of ["Ada", "Zoe"]) {
     const id = await w.makeLead();
-    await db.store.editLead(w.manager, id, { name, phone: null });
+    await db.store.editLead(w.manager, id, { name, phone: null }, crypto.randomUUID());
     await w.work(w.agent, id, noAnswer);
     accountIds.push((await w.work(w.agent, id, won)).accountId);
   }

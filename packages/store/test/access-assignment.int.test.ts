@@ -359,7 +359,12 @@ describe("record scoping", () => {
         else await expect(query).rejects.toMatchObject({ code: "accessDenied" });
       }
       for (const id of [w.own, w.teammate, w.outside, w.pool]) {
-        const edit = db.store.editLead(w.actor, id, { name: "Edited", phone: null });
+        const edit = db.store.editLead(
+          w.actor,
+          id,
+          { name: "Edited", phone: null },
+          crypto.randomUUID(),
+        );
         if (management || (role !== "accountant" && id === w.own))
           expect((await edit).name).toBe("Edited");
         else await expect(edit).rejects.toMatchObject({ code: "accessDenied" });
@@ -659,7 +664,7 @@ test("editLead reloads the actor after management access is revoked", async ({ d
   const w = await world(db);
   await db.rows("UPDATE users SET role='agent' WHERE id=$1", [w.actor.userId]);
   await expect(
-    db.store.editLead(w.actor, w.teammate, { name: "Denied", phone: null }),
+    db.store.editLead(w.actor, w.teammate, { name: "Denied", phone: null }, crypto.randomUUID()),
   ).rejects.toMatchObject({ code: "accessDenied" });
   expect(await db.rows("SELECT name FROM leads WHERE id=$1", [w.teammate])).toEqual([
     { name: null },

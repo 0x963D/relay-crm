@@ -40,7 +40,7 @@ That file pins each error shape against a real database, then the retry and the 
 
 ## Audit rows
 
-Assignment, lead work, reopening and every payment state change write a row to `audit_log` in the same transaction. A failed audit write rolls the change back. An edit to a lead's name or phone writes no audit row. A row names its actor, an action from a closed list, a typed subject, a JSON snapshot before and after, and the HTTP request ID. A check constraint requires the actor to be a person or a named system actor and never both.
+Assignment, lead work, lead detail edits, reopening and every payment state change write a row to `audit_log` in the same transaction. A failed audit write rolls the change back. An unchanged lead edit writes nothing. A row names its actor, an action from a closed list, a typed subject, a JSON snapshot before and after, and the HTTP request ID. A check constraint requires the actor to be a person or a named system actor and never both.
 
 Operations with an idempotency key go through `idempotent` in `packages/store/src/idempotency.ts`, which runs inside the caller's transaction. [The API page](api.md#idempotency-keys) describes what a client sees.
 

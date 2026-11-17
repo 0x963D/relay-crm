@@ -327,7 +327,7 @@ describe("scoped records", () => {
     const listed = await db.store.listLeads(w.actor, { limit: 100 });
     expect(listed.map((l) => l.id)).not.toContain(mineElsewhere);
     await expect(
-      db.store.editLead(w.actor, mineElsewhere, { name: "X", phone: null }),
+      db.store.editLead(w.actor, mineElsewhere, { name: "X", phone: null }, crypto.randomUUID()),
     ).rejects.toMatchObject({ code: "accessDenied" });
   });
 

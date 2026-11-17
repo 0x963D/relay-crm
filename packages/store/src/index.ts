@@ -181,7 +181,8 @@ export function openStore(config: {
       actor: Actor,
       id: LeadId,
       fields: { readonly name: string | null; readonly phone: string | null },
-    ) => editLead(db, actor, id, fields),
+      requestId: string,
+    ) => editLead(db, actor, id, fields, requestId),
     listAccounts: (actor: Actor, page: { readonly limit: number; readonly offset?: number }) =>
       listAccounts(db, actor, page),
     getAccount: (actor: Actor, id: AccountId) => getAccount(db, actor, id),

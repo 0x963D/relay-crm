@@ -11,7 +11,6 @@ This page gathers what v0.1 leaves out and where its guarantees stop. The idea t
 | Payment reversal        | No refund, void or correcting entry. A payment in review can only be closed as failed |
 | A real payment provider | A sandbox inside the app, which moves no real money                                   |
 | An audit viewer         | Audit rows are written, and no screen or operation reads them                         |
-| An audit of every edit  | An edit to a lead's name or phone writes no audit row                                 |
 | User management         | People, teams and memberships are rows written directly in the database               |
 | Other ways to sign in   | An emailed code only                                                                  |
 | Tasks                   | A callback on a lead is the only reminder                                             |

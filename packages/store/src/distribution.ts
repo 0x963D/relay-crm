@@ -22,7 +22,7 @@ import {
 } from "@relay/domain";
 import { currentActor } from "./auth.ts";
 import { AccessError } from "./errors.ts";
-import { InvariantError, lifecycleFromRow } from "./lead-row.ts";
+import { InvariantError, leadFromRow, lifecycleFromRow } from "./lead-row.ts";
 import { scopedLead, updateLifecycle, editLeadFields, openLeadCounts } from "./leads.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
 
@@ -43,11 +43,32 @@ export async function editLead(
   actor: Actor,
   id: LeadId,
   fields: { readonly name: string | null; readonly phone: string | null },
+  requestId: string,
+  at = new Date(),
 ): Promise<Lead> {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
-    await scopedLead(tx, current, id, "edit");
-    return editLeadFields(tx, id, fields);
+    const row = await scopedLead(tx, current, id, "edit");
+    if (row.name === fields.name && row.phone === fields.phone) return leadFromRow(row);
+    const before = { name: row.name, phone: row.phone };
+    const lead = await editLeadFields(tx, id, fields);
+    await writeAudit(tx, current, {
+      action: "leadEdited",
+      subject: { type: "lead", id },
+      before,
+      after: fields,
+      cause: { kind: "request", id: requestId },
+      at,
+    });
+    await tx.activity.create({
+      data: {
+        kind: "edit",
+        leadId: id,
+        detail: { actorId: current.userId, requestId, before, after: fields },
+        at,
+      },
+    });
+    return lead;
   });
 }
 
