@@ -38,12 +38,29 @@ The second command uses Dele Akinwale's fixed demo ID. The third looks Jonas Web
 - A query is a `GET` with one URL-encoded `input` parameter. A mutation is a `POST` with a JSON body.
 - Both wrap their input in the SuperJSON envelope `{"json": ...}`. Sending the inner object alone fails input parsing. `--get --data-urlencode` does the URL encoding in the commands above.
 - Responses use the same envelope. Dates and money come back as strings in `json`, and `meta` names the fields that are dates or 64-bit integers.
-- A `POST` must carry an `Origin` header equal to the origin of `AUTH_URL`, or it gets 403. A request without a session gets 401.
+- A cookie-authenticated `POST` must carry an `Origin` header equal to the origin of `AUTH_URL`, or it gets 403. [Non-browser clients](#non-browser-clients) use a bearer token instead. A request without a session gets 401.
 - The response to each call has an `X-Request-ID` header. The audit rows and timeline entries a write creates carry the same ID.
 - Inputs are strict. An unknown field, a malformed UUID or an out-of-range number is refused before any operation runs.
 - `limit` is 1 to 100 wherever it appears.
 
 The router's type is exported as `AppRouter` from `apps/web/src/server/rpc.ts`. [Access and security](access-security.md) covers sign-in, scope and the limit on body size.
+
+## Non-browser clients
+
+Native apps and scripts can use these four JSON routes. Each requires `Content-Type: application/json` and rejects unknown body fields.
+
+| Route                             | Body                                           | Result                                                      |
+| --------------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| `POST /api/auth/native/send-code` | `{"email":"staff@example.com"}`                | `{"success":true}`, including for an unknown address        |
+| `POST /api/auth/native/sign-in`   | `{"email":"staff@example.com","otp":"123456"}` | A token, its expiry, and the signed-in user                 |
+| `POST /api/auth/native/demo`      | `{"role":"agent"}`                             | The same token result. Returns 404 unless `RELAY_DEMO=1`    |
+| `POST /api/auth/native/sign-out`  | `{}`                                           | `{"success":true}` after deleting the authenticated session |
+
+Sign-in and demo return `token`, `expiresAt`, and `user` with `id`, `name`, and `role`. Send `Authorization: Bearer <token>` to `GET /api/auth/get-session`, every tRPC call, and native sign-out. A bearer tRPC mutation needs no `Origin`. Invalid tokens produce the same tRPC `UNAUTHORIZED` body as no session. The session read returns `null` for both. Native sign-out returns 401 without a valid token.
+
+Every native route refuses any `Origin`, `Cookie`, or `Sec-Fetch-Site` header with 403, including an empty header. These browser-supplied headers distinguish browser requests and prevent login CSRF. Bearer requests to the session read and tRPC also get 403 if they carry `Origin` or `Cookie`. No route adds CORS headers, and native responses never set cookies.
+
+Browser and native sign-in share the per-client, per-email, and global request budgets. Email requests retain the same timing floor. Tokens refer to the same database sessions as cookies, and each request reloads the person's role and memberships. [Token limits](limits.md#native-session-tokens) covers expiry and possession.
 
 ## Refusals
 

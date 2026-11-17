@@ -15,6 +15,7 @@ import { allowRequest, limitKey, rateLimited } from "./rate-limit.ts";
 import type { AuthEnv } from "./env.ts";
 import type { Mailer } from "./mailer.ts";
 import { authMessages } from "../lib/failures.ts";
+import { sessionCredentials } from "./session-credentials.ts";
 
 const Email = z
   .string()
@@ -26,8 +27,16 @@ const Email = z
     return z.NEVER;
   });
 const SendCode = z.object({ email: Email, type: z.literal("sign-in") }).strict();
+const NativeSendCode = z.object({ email: Email }).strict();
 const SignIn = z.object({ email: Email, otp: z.string().regex(/^\d{6}$/) }).strict();
 const DemoSignIn = z.object({ role: z.enum(DEMO_ROLES) }).strict();
+const SignOut = z.object({}).strict();
+const nativeRoutes = new Map([
+  ["/native/send-code", "/email-otp/send-verification-otp"],
+  ["/native/sign-in", "/sign-in/email-otp"],
+  ["/native/demo", "/demo"],
+  ["/native/sign-out", "/sign-out"],
+]);
 
 type Schedule = (task: () => Promise<void>) => void;
 
@@ -38,6 +47,25 @@ export function createAuthentication(
   schedule: Schedule,
   demo = false,
 ) {
+  const demoEndpoint = (path: "/demo" | "/native/demo") =>
+    createAuthEndpoint(path, { method: "POST", body: DemoSignIn }, async (ctx) => {
+      if (!demo) throw new APIError("NOT_FOUND");
+      const user = await store.demoPerson(ctx.body.role).catch((error: unknown) => {
+        if (isAccessError(error))
+          throw new APIError("FORBIDDEN", { message: authMessages.demoUnavailable });
+        throw error;
+      });
+      const session = await ctx.context.internalAdapter.createSession(user.id);
+      const person = { id: user.id, name: user.name, role: user.role };
+      if (path === "/native/demo")
+        return ctx.json({ token: session.token, expiresAt: session.expiresAt, user: person });
+      await setSessionCookie(ctx, { session, user });
+      return ctx.json({
+        session: { id: session.id, expiresAt: session.expiresAt },
+        user: person,
+        roles: DEMO_ROLES,
+      });
+    });
   const auth = betterAuth({
     appName: "Relay",
     baseURL: env.baseUrl,
@@ -69,30 +97,8 @@ export function createAuthentication(
       {
         id: "demo-sign-in",
         endpoints: {
-          demoSignIn: createAuthEndpoint(
-            "/demo",
-            {
-              method: "POST",
-              body: DemoSignIn,
-            },
-            async (ctx) => {
-              if (!demo) throw new APIError("NOT_FOUND");
-              const user = await store.demoPerson(ctx.body.role).catch((error: unknown) => {
-                if (isAccessError(error))
-                  throw new APIError("FORBIDDEN", {
-                    message: authMessages.demoUnavailable,
-                  });
-                throw error;
-              });
-              const session = await ctx.context.internalAdapter.createSession(user.id);
-              await setSessionCookie(ctx, { session, user });
-              return ctx.json({
-                session: { id: session.id, expiresAt: session.expiresAt },
-                user: { id: user.id, name: user.name, role: user.role },
-                roles: DEMO_ROLES,
-              });
-            },
-          ),
+          demoSignIn: demoEndpoint("/demo"),
+          nativeDemoSignIn: demoEndpoint("/native/demo"),
         },
       },
       emailOTP({
@@ -116,15 +122,66 @@ export function createAuthentication(
   }
 
   async function principal(headers: Headers) {
-    if (!headers.has("cookie")) return null;
+    const credentials = sessionCredentials(headers);
+    if (credentials.kind === "bearer") {
+      const session = await bearerSession(credentials.token);
+      return session === null ? null : store.sessionPrincipal(session.session.id);
+    }
+    if (credentials.kind !== "cookie") return null;
     const session = await auth.api.getSession({ headers });
     return session === null ? null : store.sessionPrincipal(session.session.id);
+  }
+
+  async function bearerSession(token: string | null) {
+    if (token === null) return null;
+    const session = await (await auth.$context).internalAdapter.findSession(token);
+    return session === null || session.session.expiresAt <= new Date() ? null : session;
+  }
+
+  function withoutCookies(response: Response) {
+    const headers = new Headers(response.headers);
+    headers.delete("set-cookie");
+    return new Response(response.body, { status: response.status, headers });
   }
 
   async function handle(incoming: Request): Promise<Response> {
     const request = await boundedRequest(incoming);
     if (request === null) return new Response(null, { status: 413 });
-    const path = new URL(request.url).pathname.replace(/^\/api\/auth/, "");
+    const requestedPath = new URL(request.url).pathname.replace(/^\/api\/auth/, "");
+    const native = nativeRoutes.has(requestedPath);
+    const path = nativeRoutes.get(requestedPath) ?? requestedPath;
+    const credentials = sessionCredentials(request.headers);
+    if (native) {
+      if (request.method !== "POST" || (path === "/demo" && !demo))
+        return new Response(null, { status: 404 });
+      if (["origin", "cookie", "sec-fetch-site"].some((header) => request.headers.has(header)))
+        return new Response(null, { status: 403 });
+      if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json")
+        return new Response(null, { status: 415 });
+      if (path === "/sign-out") {
+        const body: unknown = await request.json().catch(() => null);
+        if (!SignOut.safeParse(body).success) return new Response(null, { status: 400 });
+        const session = await bearerSession(
+          credentials.kind === "bearer" ? credentials.token : null,
+        );
+        if (session === null) return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
+        await (await auth.$context).internalAdapter.deleteSession(session.session.token);
+        return Response.json({ success: true });
+      }
+    } else if (credentials.kind === "refused") return new Response(null, { status: 403 });
+    if (path === "/get-session" && request.method === "GET" && credentials.kind === "bearer") {
+      const current = await principal(request.headers);
+      if (current?.kind !== "session")
+        return Response.json(null, { headers: { "cache-control": "no-store" } });
+      const profile = await store.sessionProfile(current.actor);
+      return Response.json(
+        {
+          session: current.session,
+          user: { id: profile.userId, name: profile.name, role: profile.role },
+        },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }
     if (
       request.method === "POST" &&
       request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded")
@@ -150,7 +207,7 @@ export function createAuthentication(
     }
     if (path === "/demo") {
       if (!demo || request.method !== "POST") return new Response(null, { status: 404 });
-      if (request.headers.get("origin") !== new URL(env.baseUrl).origin)
+      if (!native && request.headers.get("origin") !== new URL(env.baseUrl).origin)
         return new Response(null, { status: 403 });
       if (!request.headers.get("content-type")?.startsWith("application/json"))
         return new Response(null, { status: 415 });
@@ -174,12 +231,12 @@ export function createAuthentication(
     if (request.method !== "POST" || (!sending && path !== "/sign-in/email-otp")) {
       return new Response(null, { status: 404 });
     }
-    if (request.headers.get("origin") !== new URL(env.baseUrl).origin)
+    if (!native && request.headers.get("origin") !== new URL(env.baseUrl).origin)
       return new Response(null, { status: 403 });
     if (!request.headers.get("content-type")?.startsWith("application/json"))
       return new Response(null, { status: 415 });
     const body: unknown = await request.json().catch(() => null);
-    const parsed = (sending ? SendCode : SignIn).safeParse(body);
+    const parsed = (sending ? (native ? NativeSendCode : SendCode) : SignIn).safeParse(body);
     if (!parsed.success)
       return Response.json({ error: "Invalid sign-in request." }, { status: 400 });
     const minimum = performance.now() + 300 + randomInt(0, 50);
@@ -193,13 +250,25 @@ export function createAuthentication(
       )
         return rateLimited();
       const response = await dispatch(
-        new Request(request.url, {
+        new Request(native ? new URL(`/api/auth${path}`, request.url) : request.url, {
           method: "POST",
           headers: request.headers,
-          body: JSON.stringify(parsed.data),
+          body: JSON.stringify(sending ? { ...parsed.data, type: "sign-in" } : parsed.data),
         }),
       );
-      return response;
+      if (!native) return response;
+      if (sending || !response.ok) return withoutCookies(response);
+      const result: unknown = await response.json();
+      const token = z.object({ token: z.string() }).parse(result).token;
+      const session = await bearerSession(token);
+      if (session === null) throw new Error("Sign-in returned no session");
+      const current = await store.sessionPrincipal(session.session.id);
+      if (current === null) throw new Error("Sign-in returned no principal");
+      return Response.json({
+        token,
+        expiresAt: session.session.expiresAt,
+        user: { id: session.user.id, name: session.user.name, role: current.actor.role },
+      });
     } finally {
       await sleep(Math.max(0, minimum - performance.now()));
     }

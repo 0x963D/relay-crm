@@ -35,13 +35,15 @@ Three system actors act without a person. `intake` may find a lead by email and 
 
 Existing staff sign in with a six-digit code sent by email. There is no sign-up and no screen for creating users, so a person and their team memberships must already exist in the database.
 
+Browser sign-in and cookie-authenticated tRPC mutations require an `Origin` equal to the origin of `AUTH_URL`. The [native routes](api.md#non-browser-clients) instead refuse every request carrying `Origin`, `Cookie`, or `Sec-Fetch-Site`, which prevents a browser page from signing someone in through them. Native clients use a bearer token without cookies or an origin. The server refuses mixed bearer and browser credentials and adds no CORS headers. Both paths share sessions, sign-in limits, and current role and membership checks.
+
 1. The client posts `{"email":"staff@example.com","type":"sign-in"}` to `/api/auth/email-otp/send-verification-otp`.
 2. The server stores a hash of the code and sends the email after it has answered.
 3. The client posts `{"email":"staff@example.com","otp":"123456"}` to `/api/auth/sign-in/email-otp` and keeps the session cookie.
 
 A code lasts 5 minutes, and three wrong guesses use it up. An address that belongs to nobody gets the same response as a real one, receives no mail and cannot obtain a session. Both endpoints hold their answer for at least 300 milliseconds, which hides the difference in work between a real address and an unknown one whenever that work finishes inside the delay. A slower request is not padded further.
 
-Both requests carry JSON, or the URL-encoded fields of the sign-in page's form, and an `Origin` header equal to the origin of `AUTH_URL`. A different origin gets 403. `POST /api/auth/sign-out` ends the session and `GET /api/auth/get-session` reads it. Every other path under `/api/auth` answers 404.
+Both requests carry JSON, or the URL-encoded fields of the sign-in page's form, and an `Origin` header equal to the origin of `AUTH_URL`. A different origin gets 403. `POST /api/auth/sign-out` ends the session and `GET /api/auth/get-session` reads it. The [native routes](api.md#non-browser-clients) are also allowed. Every other path under `/api/auth` answers 404.
 
 Set `AUTH_SECRET` and `AUTH_URL` to turn sign-in on, and `SMTP_URL` and `SMTP_FROM` to deliver codes. With `AUTH_SECRET` and `AUTH_URL` both unset, sign-in is off and `/api/auth` answers 404. Without SMTP, `pnpm dev` prints each code to the console, and a production server refuses to start. When `AUTH_URL` is an HTTPS origin the session cookie is marked Secure.
 

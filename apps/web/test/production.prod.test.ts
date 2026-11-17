@@ -60,8 +60,34 @@ databaseTest(
           for (const role of ["manager", "agent", "accountant"])
             expect((await post("/api/auth/demo", { role })).status).toBe(404);
           expect((await post("/api/demo/reset", {})).status).toBe(404);
+          expect(
+            (
+              await fetch(server.url("/api/auth/native/demo"), {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ role: "agent" }),
+              })
+            ).status,
+          ).toBe(404);
           continue;
         }
+        const nativeDemo = await fetch(server.url("/api/auth/native/demo"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ role: "agent" }),
+        });
+        expect(nativeDemo.status).toBe(200);
+        expect(nativeDemo.headers.has("set-cookie")).toBe(false);
+        const nativeDemoBody = z
+          .object({
+            token: z.string().min(32),
+            expiresAt: z.iso.datetime(),
+            user: z.object({ id: z.uuid(), role: z.literal("agent") }),
+          })
+          .parse(await nativeDemo.json());
+        expect(nativeDemoBody).toMatchObject({
+          user: { id: DEMO_PEOPLE.agent.id, role: "agent" },
+        });
         expect((await post("/api/demo/reset", {})).status).toBe(404);
         expect((await fetch(server.url("/api/auth/demo"))).status).toBe(404);
         expect((await post("/api/auth/demo", { role: "owner" })).status).toBe(400);
@@ -112,6 +138,104 @@ databaseTest(
       }
     }
     await inbox.close();
+  },
+);
+
+databaseTest(
+  "the production server mounts native sessions with a different AUTH_URL and no token logs",
+  async ({ db }) => {
+    const userId = await db.seedUser("agent");
+    const teamId = await db.seedTeam("sales");
+    await db.ownerRows("INSERT INTO memberships(user_id,team_id) VALUES ($1,$2)", [userId, teamId]);
+    const id = await db.seedLead({
+      email: "native-production@example.com",
+      lifecycle: {
+        state: { status: "assigned", assignee: { ownerId: userId, teamId } },
+        firstAssignedAt: new Date(),
+        previousOwnerId: null,
+      },
+    });
+    const inbox = await openSmtpInbox();
+    const server = await serve(
+      {
+        AUTH_URL: "http://localhost:1",
+        AUTH_SECRET: "fake-native-production-secret-0123456789",
+        SMTP_URL: inbox.url,
+        SMTP_FROM: "relay@sender.example",
+      },
+      db.connectionString,
+    );
+    try {
+      const post = async (path: string, body: unknown, headers: HeadersInit = {}) => {
+        const response = await fetch(server.url(path), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...Object.fromEntries(new Headers(headers)),
+          },
+          body: JSON.stringify(body),
+        });
+        expect(response.headers.has("set-cookie")).toBe(false);
+        expect(
+          [...response.headers.keys()].some((header) => header.startsWith("access-control-")),
+        ).toBe(false);
+        return response;
+      };
+      const email = "user-1@team.example";
+      expect((await post("/api/auth/native/send-code", { email })).status).toBe(200);
+      for (let i = 0; i < 100 && inbox.messages.length === 0; i++) await sleep(50);
+      const otp = inbox.messages[0]?.match(/Your sign-in code is (\d{6})/)?.[1];
+      expect(otp).toMatch(/^\d{6}$/);
+      const response = await post("/api/auth/native/sign-in", { email, otp });
+      expect(response.status, await response.clone().text()).toBe(200);
+      const signed = z
+        .object({
+          token: z.string(),
+          expiresAt: z.iso.datetime(),
+          user: z.object({ id: z.uuid(), name: z.string(), role: z.literal("agent") }).strict(),
+        })
+        .strict()
+        .parse(await response.json());
+      expect(signed.user.id).toBe(userId);
+      const headers = { authorization: `Bearer ${signed.token}` };
+      const session = await fetch(server.url("/api/auth/get-session"), { headers });
+      expect(session.headers.has("set-cookie")).toBe(false);
+      expect(await session.json()).toMatchObject({ user: signed.user });
+      const rpcUrl = (path: string) =>
+        server.url(`/api/trpc/${path}?input=${encodeURIComponent(JSON.stringify({ json: {} }))}`);
+      expect((await fetch(rpcUrl("session.current"), { headers })).status).toBe(200);
+      const queue = await fetch(rpcUrl("leads.queue"), { headers });
+      expect(queue.status).toBe(200);
+      expect(await queue.text()).toContain(id);
+      const note = { json: { id, key: "native-production-note", note: "Called from a phone." } };
+      expect((await post("/api/trpc/leads.addNote", note, headers)).status).toBe(200);
+      expect(
+        (
+          await post("/api/trpc/leads.addNote", note, {
+            ...headers,
+            origin: new URL(server.url("/")).origin,
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (await fetch(rpcUrl("session.current"), { headers: { ...headers, cookie: "" } })).status,
+      ).toBe(403);
+      const unknown = "x".repeat(32);
+      expect(
+        (
+          await fetch(rpcUrl("session.current"), {
+            headers: { authorization: `Bearer ${unknown}` },
+          })
+        ).status,
+      ).toBe(401);
+      expect((await post("/api/auth/native/sign-out", {}, headers)).status).toBe(200);
+      expect((await fetch(rpcUrl("session.current"), { headers })).status).toBe(401);
+      expect(server.output()).not.toContain(signed.token);
+      expect(server.output()).not.toContain(unknown);
+    } finally {
+      await server.stop();
+      await inbox.close();
+    }
   },
 );
 

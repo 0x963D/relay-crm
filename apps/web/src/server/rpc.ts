@@ -23,6 +23,7 @@ import { z } from "zod";
 import { boundedRequest } from "./http.ts";
 import { reportFailure } from "./errors.ts";
 import { logToConsole } from "./log.ts";
+import { sessionCredentials } from "./session-credentials.ts";
 
 export interface RpcContext {
   readonly timeZone?: string;
@@ -493,7 +494,13 @@ export async function handleRpc(
 ): Promise<Response> {
   const request = await boundedRequest(incoming);
   if (request === null) return new Response(null, { status: 413 });
-  if (request.method === "POST" && request.headers.get("origin") !== origin)
+  const credentials = sessionCredentials(request.headers);
+  if (credentials.kind === "refused") return new Response(null, { status: 403 });
+  if (
+    request.method === "POST" &&
+    credentials.kind !== "bearer" &&
+    request.headers.get("origin") !== origin
+  )
     return new Response(null, { status: 403 });
   const requestId = randomUUID();
   const response = await fetchRequestHandler({

@@ -19,6 +19,10 @@ This page gathers what v0.1 leaves out and where its guarantees stop. The idea t
 | General export          | Only the campaign funnel exports a CSV file                                           |
 | Theming                 | One theme, in light and dark                                                          |
 
+## Native session tokens
+
+A native session token is a bearer secret with a fixed 24-hour life and no refresh. Anyone holding it acts as that person until sign-out or expiry. A demo reset also ends the session.
+
 ## What the app's database credentials can still do
 
 The app's database role cannot alter a table, disable a trigger, or update or delete history. [Access and security](access-security.md#the-two-database-roles) lists its grants. Inside those grants, direct SQL can still do each of these.
