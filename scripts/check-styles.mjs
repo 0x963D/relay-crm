@@ -11,6 +11,8 @@ const counts = {
   numericWeights: 0,
   inlineLiterals: 0,
   defaultTheme: 0,
+  inlineStyles: 0,
+  cssLiterals: 0,
 };
 
 for (const file of readdirSync(root, { recursive: true }).filter((file) =>
@@ -47,6 +49,12 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
   ))
     report("numericWeights", match[0], match.index);
 
+  for (const match of source.matchAll(
+    /(?<![\w-])font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)(?![\w-])/g,
+  ))
+    if (!["normal", "medium", "semibold", "bold"].includes(match[1]))
+      report("numericWeights", match[0], match.index);
+
   function checkCss(css, offset) {
     for (const match of css.matchAll(/\.[\w-]+[^{}]*\{[^{}]*[&\w.][^{};]*\{/g))
       report("classCoupling", match[0], offset + match.index);
@@ -56,8 +64,40 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
         report("classCoupling", selector.trim(), offset + match.index);
     }
   }
-  if (file.endsWith(".css")) checkCss(source, 0);
-  else {
+  if (file.endsWith(".css")) {
+    checkCss(source, 0);
+    const blocks = [];
+    for (const match of source
+      .replace(/\/\*[\s\S]*?\*\//g, (value) => " ".repeat(value.length))
+      .matchAll(/([^{};]*)([{};])/g)) {
+      const text = match[1].trim();
+      if (match[2] === "{") blocks.push(text);
+      else {
+        const declaration = /^([\w-]+)\s*:\s*([\s\S]+)$/.exec(text);
+        if (declaration) {
+          const [, property, value] = declaration;
+          const token =
+            path === "apps/web/src/app/globals.css" &&
+            property.startsWith("--") &&
+            blocks.some((block) => block === ":root" || block.startsWith("@theme"));
+          const resolved = value.replace(/var\(--[\w-]+\)/g, "");
+          const colour =
+            /#(?:[\da-f]{3,8})\b|\b(?:rgb|hsl|oklch|oklab|lab|lch|color)\(/i.test(resolved) ||
+            (/^(?:color|background(?:-color)?|border(?:-[\w]+)?|fill|stroke|outline(?:-color)?)$/.test(
+              property,
+            ) &&
+              /\b(?:red|blue|green|black|white|yellow|gray|grey|pink|orange|purple|rebeccapurple)\b/i.test(
+                resolved,
+              ));
+          const size = /(?:\d*\.)?\d+(?:px|r?em|[dsl]?v[wh]|ch|ex|pt|cm|mm|in|%)\b|\d+%/i.test(
+            resolved,
+          );
+          if (!token && (colour || size)) report("cssLiterals", text, match.index);
+        }
+        if (match[2] === "}") blocks.pop();
+      }
+    }
+  } else {
     const tree = ts.createSourceFile(
       file,
       source,
@@ -68,6 +108,33 @@ for (const file of readdirSync(root, { recursive: true }).filter((file) =>
     const sizing =
       /^(?:width|height|minWidth|maxWidth|minHeight|maxHeight|padding\w*|margin\w*|gap|rowGap|columnGap|top|right|bottom|left|inset\w*|fontSize|lineHeight|borderRadius|borderWidth|color|background\w*|borderColor|fill|stroke|fontWeight|boxShadow|opacity)$/;
     function visit(node) {
+      if (ts.isJsxAttribute(node) && node.name.getText(tree) === "style") {
+        let expression =
+          node.initializer && ts.isJsxExpression(node.initializer)
+            ? node.initializer.expression
+            : undefined;
+        while (
+          expression &&
+          (ts.isAsExpression(expression) ||
+            ts.isSatisfiesExpression(expression) ||
+            ts.isParenthesizedExpression(expression))
+        )
+          expression = expression.expression;
+        if (!expression || !ts.isObjectLiteralExpression(expression))
+          report("inlineStyles", node.getText(tree), node.pos);
+        else
+          for (const property of expression.properties) {
+            const name =
+              ts.isPropertyAssignment(property) && !ts.isComputedPropertyName(property.name)
+                ? property.name.getText(tree).replace(/["']/g, "")
+                : null;
+            if (
+              !name ||
+              !allow.some((entry) => entry.file === path && entry.property === name && entry.reason)
+            )
+              report("inlineStyles", property.getText(tree), property.pos);
+          }
+      }
       const key =
         ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name)
           ? node.name.expression

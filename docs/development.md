@@ -194,7 +194,7 @@ They contain no screen selectors. Status slips use `waiting`, `refused`, `comple
 `neutral` and `outline` variants. Pane layouts respond to container width.
 `globals.css` defines the tokens and base layer; controls and screens compose Tailwind utilities.
 
-`pnpm lint` includes the style guard in `scripts/check-styles.mjs`. It rejects arbitrary properties and pixel utilities, default palette colours and shadows, parent-class overrides, unsupported font weights and inline style bypasses. The theme clears the default palette and shadow scale. The allow-list in `scripts/style-allowlist.json` keeps the future dialog width and the sandbox's separate font weight, each with its reason. Any future exception needs a file, exact value and reason.
+`pnpm lint` includes the style guard in `scripts/check-styles.mjs`. It rejects arbitrary properties and pixel utilities, default palette colours and shadows, parent-class overrides, unsupported font weights and inline style bypasses. The theme clears the default palette and shadow scale. The allow-list in `scripts/style-allowlist.json` permits the toggle group's spacing property and the sandbox's separate font weight, each with its reason. Inline styles need an allowed file and property. Literal CSS colours and sizes belong in the token definitions.
 Run database-backed verification commands sequentially. They rebuild the same test template.
 
 `pnpm lint` also runs `scripts/check-docs.mjs`. It resolves relative links and Markdown heading fragments in the README and every Markdown page under `docs/`. It refuses a README above 8,000 bytes.

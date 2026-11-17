@@ -21,6 +21,11 @@
   --input: light-dark(#c2c7e2, #3d4284);
   --ring: var(--primary);
   --radius: 0.5rem;
+  --focus-width: 2px;
+  --hidden-size: 1px;
+  --full-height: 100%;
+  --hidden-clip: 50%;
+  --payment-aside: 21.25rem;
   --sidebar: light-dark(#161a52, #0b0d29);
   --sidebar-foreground: light-dark(#f3f4ff, #eceeff);
   --sidebar-primary: var(--primary);
@@ -41,6 +46,11 @@
   --shadow-*: initial;
   --inset-shadow-*: initial;
   --drop-shadow-*: initial;
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
   --font-sans: var(--font-archivo);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -103,7 +113,7 @@
   --color-funnel-won: light-dark(#1f8f49, #5fd08a);
 }
 @utility grid-cols-payment-detail {
-  grid-template-columns: minmax(0, 1fr) 21.25rem;
+  grid-template-columns: minmax(0, 1fr) var(--payment-aside);
 }
 @utility grid-cols-label-value {
   grid-template-columns: auto 1fr;
@@ -128,7 +138,7 @@
   }
   html,
   body {
-    height: 100%;
+    height: var(--full-height);
     overflow: hidden;
   }
   body {
@@ -162,15 +172,15 @@
     color: var(--primary-foreground);
   }
   :focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
+    outline: var(--focus-width) solid var(--ring);
+    outline-offset: var(--focus-width);
   }
   [role="status"]:empty,
   [role="alert"]:empty {
     position: absolute;
-    width: 1px;
-    height: 1px;
+    width: var(--hidden-size);
+    height: var(--hidden-size);
     overflow: hidden;
-    clip-path: inset(50%);
+    clip-path: inset(var(--hidden-clip));
   }
 }

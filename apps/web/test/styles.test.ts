@@ -24,6 +24,8 @@ test("the style guard rejects literal values and class-coupled styles in every s
     "text-red-500",
     "bg-blue-600",
     "shadow-2xl",
+    "font-black",
+    "font-thin",
   ];
   try {
     for (const extension of ["ts", "tsx", "css"]) {
@@ -66,6 +68,13 @@ test("the style guard rejects computed and template style literals and named fon
   const root = mkdtempSync(join(evidenceDirectory, "style-guard-"));
   try {
     for (const source of [
+      "export const View = () => <div style={{ width: (13) }} />;",
+      'export const View = () => <div style={{ WebkitBoxShadow: "0 1px red" }} />;',
+      'export const View = () => <div style={{ letterSpacing: "1px" }} />;',
+      'export const View = () => <div style={{ transform: "scale(2)" }} />;',
+      'export const View = () => <div style={Object.fromEntries([["width", 13]])} />;',
+      'export const View = () => <div style={{ width: 13 + "px" }} />;',
+      "export const View = () => <div style={{ width, color }} />;",
       'export const View = () => <div style={{ ["width"]: 13 }} />;',
       "export const View = () => <div style={{ [key]: 13 }} />;",
       "export const View = () => <div style={{ width: `13px` }} />;",
@@ -75,6 +84,27 @@ test("the style guard rejects computed and template style literals and named fon
       "export const css = `.title{font-weight:bold}`;",
     ]) {
       writeFileSync(join(root, "fixture.tsx"), source);
+      const result = spawnSync(process.execPath, ["scripts/check-styles.mjs", root], {
+        encoding: "utf8",
+      });
+      expect.soft(result.status, `${source}\n${result.stdout}${result.stderr}`).toBe(1);
+    }
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
+test("the style guard rejects plain CSS colours and sizes outside tokens", () => {
+  mkdirSync(evidenceDirectory, { recursive: true });
+  const root = mkdtempSync(join(evidenceDirectory, "style-guard-"));
+  try {
+    for (const source of [
+      ".fixture { color: #123456; }",
+      ".fixture { width: 13px; }",
+      ".fixture { color: red; }",
+      ".fixture { margin: 1rem; }",
+    ]) {
+      writeFileSync(join(root, "fixture.css"), source);
       const result = spawnSync(process.execPath, ["scripts/check-styles.mjs", root], {
         encoding: "utf8",
       });
