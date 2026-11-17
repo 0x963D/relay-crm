@@ -4,13 +4,32 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { signIn, rpc, settleFrame } from "./support.ts";
 import { browserState, captureDay } from "./paths.ts";
+test.use({ deviceScaleFactor: 2 });
 test("@capture @readme fixed-day screenshots of the running product", async ({ page }) => {
   if (!captureDay) throw new Error("Use pnpm capture:readme for the fixed-day images.");
   const directory = fileURLToPath(new URL("../../../../docs/images/", import.meta.url));
   await mkdir(directory, { recursive: true });
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.clock.setFixedTime(new Date(browserState().today));
   async function capture(name: string) {
+    await settleFrame(page);
+    const extra = await page
+      .locator("*")
+      .evaluateAll((elements) =>
+        Math.max(
+          0,
+          ...elements
+            .filter(
+              (element) =>
+                element.getBoundingClientRect().height > 0 &&
+                getComputedStyle(element).overflowY === "auto",
+            )
+            .map((element) => element.scrollHeight - element.clientHeight),
+        ),
+      );
+    const height = (page.viewportSize()?.height ?? 1000) + extra;
+    expect(height).toBeLessThanOrEqual(1600);
+    await page.setViewportSize({ width: 1440, height });
     for (const theme of ["light", "dark"]) {
       await page.getByRole("combobox", { name: "Appearance", exact: true }).selectOption(theme);
       await settleFrame(page);

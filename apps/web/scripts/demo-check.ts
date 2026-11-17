@@ -89,7 +89,7 @@ if (process.argv.includes("--cold"))
     assert(!image.existed, "A cold check needs a fresh project image name.");
 const readme = await readFile(new URL("../../../README.md", import.meta.url), "utf8");
 const command = readme
-  .split("## Run the demo\n")[1]
+  .split("## Run it\n")[1]
   ?.match(/```sh\n([^`]+)```/)?.[1]
   ?.trim();
 assert.equal(command, "docker compose up", "Run exactly the README quickstart.");
@@ -288,22 +288,20 @@ async function check() {
   assert.equal(health.status, 200);
   const unauthorized = await fetch(`${origin}/api/demo/reset`, { method: "POST" });
   assert.equal(unauthorized.status, 404);
-  const normal = z
-    .object({ paymentId: z.string(), checkout: z.object({ url: z.url() }) })
-    .parse(
-      await rpc(
-        "payments.createCheckout",
-        {
-          key: randomUUID(),
-          accountId: account.id,
-          amount: "100",
-          currency: "GBP",
-          kind: "repeat",
-        },
-        manager.cookie,
-        true,
-      ),
-    );
+  const normal = z.object({ paymentId: z.string(), checkout: z.object({ url: z.url() }) }).parse(
+    await rpc(
+      "payments.createCheckout",
+      {
+        key: randomUUID(),
+        accountId: account.id,
+        amount: "100",
+        currency: "GBP",
+        kind: "repeat",
+      },
+      manager.cookie,
+      true,
+    ),
+  );
   const delivery = await fetch(normal.checkout.url, {
     method: "POST",
     headers: { origin },
