@@ -17,7 +17,7 @@ function lead(
 }
 
 describe("round-robin", () => {
-  it("balances equal queues by user ID without changing the input", () => {
+  it("deals leads in turn, by user ID when queues are equal, without changing the input", () => {
     const leads = [lead(1), lead(2), lead(3)];
     const result = planDistribution(leads, [ana, ben], false, new Map());
     expect(result).toEqual({
@@ -30,7 +30,7 @@ describe("round-robin", () => {
     });
     expect(leads.every((l) => l.lifecycle.state.status === "new")).toBe(true);
   });
-  it("skips a previous owner and then serves the emptier queue", () => {
+  it("skips a previous owner and keeps dealing in turn", () => {
     const leads = [lead(1, ana.ownerId), lead(2)];
     expect(planDistribution(leads, [ana, ben], true, new Map())).toEqual({
       ok: true,
@@ -40,7 +40,7 @@ describe("round-robin", () => {
       ],
     });
   });
-  it("serves the emptiest queue and counts assignments already in the plan", () => {
+  it("starts with the emptiest queue and gives each agent one lead per turn", () => {
     const leads = [lead(1), lead(2), lead(3)];
     expect(
       planDistribution(
@@ -56,8 +56,8 @@ describe("round-robin", () => {
       ok: true,
       value: [
         { leadId: leads[0]?.id, to: ben },
-        { leadId: leads[1]?.id, to: ben },
-        { leadId: leads[2]?.id, to: ana },
+        { leadId: leads[1]?.id, to: ana },
+        { leadId: leads[2]?.id, to: ben },
       ],
     });
   });

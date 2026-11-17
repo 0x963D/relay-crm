@@ -10,17 +10,19 @@ export function planDistribution(
   openLeadCounts: ReadonlyMap<UserId, number>,
 ): Result<readonly DistributionItem[], AccessFailure> {
   const items: DistributionItem[] = [];
-  const counts = new Map(openLeadCounts);
-  const ordered = [...agents].sort((a, b) => a.ownerId.localeCompare(b.ownerId));
+  const open = (agent: Assignment): number => openLeadCounts.get(agent.ownerId) ?? 0;
+  const turns = [...agents].sort((a, b) => open(a) - open(b) || a.ownerId.localeCompare(b.ownerId));
+  let next = 0;
   for (const lead of leads) {
     let chosen: Assignment | undefined;
-    for (const candidate of ordered) {
+    for (let step = 0; step < turns.length && !chosen; step++) {
+      const candidate = turns[(next + step) % turns.length];
+      if (!candidate) continue;
       if (excludePreviousOwner && candidate.ownerId === lead.lifecycle.previousOwnerId) continue;
-      if (!chosen || (counts.get(candidate.ownerId) ?? 0) < (counts.get(chosen.ownerId) ?? 0))
-        chosen = candidate;
+      chosen = candidate;
+      next = (next + step + 1) % turns.length;
     }
     if (!chosen) return err("noEligibleAgent");
-    counts.set(chosen.ownerId, (counts.get(chosen.ownerId) ?? 0) + 1);
     items.push({ leadId: lead.id, to: chosen });
   }
   return ok(items);

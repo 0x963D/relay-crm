@@ -460,8 +460,8 @@ export function PoolScreen({ zone }: { zone: string }) {
                         <fieldset className="space-y-2">
                           <legend className="text-caption font-semibold">Share between</legend>
                           <p className="text-caption text-secondary-foreground">
-                            Each lead goes to the agent with the fewest open leads, counting this
-                            plan. Ties use ascending user ID.
+                            Leads are dealt one at a time, in turn. The agent with the fewest open
+                            leads goes first.
                           </p>
                           <div className="grid gap-2 @xs/assignment:grid-cols-2">
                             {people.map((agent) => (
