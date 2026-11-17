@@ -38,6 +38,7 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   await expect(page.getByText("Balance", { exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Create card checkout", exact: true }).click();
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("395.00");
+  const checkoutFormPath = page.url();
   await accessibility(page, "checkout-form");
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   const link = page.getByRole("textbox", { name: "Pay link", exact: true });
@@ -69,6 +70,8 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   const popup = page.context().waitForEvent("page");
   await open.click();
   const sandbox = await popup;
+  await expect(page).toHaveURL(`${browserState().url}${paymentPath}`);
+  await expect(page.getByRole("article", { name: "Payment detail" })).toBeVisible();
   await expect(
     sandbox.getByRole("heading", { name: "SANDBOX PROVIDER", exact: true }),
   ).toBeVisible();
@@ -82,6 +85,7 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   expect(await second.content()).not.toContain(capability);
   await expect(second.getByRole("textbox", { name: "Pay link", exact: true })).toHaveCount(0);
   await second.close();
+  await page.goto(checkoutFormPath);
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("1.00");
   await page.getByRole("button", { name: "Create checkout", exact: true }).click();
   await expect(

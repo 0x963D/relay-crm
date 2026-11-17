@@ -203,6 +203,7 @@ export function PaymentForm({
                   rel="noopener noreferrer"
                   onClick={() => {
                     setCreated(null);
+                    router.replace(`/payments/${created.paymentId}`);
                   }}
                 >
                   Open the page
