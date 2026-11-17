@@ -23,15 +23,15 @@ A first run builds the app image, taking about two and a half minutes and about 
 
 ## Three things to try
 
-1. As Manager, select leads in **Lead pool**, choose **Round-robin**, press **Preview** and then **Assign** to see each owner before anything moves.
-2. Switch to Agent, open **Hye-jin Park**, log **Spoke to them** with a note, then **Close lead**, **Won** and **Close as won** to see the lead leave the queue and an account open.
+1. As **Manager**, open **Lead pool**, select two leads, and choose **Round-robin**. Press **Preview 2 leads** to see each owner, then **Assign 2 leads**.
+2. Switch to **Agent**, open **Hye-jin Park**, press **Log an attempt**, choose **Spoke to them**, enter a **Note**, and press **Save attempt**. Press **Close lead**, choose **Won**, then press **Close as won** to open an account.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pool-dark.png">
   <img alt="The manager previews a round-robin assignment before confirming it" src="docs/images/pool-light.png">
 </picture>
 
-3. As Agent, open **Accounts**, **Leila Farouk** and **Create card checkout**, enter **395.00**, create it, open the sandbox page, choose **Drop it** and pay. Then switch to Accountant, open **Payments** and that payment, and watch the reconciler complete it with one ledger posting.
+3. As **Agent**, open **Accounts**, **Leila Farouk**, and **Create card checkout**, enter **395.00** in **Amount**, press **Create checkout**, then **Open the page**, choose **Drop it**, and press **Pay £395.00**. Return to the app's tab, switch to **Accountant**, open **Payments** and that payment, and wait about a minute for the scheduled reconciler to complete it with one ledger posting.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/payment-dark.png">

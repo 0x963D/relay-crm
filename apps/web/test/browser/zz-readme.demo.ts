@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { signIn, rpc, saveAttempt } from "./support.ts";
+import { signIn, rpc } from "./support.ts";
+import { readmeJourney } from "./readme-journey.ts";
 import { browserState, captureDirectory } from "./paths.ts";
 
 test("README journeys work through the browser with scheduled recovery", async ({ page }) => {
@@ -59,59 +60,5 @@ test("README journeys work through the browser with scheduled recovery", async (
     }
     await page.screenshot({ path: join(captureDirectory, `${name}.png`), fullPage: true });
   }
-  await page.getByRole("radio", { name: "Manager", exact: true }).click();
-  await page
-    .getByRole("checkbox", { name: /^Select / })
-    .nth(1)
-    .check();
-  await page
-    .getByRole("checkbox", { name: /^Select / })
-    .nth(2)
-    .check();
-  await page.getByRole("tab", { name: "Round-robin", exact: true }).click();
-  await page.getByRole("button", { name: "Preview 2 leads", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Assignment preview", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Assign 2 leads", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "2 leads were assigned" })).toBeVisible();
-  await page.getByRole("radio", { name: "Agent", exact: true }).click();
-  await page.getByRole("link", { name: "Open Hye-jin Park", exact: true }).click();
-  await saveAttempt(page, "Spoke to them", "Confirmed the evening class and price.");
-  await page.getByRole("button", { name: "Close lead", exact: true }).click();
-  await page.getByRole("radio", { name: "Won", exact: true }).click();
-  await page.getByRole("button", { name: "Close as won", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "An account was opened" })).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Main" })
-    .getByRole("link", { name: "Accounts", exact: true })
-    .click();
-  await page
-    .getByRole("region", { name: "Accounts", exact: true })
-    .getByRole("link")
-    .filter({ hasText: "Leila Farouk" })
-    .click();
-  await page.getByRole("link", { name: "Create card checkout", exact: true }).click();
-  await page.getByRole("textbox", { name: "Amount", exact: true }).fill("395.00");
-  await page.getByRole("button", { name: "Create checkout", exact: true }).click();
-  const popup = page.context().waitForEvent("page");
-  await page.getByRole("link", { name: "Open the page", exact: true }).click();
-  const sandbox = await popup;
-  await sandbox.getByRole("radio", { name: /^Drop it/ }).check();
-  await sandbox.getByRole("button", { name: "Pay £395.00", exact: true }).click();
-  await sandbox.getByRole("link", { name: "go back to Relay CRM", exact: true }).click();
-  await expect(sandbox.getByRole("heading", { name: "Credited once", exact: true })).toBeVisible({
-    timeout: 75000,
-  });
-  await expect(
-    sandbox
-      .getByRole("article", { name: "Payment detail" })
-      .getByText("The reconciler", { exact: true }),
-  ).toBeVisible();
-  await expect(sandbox.getByRole("region", { name: "Payment outcome" })).toContainText(
-    "1ledger posting",
-  );
-  const id = sandbox.url().split("/").at(-1);
-  if (!id) throw new Error("Missing payment route.");
-  expect((await rpc(sandbox).payments.get.query({ id })).postingCount).toBe(1);
-  await sandbox.screenshot({ path: join(captureDirectory, "readme-recovery.png"), fullPage: true });
-  await sandbox.close();
+  await readmeJourney(page);
 });
