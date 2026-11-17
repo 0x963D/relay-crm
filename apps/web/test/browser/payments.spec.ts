@@ -50,6 +50,9 @@ test("card checkout recovers a dropped webhook and credits once; the pay link ne
   const capability = await link.inputValue();
   for (const response of [
     await page.request.get(capability),
+    await page.request.head(capability),
+    await page.request.fetch(capability, { method: "OPTIONS" }),
+    await page.request.put(capability),
     await page.request.get(`${browserState().url}/sandbox/checkout/missing`),
     await page.request.post(capability, { headers: { origin: "https://foreign.example" } }),
   ])

@@ -909,6 +909,10 @@ databaseTest(
         });
         expect(anonymous.status).toBe(404);
         const page = await fetch(created.checkout.url);
+        for (const method of ["HEAD", "OPTIONS", "PUT"]) {
+          const response = await fetch(created.checkout.url, { method });
+          expect(response.headers.get("referrer-policy"), method).toBe("no-referrer");
+        }
         const html = await page.text();
         expect(page.status).toBe(200);
         expect(html).toContain("Sandbox Provider checkout");
