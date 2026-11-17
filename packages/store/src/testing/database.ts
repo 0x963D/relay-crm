@@ -78,7 +78,23 @@ export async function createTestDatabase(): Promise<{
   const owner = new pg.Client({ connectionString: server.ownerUrlFor(name) });
   const inspector = new pg.Client({ connectionString });
   const gateSession = new pg.Client({ connectionString: server.ownerUrlFor(name) });
-  await Promise.all([inspector.connect(), gateSession.connect(), owner.connect()]);
+  const connections = await Promise.allSettled([
+    inspector.connect(),
+    gateSession.connect(),
+    owner.connect(),
+  ]);
+  const failed = connections.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") {
+    await Promise.allSettled([
+      store.close(),
+      prisma.$disconnect(),
+      inspector.end(),
+      gateSession.end(),
+      owner.end(),
+    ]);
+    await server.dropDatabase(name);
+    throw failed.reason;
+  }
 
   const transactions: TransactionReport[] = [];
   const onReport = (message: unknown): void => {
@@ -144,7 +160,7 @@ export async function createTestDatabase(): Promise<{
 
   const dispose = async (): Promise<void> => {
     transactionReports.unsubscribe(onReport);
-    await Promise.all([
+    const closed = await Promise.allSettled([
       store.close(),
       prisma.$disconnect(),
       inspector.end(),
@@ -152,6 +168,8 @@ export async function createTestDatabase(): Promise<{
       owner.end(),
     ]);
     await server.dropDatabase(name);
+    const failed = closed.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
   };
   return { db, dispose };
 }

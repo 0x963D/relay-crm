@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 
@@ -8,6 +7,7 @@ export interface TestServer {
   urlFor(database: string): string;
   ownerUrlFor(database: string): string;
   dropDatabase(database: string): Promise<void>;
+  dropTestDatabases(runId?: string): Promise<void>;
   /** Runs statements that cannot run inside the database they affect, such as CREATE DATABASE. */
   admin<T>(run: (client: pg.Client) => Promise<T>): Promise<T>;
 }
@@ -48,30 +48,33 @@ export function testServer(): TestServer {
       await client.end();
     }
   };
+  const prefix = `${baseName}_test_`;
+  const dropDatabase = async (database: string) => {
+    if (database !== `${baseName}_template` && !database.startsWith(prefix))
+      throw new Error("Refusing to drop a database outside the test namespace.");
+    await admin((client) =>
+      client.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)} WITH (FORCE)`),
+    );
+  };
   return {
     templateName: `${baseName}_template`,
-    newDatabaseName: () => `${baseName}_test_${randomUUID().replaceAll("-", "")}`,
+    newDatabaseName: () =>
+      `${prefix}${process.env.RELAY_TEST_RUN ? process.env.RELAY_TEST_RUN + "_" : ""}${randomUUID().replaceAll("-", "")}`,
     urlFor: (database) => urlFor(base, database),
     ownerUrlFor: (database) => urlFor(owner, database),
     admin,
-    dropDatabase: async (database) => {
-      await admin(async (client) => {
-        for (let attempt = 0; ; attempt += 1) {
-          try {
-            await client.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)}`);
-            return;
-          } catch (error) {
-            if (
-              !(error instanceof Error) ||
-              !("code" in error) ||
-              error.code !== "55006" ||
-              attempt >= 100
+    dropDatabase,
+    dropTestDatabases: async (runId) => {
+      const names = await admin(
+        async (client) =>
+          (
+            await client.query<{ name: string }>(
+              "SELECT datname AS name FROM pg_database WHERE starts_with(datname, $1)",
+              [runId ? `${prefix}${runId}_` : prefix],
             )
-              throw error;
-            await sleep(20);
-          }
-        }
-      });
+          ).rows,
+      );
+      for (const { name } of names) await dropDatabase(name);
     },
   };
 }

@@ -9,7 +9,7 @@ import { browserDirectory, stateFile, captureDay } from "./paths.ts";
 export default async function setup() {
   const today = captureDay ? new Date(captureDay) : new Date();
   await mkdir(browserDirectory, { recursive: true });
-  await prepareTestServer();
+  const cleanup = await prepareTestServer();
   const { db, dispose } = await createTestDatabase();
   const inboxFile = join(browserDirectory, "inbox.jsonl");
   await writeFile(inboxFile, "");
@@ -73,6 +73,7 @@ export default async function setup() {
     await standard?.stop();
     await inbox.close();
     await dispose();
+    await cleanup();
     throw error;
   }
   return async () => {
@@ -81,5 +82,6 @@ export default async function setup() {
     await writeFile(join(browserDirectory, "server.log"), server.output());
     await inbox.close();
     await dispose();
+    await cleanup();
   };
 }
