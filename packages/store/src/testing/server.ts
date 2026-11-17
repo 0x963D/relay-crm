@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import pg from "pg";
 
 export interface TestServer {
@@ -66,16 +67,32 @@ export function testServer(): TestServer {
     const app = new pg.Client({ connectionString: databaseUrl });
     await app.connect();
     try {
-      await app.query(
-        "SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity WHERE datname=$1 AND usename=current_user AND pid<>pg_backend_pid()",
-        [database],
-      );
+      await admin(async (client) => {
+        for (let attempt = 0; ; attempt += 1) {
+          for (const role of [app, client]) {
+            await role.query(
+              "SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity WHERE datname=$1 AND usename=current_user AND pid<>pg_backend_pid()",
+              [database],
+            );
+          }
+          try {
+            await client.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)}`);
+            return;
+          } catch (error) {
+            if (
+              !(error instanceof Error) ||
+              !("code" in error) ||
+              error.code !== "55006" ||
+              attempt >= 100
+            )
+              throw error;
+            await sleep(20);
+          }
+        }
+      });
     } finally {
       await app.end();
     }
-    await admin((client) =>
-      client.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)} WITH (FORCE)`),
-    );
   };
   return {
     templateName: `${baseName}_template`,
