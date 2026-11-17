@@ -57,7 +57,7 @@ services:
     volumes:
       - app-config:/run/relay-secrets/app:ro
     ports:
-      - "127.0.0.1:${RELAY_HTTP_PORT:-3107}:3107"
+      - "${RELAY_HTTP_BIND:-127.0.0.1}:${RELAY_HTTP_PORT:-3107}:3107"
     healthcheck:
       test:
         [

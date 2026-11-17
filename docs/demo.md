@@ -12,7 +12,9 @@ Install Docker and Docker Compose, then run this in the repository.
 docker compose up
 ```
 
-Wait until `docker compose ps` shows the `app` service as healthy, then open the app at <http://127.0.0.1:3107> and the mail inbox at <http://127.0.0.1:8127>. Those two ports are the only ones published, and both bind to `127.0.0.1`. The database has no published port. `docker compose config` prints the ports and settings Compose will use.
+Wait until `docker compose ps` shows the `app` service as healthy, then open the app at <http://127.0.0.1:3107> and the mail inbox at <http://127.0.0.1:8127>. Those two ports are the only ones published, and both bind to `127.0.0.1` by default. The database has no published port. `docker compose config` prints the ports and settings Compose will use.
+
+`RELAY_HTTP_BIND` changes the app's published bind address and defaults to `127.0.0.1`. Setting it to `0.0.0.0` exposes the shared demo logins to the network. Use invented data only. A phone on the same network can then call the [native routes](api.md#non-browser-clients) at the host's network address and `RELAY_HTTP_PORT`. The demo's `AUTH_URL` stays unchanged, and the inbox still binds to loopback.
 
 `GET /api/health` answers with an empty 200 once the migrations and the seed have finished, and 503 before that.
 
