@@ -2,24 +2,51 @@
 
 [Back to Relay CRM](../README.md)
 
-## How it is built
+This page covers how the code is divided, how to run it without Docker, what each command does and how the tests are built. The rules that matter are enforced by the build and not by convention. A second way to start a transaction, a database client in the web app, or a clock read in a product rule fails lint, typecheck or a test.
 
-`pnpm -r list --depth -1` lists the workspace packages. Each one holds one kind of knowledge.
+## Three packages
 
-| Package           | What it knows                                         | What it must not do                 |
-| ----------------- | ----------------------------------------------------- | ----------------------------------- |
-| `packages/domain` | Lead states, access scopes, email identity and intake | Import a dependency, read the clock |
-| `packages/store`  | Every SQL statement and every transaction             | Export the Prisma client            |
-| `apps/web`        | HTTP, intake, authentication, payments and screens    | Depend on a database client         |
+`pnpm -r list --depth -1` lists them. Each has one job and one thing it must not do.
 
-The build enforces the right-hand column. The domain declares no dependencies and loads no ambient
-types, so `process`, `fetch` and `node:*` do not typecheck there. Lint forbids `Date.now()` and
-`Math.random()` in it. The web app has no database client to import, so it can only reach data
-through the operations the store exports.
+| Package           | Owns                                             | Must not do                         | What stops it                                                |
+| ----------------- | ------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------ |
+| `packages/domain` | Product rules as pure functions                  | Import a dependency, read the clock | An empty dependency list, no ambient types, and lint         |
+| `packages/store`  | Every SQL statement and every transaction        | Export the database client          | Its entry point exports operations only                      |
+| `apps/web`        | HTTP routes, sign-in, intake sources and screens | Import a database client            | Its manifest declares none, and a test fails if one is added |
 
-## Run it
+The domain takes the time and any randomness as arguments. It loads no ambient types, so `process`, `fetch` and `node:` imports do not typecheck there, and lint refuses `Date.now()`, `new Date()` without an argument and `Math.random()`. Its rules can then be tested as plain functions, and the same input always gives the same decision.
 
-Use the Node.js and pnpm versions declared in `package.json`, and a dedicated PostgreSQL server.
+Two lint rules shape the store. Only `tx.ts` may call Prisma's `$transaction`, so every transaction goes through `transact`. Only `leads.ts` may query the leads table directly, so every lead read sits beside the scope rule that filters it.
+
+The web app parses its settings in one file, `apps/web/src/server/env.ts`, and lint refuses `process.env` everywhere else. A production server refuses to start on a setting it cannot parse.
+
+## Every transaction is serializable and retried
+
+`transact` in `packages/store/src/tx.ts` is the only place a transaction starts. It runs the body at PostgreSQL's SERIALIZABLE isolation level. Every body follows one contract: read the current state, decide, then write the difference.
+
+Two transactions that decide on the same stale state cannot both commit. PostgreSQL fails one with a serialization failure, a deadlock, or a unique violation on an index the two were racing for. `transact` then waits a random interval of up to 200 milliseconds and runs the whole body again. The second run reads what the first one wrote and decides differently. After ten attempts the original error reaches the caller.
+
+The obvious alternative is READ COMMITTED with an explicit lock per row. That works only if every writer, including ones added later, remembers to take the same locks in the same order. It also has nothing to lock when the row does not exist yet, which is the intake case of two submissions for one new email. With SERIALIZABLE, one rule covers every writer, and a forgotten lock cannot become a double credit.
+
+The cost is throughput under contention. A transaction that loses does its work again, and PostgreSQL tracks what serializable transactions read at the level of index pages. On small tables, writes for unrelated people can therefore conflict, and a burst of writes to one table resolves close to one at a time. That is acceptable at a sales team's write rate. It is the first thing to revisit if one table takes many writes a second.
+
+Not every unique violation is a race. `RACE_CONSTRAINTS` in `tx.ts` classifies each unique index as `retry` or `reject`. A second lead for one email is a race that a fresh read resolves. A duplicate lead ID is a bug that a retry would only repeat. A test reads the PostgreSQL catalog and fails when an index has no classification, so a new unique index forces the decision.
+
+```sh
+pnpm exec dotenv -- vitest run --project integration packages/store/test/tx.int.test.ts
+```
+
+That file pins each error shape against a real database, then the retry and the limit of ten attempts.
+
+## Audit rows
+
+Assignment, lead work, reopening and every payment state change write a row to `audit_log` in the same transaction. A failed audit write rolls the change back. An edit to a lead's name or phone writes no audit row. A row names its actor, an action from a closed list, a typed subject, a JSON snapshot before and after, and the HTTP request ID. A check constraint requires the actor to be a person or a named system actor and never both.
+
+Operations with an idempotency key go through `idempotent` in `packages/store/src/idempotency.ts`, which runs inside the caller's transaction. [The API page](api.md#idempotency-keys) describes what a client sees.
+
+## Run it without Docker
+
+You need Node.js 24 or later, pnpm 11.18.0 and a PostgreSQL 17 server used for nothing else.
 
 1. Install the dependencies and generate the Prisma client.
 
@@ -28,51 +55,33 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
    pnpm db:generate
    ```
 
-2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `MIGRATION_DATABASE_URL`. Clear the placeholder `AUTH_SECRET`
-   to keep sign-in off, or replace it with a generated secret before enabling sign-in. Use a dedicated database.
+2. Start PostgreSQL. This command runs it in a container on port 54329.
 
    ```sh
    docker run --name relay-crm-pg -e POSTGRES_USER=relay -e POSTGRES_PASSWORD=relay \
      -e POSTGRES_DB=relay -p 127.0.0.1:54329:5432 -d postgres:17
    ```
 
-3. Create the migration owner and restricted app roles in that dedicated server. Replace both
-   example passwords and put the matching URLs in `.env`.
+3. Create the [two database roles](access-security.md#the-two-database-roles). Replace both example passwords.
 
    ```sh
    docker exec -i relay-crm-pg psql -U relay -d relay -v owner_password=fake-local-owner-password -v app_password=fake-local-app-password < packages/store/scripts/setup-roles.sql
    ```
 
-   `relay_owner` owns the schema and tables. It has `CREATEDB` for isolated test databases and
-   no superuser or role-management attribute. `MIGRATION_DATABASE_URL` is its connection.
-   `relay_app` has no ownership, superuser, `CREATEDB`, `CREATEROLE` or `BYPASSRLS` attribute,
-   and no membership of the owner role. `DATABASE_URL` is its connection. Do not put the owner
-   credentials in the serving app's environment.
+4. Copy `.env.example` to `.env`. Set `DATABASE_URL` to the `relay_app` connection and `MIGRATION_DATABASE_URL` to the `relay_owner` connection. Clear `AUTH_SECRET`, because the server refuses to start with the placeholder.
 
-   The app has schema usage and sequence usage. The [access reference](access-security.md#application-grants) lists its table grants and additional column updates. Memberships, teams and email suppressions are read-only.
-   Authentication tables and request limits allow deletion. No app table grants `TRUNCATE`,
-   DDL or trigger control. `pnpm exec vitest run --project unit packages/store/test/readme.test.ts` checks these tables
-   against `packages/store/test/app-privileges.ts`.
-
-   The statement-level `BEFORE TRUNCATE` triggers remain a second defence, including for the owner.
-   Run `pnpm exec dotenv -- vitest run --project integration packages/store/test/database-role.int.test.ts packages/store/test/schema.int.test.ts`
-   to check permissions and the truncate guards.
-
-4. Apply migrations and start the app.
+5. Apply the migrations and start the app.
 
    ```sh
    pnpm db:migrate
    pnpm dev
    ```
 
-   The lead list is at <http://localhost:3000>. Without a session it shows the not-signed-in page.
-   To use the existing development grant, set `RELAY_DEV_ACTOR=1`. Its role defaults to agent.
-   Set `RELAY_DEV_ROLE=owner` to see the pool. The grant works only in development-server bundles.
-   The build fixes that fact using Next's configuration phase and an inlined flag.
-   Production startup refuses a nonempty `RELAY_DEV_ACTOR`, even with `NODE_ENV=development`.
-   `pnpm test:prod` reproduces that startup and checks that no development user is created.
+   The app is at <http://localhost:3000>. With sign-in off it has no way to tell who you are, so every page shows the sign-in screen.
 
-5. Send a lead through the web form endpoint.
+6. To work without sign-in, set `RELAY_DEV_ACTOR=1` in `.env` and restart. The app then acts as a built-in development user. `RELAY_DEV_ROLE` sets its role and defaults to `agent`. Set it to `owner` to see the pool.
+
+7. Send a lead through the web form.
 
    ```sh
    curl -X POST http://localhost:3000/api/intake/form \
@@ -80,121 +89,83 @@ Use the Node.js and pnpm versions declared in `package.json`, and a dedicated Po
      -d '{"email":"ana@example.com","name":"Ana Silva","campaign":"spring"}'
    ```
 
-   The response is `{"received":true}` with status 202. With `RELAY_DEV_ROLE=owner` the lead
-   appears in the list.
+   The response is `{"received":true}` with status 202, and Ana Silva appears in the pool.
+
+The development user exists only in a development server. A production build refuses to start when `RELAY_DEV_ACTOR` is set, even with `NODE_ENV=development`.
 
 ## Commands
 
-| Command                                  | What it does                                                    |
-| ---------------------------------------- | --------------------------------------------------------------- |
-| `pnpm dev`                               | Starts the app in development mode                              |
-| `pnpm build`                             | Builds the app. It needs no database                            |
-| `pnpm start`                             | Serves the built app                                            |
-| `pnpm db:generate`                       | Generates the Prisma client from the schema                     |
-| `pnpm db:migrate`                        | Applies migrations through `MIGRATION_DATABASE_URL`             |
-| `pnpm reconcile`                         | Checks due card payments at the provider                        |
-| `pnpm test:mutations <output-directory>` | Removes safety checks and requires their tests to fail          |
-| `pnpm outbox`                            | Delivers due payment receipts through SMTP                      |
-| `pnpm import:csv <file>`                 | Imports a CSV file through intake and prints a report           |
-| `pnpm test`                              | Runs the unit tests. They need no database                      |
-| `pnpm test:int`                          | Runs the integration tests against the server in `DATABASE_URL` |
-| `pnpm test:prod`                         | Builds and tests the production server against PostgreSQL       |
-| `pnpm lint`                              | Checks styles, documentation links and type-aware ESLint rules  |
-| `pnpm format:check`                      | Checks formatting with Prettier                                 |
-| `pnpm typecheck`                         | Typechecks every package and its tests                          |
+| Command                                    | What it does                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `pnpm dev`                                 | Starts the app in development mode on `127.0.0.1`                                    |
+| `pnpm build`                               | Builds the app. It reads no settings and needs no database                           |
+| `pnpm start`                               | Serves the built app                                                                 |
+| `pnpm db:generate`                         | Generates the Prisma client from the schema                                          |
+| `pnpm db:migrate`                          | Applies migrations through `MIGRATION_DATABASE_URL`                                  |
+| `pnpm db:seed`                             | Seeds the demo company into an empty database. It needs both database URLs and SMTP  |
+| `pnpm demo:reset`                          | Wipes and reseeds a database that carries the demo's marker. It needs `RELAY_DEMO=1` |
+| `pnpm demo:check <directory>`              | Runs the [Compose demo end to end](demo.md#first-run-measurements)                   |
+| `pnpm import:csv <file>`                   | Imports a CSV file through intake and prints a report                                |
+| `pnpm reconcile`                           | Checks due card payments at the provider                                             |
+| `pnpm outbox`                              | Sends due payment receipts through SMTP                                              |
+| `pnpm lint`                                | Runs the style guard, the documentation check and ESLint                             |
+| `pnpm format:check`                        | Checks formatting with Prettier                                                      |
+| `pnpm typecheck`                           | Typechecks every package and its tests                                               |
+| `pnpm test`                                | Runs the unit tests. They need no database                                           |
+| `pnpm test:int`                            | Runs the integration tests against the PostgreSQL server in `.env`                   |
+| `pnpm test:proofs`                         | Runs each command in the README's proof list and checks which file it ran            |
+| `pnpm test:prod`                           | Builds the app and tests the production server over HTTP                             |
+| `pnpm test:browser`                        | Runs the browser tests against the built app                                         |
+| `pnpm test:mutations <directory> <prefix>` | Removes safety checks one at a time and requires a named test to fail                |
+| `pnpm test:image`                          | Builds the app image and checks what it contains and which user it runs as           |
+| `pnpm capture`                             | Writes screenshots of the built app under `test-results/evidence/built/`             |
+| `pnpm capture:readme`                      | Rewrites the six README images under `docs/images/`                                  |
 
-The integration tests create a template database and one database per test, and drop each test's
-database when the test ends. Only `MIGRATION_DATABASE_URL` needs `CREATEDB`.
-The app and test operations use the restricted `DATABASE_URL` role. Test fixtures use an explicit
-owner connection to create schemas, set up fixture rows, install failure triggers, restore marked
-demos and verify owner-level defences.
-Database test files run sequentially.
+## Tests
 
-## Shared store support
+The unit tests cover the domain and the parts of the web app that need no database, such as body limits, CSV parsing and the SMTP adapter against a local server.
 
-`idempotent` in `packages/store/src/idempotency.ts` stores request hashes and JSON results in
-`idempotency_records`. Its unique key is `(scope, key)`. User scopes are `user:<user ID>`.
-System scopes are `system:<job name>`. The helper canonicalizes JSON object keys, preserves array
-order, and compares both the request hash and operation name before replaying. It runs inside the
-caller's transaction and does not authorize the operation. Callers authorize new work before writing.
-Distribution uses this helper.
+The integration tests run against real PostgreSQL, because the guarantees on these pages live in constraints, triggers and isolation levels that a fake would not have. Before the run, a setup step creates a template database and migrates it. Each test then gets its own database cloned from the template and drops it afterwards. A rollback per test is not possible, because the code under test owns its transactions. Test files run one at a time. The code under test connects as `relay_app`. Only the fixtures use the owner connection, for setup the app role is not allowed to do and for checks of what the owner itself is refused.
 
-`Principal` includes the named system actors `intake`, `providerWebhook` and `reconciler`.
-`recordScope` grants intake only lead identity lookup and reopening. It denies full-record reads,
-contact-field edits and assignment to every system actor. The providerWebhook and reconciler system actors may settle payments. Only the reconciler may scan due payments.
-Neither has human record-read or edit access.
-The database requires an audit actor to be either a user or a named system actor, never both or neither.
+A race test does not rely on timing. A helper session takes a lock that lets every racer read and decide, then holds each at its first write. When all of them are waiting, it releases the lock and they collide on the same stale state.
 
-Audit actions include lead assignment and reopening, checkout creation, payment state changes, review closure
-and ledger posting. Subjects are typed as leads, accounts, payments or ledger transactions.
-The database enforces these closed sets and object snapshots, and refuses audit updates and deletes.
-The HTTP boundary generates a request ID and returns it in `X-Request-ID`. Assignment activity,
-payment events and audit rows keep that ID. Idempotent operations also keep their separate
-`idempotency_id`. Reopening uses its intake event ID. The receipt foreign key checks at commit so the audit
-can precede its immutable receipt inside the same transaction.
+`pnpm test:prod` builds the app and starts the real server. It signs people in through a local SMTP receiver and drives intake, lead work and payments through the HTTP API. It also checks what a production server refuses, such as the development user and a weak secret.
 
-`RACE_CONSTRAINTS` in `packages/store/src/tx.ts` classifies every public unique index as `retry` or
-`reject`. The PostgreSQL catalog test fails if an index has no classification or a named index is absent.
-A new index therefore needs an explicit retry decision.
+`pnpm test:browser` needs `pnpm exec playwright install chromium` and `pnpm build` first. It serves the built app over a fresh seeded database and walks the main journeys in Chromium. Each tested screen also runs axe against the WCAG 2 and 2.1 A and AA rules and axe's best-practice rules, and a violation fails the test.
 
-`pnpm test` runs unit tests. `pnpm test:int` runs integration tests against real PostgreSQL,
-including forced races, catalog checks for unique indexes and grants, and an enabled-trigger
-catalog check for every append-only row guard. Owner-connection tests attempt both updates and
-deletes on every append-only table.
-`pnpm test:prod` checks the production build, SMTP sign-in and scoped API errors.
-`pnpm test:mutations <output-directory>` removes each covered safety check in turn, requires its
-named test to fail, restores the source in `finally`, and reruns the unchanged tests.
+`pnpm test:mutations` asks whether the tests would notice a missing guard. It removes one check from the source or a migration, runs the test that is meant to catch it, requires that test to fail, restores the file and reruns the unchanged tests. The optional prefix selects a group, such as `payment-`, `receipt-lease`, `truncate-` or `work-`.
 
-## Screens and browser checks
+Run the commands that use the database one at a time. They rebuild the same template database.
 
-The screens use a carbon-blue shell, state colours and ruled custody lines. Appearance follows your system until you choose Light or Dark.
-Archivo is a variable font with weight and width axes. Next.js serves the font from this app.
-Its [SIL Open Font License 1.1](../apps/web/src/app/fonts/OFL.txt) permits embedding and redistribution.
-The font comes from [Google Fonts' Archivo files](https://github.com/google/fonts/tree/main/ofl/archivo).
-The app sends no font request to another host.
+## Screens
 
-After the development database is available, run these commands from the repository.
+| Route                                                   | Shows                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `/sign-in`                                              | Sign-in by emailed code, and the demo's three buttons                         |
+| `/queue`, `/queue/leads/[leadId]`                       | The signed-in agent's queue, with a lead open beside it                       |
+| `/agents/[agentId]`, `/agents/[agentId]/leads/[leadId]` | One agent's queue, for managers and team leads                                |
+| `/pool`                                                 | Unassigned leads and assignment                                               |
+| `/accounts`, `/accounts/[id]`, `/accounts/[id]/ledger`  | Accounts, one account and its ledger                                          |
+| `/payments`, `/payments/[id]`, `/payments/[id]/edit`    | Payment groups, one payment, and the form that edits a waiting manual payment |
+| `/payments/new/[accountId]/[method]`                    | The card and manual payment forms                                             |
+| `/funnel`                                               | Campaign totals, with a CSV export                                            |
 
-```sh
-pnpm exec playwright install chromium
-pnpm build
-pnpm test:browser
-pnpm capture
-```
+`/` redirects to the home screen for the role: the queue for an agent, payments for an accountant and the pool for everyone else.
 
-`test:browser` runs the production build against a fresh, seeded database on the configured PostgreSQL
-server. It submits a public enquiry, assigns it from the pool, records attempts, sets, moves and
-clears a callback, adds a note and wins an account. It also checks emailed-code sign-in, code
-refusal, keyboard focus, reduced motion and the light, dark and phone queues.
-Axe checks WCAG 2 A and AA, WCAG 2.1 A and AA, and its best-practice rules on each tested screen.
-The browser CI job runs these checks and the capture script. A failing check fails the job.
+Screens call the same tRPC router as outside clients. A server component calls it in process, and the browser calls `/api/trpc`. Access is decided in the store. A page's role check only chooses which screen to show, and the operation behind it still refuses a caller outside its scope.
 
-`capture` writes 2x images under `test-results/evidence/built/`. Set `RELAY_EVIDENCE_DIR` to use another directory. Logs, accessibility results and failure traces stay beside them.
-`pnpm capture:readme` writes the six queue, pool and payment images under `docs/images/` at twice the pixel density. The capture seed and browser share a fixed date. Counts, names, dates and assignment results
-come from the seeded API.
-Both commands stop their servers and drop only their own test database when they finish.
+The appearance follows the system setting until the person picks Light or Dark. The app serves the Archivo variable font from its own files under the [SIL Open Font License 1.1](../apps/web/src/app/fonts/OFL.txt) and requests no font from another host.
 
-### Routes and data
+## The style guard
 
-`/sign-in` handles emailed codes and demo sign-in. `/queue` shows the signed-in agent's work;
-`/queue/leads/[leadId]` opens a lead beside it. Managers and team leads use
-`/agents/[agentId]` and `/agents/[agentId]/leads/[leadId]`. `/pool` handles assignment.
-`/payments` shows payment groups and records. `/payments/new/[accountId]/[method]` hosts both money forms. `/accounts` opens account details and ledgers. `/funnel` shows campaign totals and exports them as CSV. `/accountant` redirects to Payments. `/` redirects to the role's home.
-Links use normal browser navigation, including modified clicks. Queue layouts stay mounted when
-the lead changes. List routes have loading boundaries. Payment records resolve access before streaming so an unavailable record returns 404. Route segments have error boundaries.
+`pnpm lint` runs `scripts/check-styles.mjs` before ESLint. The guard keeps every colour, size and weight in the token definitions in `apps/web/src/app/globals.css`, so a screen cannot drift from the theme one literal at a time. It rejects:
 
-The server resolves the session once per render, starts independent reads through tRPC's query
-options, and settles the initial workspace reads before hydration. Record content streams through Suspense. The browser keeps one QueryClient.
-Components use the same router-generated options and mutation hooks. A completed save invalidates
-the affected record, queue, pool and agent counts. A business refusal also refreshes those reads.
-A transport failure preserves the draft and its request key for a retry.
+- arbitrary Tailwind values and arbitrary properties, such as a width in pixels written into a class name
+- Tailwind's default palette colours and shadows, which the theme also removes
+- font weights other than normal, medium, semibold and bold
+- selectors that style a child through its parent's class
+- inline styles, and literal CSS colours and sizes outside the token definitions
 
-Controls in `apps/web/src/components/ui` use the standard token names from `components.json`.
-They contain no screen selectors. Status slips use `waiting`, `refused`, `complete`, `fresh`,
-`neutral` and `outline` variants. Pane layouts respond to container width.
-`globals.css` defines the tokens and base layer; controls and screens compose Tailwind utilities.
+An exception needs an entry in `scripts/style-allowlist.json` with a written reason. The one entry covers the sandbox provider's page, which is styled as another company's page on purpose. An entry for a file that no longer exists fails the check.
 
-`pnpm lint` includes the style guard in `scripts/check-styles.mjs`. It rejects arbitrary properties and pixel utilities, default palette colours and shadows, parent-class overrides, unsupported font weights and inline style bypasses. The theme clears the default palette and shadow scale. The allow-list in `scripts/style-allowlist.json` permits the sandbox's separate font weight, with its reason. Inline styles need an allowed file and property. Literal CSS colours and sizes belong in the token definitions.
-Run database-backed verification commands sequentially. They rebuild the same test template.
-
-`pnpm lint` also runs `scripts/check-docs.mjs`. It resolves relative links and Markdown heading fragments in the README and every Markdown page under `docs/`. It refuses a README above 8,000 bytes.
+`pnpm lint` also runs `scripts/check-docs.mjs`. It resolves every relative link and heading fragment in the README and in each page under `docs/`, and it refuses a README above 8,000 bytes.
