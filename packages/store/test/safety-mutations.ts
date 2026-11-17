@@ -27,9 +27,9 @@ const definitions: {
   {
     name: "submitted-plan",
     file: assignment,
-    before: "const plan = planDistribution(leads, agents, request.excludePreviousOwner);",
+    before: "const items = storedItems(request.items);",
     after:
-      "const plan = planDistribution(leads, [...agents].reverse(), request.excludePreviousOwner);",
+      "const items = storedItems(request.items).map((item, index, items) => ({ ...item, to: items[(index + 1) % items.length]!.to }));",
     test: "every submitted lead keeps its previewed owner and team",
     testFile: "packages/store/test/distribution-contract.int.test.ts",
   },

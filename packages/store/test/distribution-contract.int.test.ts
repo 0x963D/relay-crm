@@ -509,3 +509,65 @@ test("every submitted lead keeps its previewed owner and team", async ({ db }) =
     );
   }
 });
+
+test("three submitted two-lead previews reach all three agents", async ({ db }) => {
+  const w = await world(db);
+  const agents = [w.agent, w.agent2, w.other].sort((a, b) => a.ownerId.localeCompare(b.ownerId));
+  const chosen: string[][] = [];
+  for (let batch = 0; batch < 3; batch += 1) {
+    const leadIds = await Promise.all([
+      w.pool(`batch-${String(batch)}-a@example.com`),
+      w.pool(`batch-${String(batch)}-b@example.com`),
+    ]);
+    const preview = await db.store.previewDistribution(w.actor, {
+      leadIds,
+      agents,
+      excludePreviousOwner: false,
+    });
+    chosen.push(preview.items.map((item) => item.to.ownerId));
+    expect(await db.rows("SELECT status FROM leads WHERE id = ANY($1::uuid[])", [leadIds])).toEqual(
+      [{ status: "new" }, { status: "new" }],
+    );
+    const result = await db.store.submitDistribution(
+      w.actor,
+      { previewId: preview.id, fingerprint: preview.fingerprint, key: `batch-${String(batch)}` },
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(result.items).toEqual(preview.items);
+  }
+  expect(chosen).toEqual([
+    [agents[0]?.ownerId, agents[1]?.ownerId],
+    [agents[2]?.ownerId, agents[0]?.ownerId],
+    [agents[1]?.ownerId, agents[2]?.ownerId],
+  ]);
+});
+
+test("an empty queue precedes a full queue and later queue changes preserve the preview", async ({
+  db,
+}) => {
+  const w = await world(db);
+  await db.store.assignPool(
+    w.actor,
+    [await w.pool("existing@example.com")],
+    w.agent,
+    "00000000-0000-4000-8000-000000000001",
+  );
+  const preview = await db.store.previewDistribution(w.actor, {
+    leadIds: [await w.pool("next@example.com")],
+    agents: [w.agent, w.agent2],
+    excludePreviousOwner: false,
+  });
+  expect(preview.items[0]?.to).toEqual(w.agent2);
+  await db.store.assignPool(
+    w.actor,
+    [await w.pool("intervening-a@example.com"), await w.pool("intervening-b@example.com")],
+    w.agent2,
+    "00000000-0000-4000-8000-000000000001",
+  );
+  const result = await db.store.submitDistribution(
+    w.actor,
+    { previewId: preview.id, fingerprint: preview.fingerprint, key: "frozen-plan" },
+    "00000000-0000-4000-8000-000000000001",
+  );
+  expect(result.items).toEqual(preview.items);
+});

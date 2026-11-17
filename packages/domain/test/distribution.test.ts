@@ -17,9 +17,9 @@ function lead(
 }
 
 describe("round-robin", () => {
-  it("cycles agents in order without changing the input", () => {
+  it("balances equal queues by user ID without changing the input", () => {
     const leads = [lead(1), lead(2), lead(3)];
-    const result = planDistribution(leads, [ana, ben], false);
+    const result = planDistribution(leads, [ana, ben], false, new Map());
     expect(result).toEqual({
       ok: true,
       value: [
@@ -30,9 +30,9 @@ describe("round-robin", () => {
     });
     expect(leads.every((l) => l.lifecycle.state.status === "new")).toBe(true);
   });
-  it("skips a previous owner and continues from the next agent", () => {
+  it("skips a previous owner and then serves the emptier queue", () => {
     const leads = [lead(1, ana.ownerId), lead(2)];
-    expect(planDistribution(leads, [ana, ben], true)).toEqual({
+    expect(planDistribution(leads, [ana, ben], true, new Map())).toEqual({
       ok: true,
       value: [
         { leadId: leads[0]?.id, to: ben },
@@ -40,11 +40,41 @@ describe("round-robin", () => {
       ],
     });
   });
+  it("serves the emptiest queue and counts assignments already in the plan", () => {
+    const leads = [lead(1), lead(2), lead(3)];
+    expect(
+      planDistribution(
+        leads,
+        [ana, ben],
+        false,
+        new Map([
+          [ana.ownerId, 2],
+          [ben.ownerId, 0],
+        ]),
+      ),
+    ).toEqual({
+      ok: true,
+      value: [
+        { leadId: leads[0]?.id, to: ben },
+        { leadId: leads[1]?.id, to: ben },
+        { leadId: leads[2]?.id, to: ana },
+      ],
+    });
+  });
+  it("breaks equal queue sizes by ascending user ID regardless of input order", () => {
+    expect(planDistribution([lead(1)], [ben, ana], false, new Map())).toEqual({
+      ok: true,
+      value: [{ leadId: lead(1).id, to: ana }],
+    });
+  });
   it("refuses a lead with no eligible agent", () => {
-    expect(planDistribution([lead(1, ana.ownerId)], [ana], true)).toEqual({
+    expect(planDistribution([lead(1, ana.ownerId)], [ana], true, new Map())).toEqual({
       ok: false,
       error: "noEligibleAgent",
     });
-    expect(planDistribution([lead(1)], [], false)).toEqual({ ok: false, error: "noEligibleAgent" });
+    expect(planDistribution([lead(1)], [], false, new Map())).toEqual({
+      ok: false,
+      error: "noEligibleAgent",
+    });
   });
 });

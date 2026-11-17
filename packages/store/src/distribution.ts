@@ -23,7 +23,7 @@ import {
 import { currentActor } from "./auth.ts";
 import { AccessError } from "./errors.ts";
 import { InvariantError, lifecycleFromRow } from "./lead-row.ts";
-import { scopedLead, updateLifecycle, editLeadFields } from "./leads.ts";
+import { scopedLead, updateLifecycle, editLeadFields, openLeadCounts } from "./leads.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
 
 async function agentFor(tx: Tx, actor: Actor, to: Assignment): Promise<void> {
@@ -156,11 +156,20 @@ export async function previewDistribution(
     )
       throw new AccessError("invalidAgent");
     for (const to of agents) await agentFor(tx, current, to);
-    const planned = planDistribution(leads, agents, request.excludePreviousOwner);
+    const counts = await openLeadCounts(
+      tx,
+      agents.map((agent) => agent.ownerId),
+      { kind: "all" },
+    );
+    const queueSizes = new Map(
+      agents.map((agent) => [agent.ownerId, counts.get(agent.ownerId) ?? 0]),
+    );
+    const planned = planDistribution(leads, agents, request.excludePreviousOwner, queueSizes);
     if (!planned.ok) throw new AccessError(planned.error);
     const snapshot = leads.map((lead) => ({ id: lead.id, version: lead.version }));
     const storedRequest = {
       agents: agents.map((a) => ({ ...a })),
+      items: planned.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
       excludePreviousOwner: request.excludePreviousOwner,
     };
     const fingerprint = requestHash({ actorId: current.userId, snapshot, request: storedRequest });
@@ -238,7 +247,6 @@ export async function submitDistribution(
           throw new InvariantError("Invalid preview request");
         const snapshot = preview.snapshot;
         if (!Array.isArray(snapshot)) throw new InvariantError("Invalid preview snapshot");
-        const leads: DistributionLead[] = [];
         for (const entry of snapshot) {
           if (
             typeof entry !== "object" ||
@@ -253,20 +261,18 @@ export async function submitDistribution(
           const row = await scopedLead(tx, current, id, "assign");
           if (row.version !== entry.version || row.status !== "new")
             throw new AccessError("stalePreview");
-          leads.push({ id, version: row.version, lifecycle: lifecycleFromRow(row) });
         }
         const agents = request.agents.map(storedAgent);
         for (const to of agents) await agentFor(tx, current, to);
-        const plan = planDistribution(leads, agents, request.excludePreviousOwner);
-        if (!plan.ok) throw new AccessError(plan.error);
-        for (const item of plan.value)
+        const items = storedItems(request.items);
+        for (const item of items)
           await applyAssignment(tx, current, item, "pool", {
             kind: "idempotency",
             id: idempotencyId,
             requestId,
           });
         return {
-          items: plan.value.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
+          items: items.map((item) => ({ leadId: item.leadId, to: { ...item.to } })),
           changed: true,
         };
       },

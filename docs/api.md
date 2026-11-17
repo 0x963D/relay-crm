@@ -188,7 +188,7 @@ The [payment reference](payments.md) covers card checkouts, manual approval, rec
 ## Assignment guarantees
 
 - Team leads and management manually assign pool leads, individually or in a batch.
-  Round-robin has an immutable preview and a fingerprint. Changed leads invalidate the preview,
+  Round-robin gives each lead to the eligible selected agent with the fewest open leads, including assignments already planned, breaks ties by ascending user ID, and stores an immutable preview with a fingerprint. Changed leads invalidate the preview,
   even if a lead returns to its earlier state. A matching idempotency key and request replays the
   stored result. A different request under the same key returns `idempotencyConflict`.
   The planner can exclude previous owners. Reassignment preserves status and follow-up detail.

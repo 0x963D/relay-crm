@@ -10,6 +10,7 @@ import {
   type LeadLifecycle,
   type SystemPrincipal,
   type RecordAccess,
+  type RecordScope,
   TeamId,
 } from "@relay/domain";
 import { currentActor } from "./auth.ts";
@@ -56,6 +57,19 @@ export async function leadPool(db: Db, actor: Actor, page: { limit: number; offs
   });
 }
 
+export async function openLeadCounts(tx: Tx, ownerIds: readonly string[], scope: RecordScope) {
+  const counts = await tx.lead.groupBy({
+    by: ["ownerId"],
+    where: {
+      ownerId: { in: [...ownerIds] },
+      status: { in: ["assigned", "working"] },
+      AND: scopeWhere(scope),
+    },
+    _count: { _all: true },
+  });
+  return new Map(counts.map((row) => [row.ownerId, row._count._all]));
+}
+
 export async function queueAgents(db: Db, actor: Actor, offset: number) {
   return transact(db, async (tx) => {
     const current = await currentActor(tx, actor);
@@ -78,16 +92,11 @@ export async function queueAgents(db: Db, actor: Actor, offset: number) {
       const teamId = TeamId.parse(member.teamId);
       return ownerId !== null && teamId !== null && scopeAdmits(scope, { ownerId, teamId });
     });
-    const counts = await tx.lead.groupBy({
-      by: ["ownerId"],
-      where: {
-        ownerId: { in: admitted.map((member) => member.userId) },
-        status: { in: ["assigned", "working"] },
-        AND: scopeWhere(scope),
-      },
-      _count: { _all: true },
-    });
-    const openCounts = new Map(counts.map((row) => [row.ownerId, row._count._all]));
+    const openCounts = await openLeadCounts(
+      tx,
+      admitted.map((member) => member.userId),
+      scope,
+    );
     return admitted.map((member) => {
       const ownerId = UserId.parse(member.userId);
       const teamId = TeamId.parse(member.teamId);
