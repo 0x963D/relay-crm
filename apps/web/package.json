@@ -16,7 +16,7 @@
     "build": "next build",
     "start": "node scripts/serve.ts",
     "typecheck": "pnpm types:api && tsc --project tsconfig.json && tsc --project tsconfig.test.json",
-    "types:api": "tsc --project tsconfig.api.json && node ../../scripts/link-api-types.mjs"
+    "types:api": "node ../../scripts/link-api-types.mjs"
   },
   "dependencies": {
     "@relay/domain": "workspace:*",
