@@ -69,6 +69,7 @@ export class PhoneEntries {
   private loaded = false;
   private retired = false;
   private tail = Promise.resolve();
+  private unconfirmed = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private readonly views = new Map<string, WriteSnapshot>();
   private readonly deferred = new Map<string, Extract<Answer, { kind: "receipt" }>>();
@@ -80,7 +81,7 @@ export class PhoneEntries {
       id: string;
       operation: Draft["operation"];
       draft: Draft | null;
-      timer: ReturnType<typeof setTimeout>;
+      timer: ReturnType<typeof setTimeout> | undefined;
       work: Promise<void> | null;
     }
   >();
@@ -107,12 +108,14 @@ export class PhoneEntries {
   snapshot(id: string): WriteSnapshot {
     return this.views.get(id) ?? idleSnapshot;
   }
-  begin(id: string) {
+  begin(id: string, operation: Draft["operation"]) {
     if (this.retired) return;
+    const key = draftKey(id, operation);
+    const cleared = !this.drafts.has(key) && this.draftErrors.delete(key);
     if (!this.data.entries[id] && this.snapshot(id).state === "saved") {
       this.views.delete(id);
       this.emit();
-    }
+    } else if (cleared) this.emit();
   }
   entries() {
     return Object.values(this.data.entries).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
@@ -132,9 +135,11 @@ export class PhoneEntries {
   private canDraft(id: string, operation: Draft["operation"]) {
     const state = this.snapshot(id).state;
     const entry = this.data.entries[id];
-    return entry
-      ? state === "storageFailed" && entry.command.operation === operation
-      : state === "editing" || state === "storageFailed";
+    if (state !== "editing" && state !== "storageFailed") return false;
+    return !entry || (this.isUnconfirmed(entry) && entry.command.operation === operation);
+  }
+  private isUnconfirmed(entry: Entry) {
+    return this.unconfirmed.get(entry.command.payload.id) === entry.command.payload.key;
   }
   private stopDrafts(id: string) {
     for (const [key, pending] of this.drafts) {
@@ -146,27 +151,38 @@ export class PhoneEntries {
   updateDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
     if (this.retired) return;
     const key = draftKey(id, operation);
-    if (!this.canDraft(id, operation)) {
+    if (this.loaded && !this.canDraft(id, operation)) {
       this.draftErrors.add(key);
       this.emit();
       return;
     }
+    this.stageDraft(draft, id, operation, this.loaded);
+  }
+  private stageDraft(
+    draft: Draft | null,
+    id: string,
+    operation: Draft["operation"],
+    schedule: boolean,
+  ) {
+    const key = draftKey(id, operation);
     clearTimeout(this.drafts.get(key)?.timer);
     this.drafts.set(key, {
       id,
       operation,
       draft: draft ? draftSchema.parse(draft) : null,
       work: null,
-      timer: setTimeout(() => {
-        this.run(() => this.flushDraft(id, operation));
-      }, 500),
+      timer: schedule
+        ? setTimeout(() => {
+            this.run(() => this.flushDraft(id, operation));
+          }, 500)
+        : undefined,
     });
   }
   async flushDraft(id: string, operation: Draft["operation"]) {
     if (this.retired) return;
     const key = draftKey(id, operation);
     const pending = this.drafts.get(key);
-    if (!pending) return;
+    if (pending?.timer === undefined) return;
     if (pending.work) return pending.work;
     clearTimeout(pending.timer);
     pending.work = (async () => {
@@ -218,7 +234,7 @@ export class PhoneEntries {
       ...extra,
     };
   }
-  private commit(change: (data: PhoneData) => PhoneData) {
+  private commit(change: (data: PhoneData) => PhoneData, onStored?: () => void) {
     const work = this.tail.then(async () => {
       if (this.retired) throw new Error("This phone store has been retired.");
       if (!this.loaded) throw new Error("Phone storage has not loaded.");
@@ -226,6 +242,7 @@ export class PhoneEntries {
       if (next === this.data) return false;
       await this.options.storage.replace(this.options.scope, next);
       this.data = next;
+      onStored?.();
       this.emit();
       return true;
     });
@@ -236,17 +253,25 @@ export class PhoneEntries {
     return confirmStorage(work, this.options.storageTimeoutMs);
   }
   async restore(prior?: PhoneEntries) {
-    const predecessor =
-      prior?.retired && sameScope(prior.options.scope, this.options.scope) ? prior : undefined;
-    await predecessor?.tail;
+    const retired = () => this.retired;
+    if (retired()) return;
+    if (prior?.retired && sameScope(prior.options.scope, this.options.scope)) {
+      this.tail = Promise.all([prior.tail, this.tail]).then(() => undefined);
+      // A store submitted by the retired owner can still land while we wait.
+      this.unconfirmed = prior.unconfirmed;
+      for (const { draft, id, operation } of prior.drafts.values()) {
+        this.stageDraft(draft, id, operation, false);
+      }
+    }
     await this.tail;
+    if (retired()) return;
     const data = await this.options.storage.load(this.options.scope);
-    if (this.retired) return;
+    if (retired()) return;
     this.data = data ?? emptyPhone();
     this.loaded = true;
     for (const entry of this.entries()) {
       const id = entry.command.payload.id;
-      if (predecessor?.snapshot(id).state === "storageFailed") {
+      if (this.isUnconfirmed(entry)) {
         this.show(id, { ...editing(), state: "storageFailed", view: "storageFailed" });
         continue;
       }
@@ -274,29 +299,32 @@ export class PhoneEntries {
         );
       }
     }
-    if (predecessor) {
-      for (const { draft, id, operation } of predecessor.drafts.values()) {
-        this.updateDraft(draft, id, operation);
-      }
+    if (retired()) return;
+    for (const [key, { draft, id, operation, timer }] of [...this.drafts]) {
+      clearTimeout(timer);
+      this.drafts.delete(key);
+      this.updateDraft(draft, id, operation);
     }
     this.emit();
   }
   keepDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
-    return this.commit((data) => {
-      if (!this.canDraft(id, operation)) return data;
-      const key = draftKey(id, operation);
-      const drafts = without(data.drafts, key);
-      if (draft) drafts[key] = draftSchema.parse(draft);
-      // An initial store that missed confirmation was never dispatched.
-      const entries = data.entries[id] ? without(data.entries, id) : data.entries;
-      return { ...data, drafts, entries };
-    });
+    return this.commit(
+      (data) => {
+        if (!this.canDraft(id, operation)) return data;
+        const key = draftKey(id, operation);
+        const drafts = without(data.drafts, key);
+        if (draft) drafts[key] = draftSchema.parse(draft);
+        const entries = data.entries[id] ? without(data.entries, id) : data.entries;
+        return { ...data, drafts, entries };
+      },
+      () => this.unconfirmed.delete(id),
+    );
   }
   async save(command: Command, draft: Draft, offline: boolean) {
     const id = command.payload.id;
     const before = this.snapshot(id);
-    if (!this.active() || busy(before.state)) return;
-    if (this.data.entries[id] && before.state !== "storageFailed")
+    if (!this.loaded || !this.active() || busy(before.state)) return;
+    if (this.data.entries[id] && !this.canDraft(id, command.operation))
       throw new Error("Review the kept entry first.");
     this.stopDrafts(id);
     const decision = transitionWrite(
@@ -304,7 +332,6 @@ export class PhoneEntries {
       before.state === "storageFailed" ? "retry" : "save",
       this.context(null),
     );
-    this.show(id, { ...editing(), state: decision.next, view: decision.view });
     const entry: Entry = {
       command: commandSchema.parse(command),
       draft: draftSchema.parse(draft),
@@ -315,17 +342,24 @@ export class PhoneEntries {
       savedAt: this.options.now().toISOString(),
       unknownCause: null,
     };
+    this.stageDraft(entry.draft, id, command.operation, false);
+    this.show(id, { ...editing(), state: decision.next, view: decision.view });
     try {
-      await this.commit((data) => {
-        const drafts = without(data.drafts, draftKey(id, command.operation));
-        return { ...data, drafts, entries: { ...data.entries, [id]: entry } };
-      });
+      await this.commit(
+        (data) => {
+          const drafts = without(data.drafts, draftKey(id, command.operation));
+          return { ...data, drafts, entries: { ...data.entries, [id]: entry } };
+        },
+        () => this.unconfirmed.set(id, entry.command.payload.key),
+      );
     } catch {
       const failed = transitionWrite("storing", "storeFail", this.context(null));
       this.show(id, { ...editing(), state: failed.next, view: failed.view });
       this.updateDraft(draft, id, command.operation);
       return;
     }
+    this.unconfirmed.delete(id);
+    this.stopDrafts(id);
     this.draftErrors.delete(draftKey(id, command.operation));
     const stored = transitionWrite("storing", "stored", this.context(entry, { offline }));
     this.show(id, { ...editing(), entry, state: stored.next, view: stored.view });
@@ -526,15 +560,10 @@ export class PhoneEntries {
   }
   async discardDraft(id: string, operation: Draft["operation"]) {
     if (this.retired) return;
-    const state = this.snapshot(id).state;
-    if (state !== "editing" && state !== "storageFailed")
-      throw new Error("Review the kept entry first.");
+    if (!this.canDraft(id, operation)) throw new Error("Review the kept entry first.");
     this.stopDrafts(id);
-    await this.commit((data) => ({
-      ...data,
-      entries: state === "storageFailed" ? without(data.entries, id) : data.entries,
-      drafts: without(data.drafts, draftKey(id, operation)),
-    }));
+    if (!(await this.keepDraft(null, id, operation)))
+      throw new Error("Review the kept entry first.");
     this.views.delete(id);
     this.draftErrors.delete(draftKey(id, operation));
     this.emit();

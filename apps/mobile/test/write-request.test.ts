@@ -3,7 +3,7 @@ import superjson from "superjson";
 import { createClient } from "../src/api/client.ts";
 import { writeRequest } from "../src/api/write-request.ts";
 import { PhoneEntries } from "../src/core/phone-entries.ts";
-import { signOutFromPhone } from "../src/core/sign-out.ts";
+import { erasePhone, signOutFromPhone } from "../src/core/sign-out.ts";
 import type { Command, Scope } from "../src/core/write-model.ts";
 import type { Fetch } from "../src/core/request.ts";
 import { command, draft, FakePhone, flush, id, key, now, scope } from "./write-fixtures.ts";
@@ -290,10 +290,9 @@ it.each([false, true])(
           order.push("token");
           return Promise.resolve(true);
         },
-        erase: async () => {
+        erase: () => {
           order.push("phone");
-          owner.retire();
-          await storage.remove(scope);
+          return erasePhone(owner, storage, scope);
         },
         forget: () => {
           order.push("memory");

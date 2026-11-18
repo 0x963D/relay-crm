@@ -19,7 +19,7 @@ export const draft: Draft = {
   handoff: null,
   changedAt: now.toISOString(),
 };
-export const command: Command = {
+export const command: Extract<Command, { operation: "attempt" }> = {
   operation: "attempt",
   payload: { id, key, channel: "call", outcome: "noAnswer", note: draft.note },
 };

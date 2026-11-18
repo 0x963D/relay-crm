@@ -1,3 +1,12 @@
+import { confirmStorage } from "./phone-entries.ts";
+import type { PhoneEntries, PhoneStorage } from "./phone-entries.ts";
+import type { Scope } from "./write-model.ts";
+
+export async function erasePhone(owner: PhoneEntries | null, storage: PhoneStorage, scope: Scope) {
+  owner?.retire();
+  await confirmStorage(storage.remove(scope));
+}
+
 export async function signOutFromPhone(
   actions: {
     revoke: () => Promise<void>;

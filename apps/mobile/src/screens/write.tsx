@@ -211,7 +211,7 @@ export function WriteScreen({
       now: new Date(),
     });
     initial.current = baseline;
-    owner?.begin(id);
+    owner?.begin(id, operation);
     const stored = owner?.draft(id, operation);
     setDraft(snapshot.entry?.draft ?? stored ?? baseline);
     initialized.current = true;

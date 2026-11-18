@@ -48,9 +48,9 @@ The queue is kept only in memory. A failed refresh can show an earlier queue fro
 
 ## Save a write and recover an uncertain answer
 
-While you type, the app keeps a draft after 500 ms and writes pending drafts immediately when it leaves the foreground. Save stops that draft lifecycle. It stores the frozen payload and a unique key before sending anything. That storage step also removes the operation's draft. A held entry prevents another write or a new draft for the same lead. Drafts already kept for other operations remain available after the entry is resolved.
+While you type, the app keeps a draft after 500 ms and writes pending drafts immediately when it leaves the foreground. Save stops that draft lifecycle. It stores the frozen payload and a unique key before sending anything. That storage step also removes the operation's draft. An entry awaiting review prevents another write or a new draft for the same lead. Drafts already kept for other operations remain available after the entry is resolved.
 
-Phone storage has five seconds to confirm. If the initial store does not confirm, nothing is sent. The form stays editable and offers another try or copying your note. Discard also removes an initial store that lands after its confirmation deadline.
+Phone storage has five seconds to confirm. If the initial store does not confirm, nothing is sent. The form stays editable and offers another try or copying your note. If the initial store lands late, typing replaces that entry with a draft. Discard removes it.
 
 The app marks a write's outcome unknown after waiting 20 seconds for an answer. A network error, server error, proxy page, or malformed receipt also leaves the outcome unknown. Reads retain their own timeouts and cancellation.
 

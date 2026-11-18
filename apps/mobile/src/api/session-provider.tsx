@@ -12,13 +12,13 @@ import type { ReactNode } from "react";
 import { Alert, AppState } from "react-native";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { auth, failureFrom, rpc, setSessionEnded } from "./client.ts";
-import { confirmStorage, PhoneEntries } from "../core/phone-entries.ts";
+import { PhoneEntries } from "../core/phone-entries.ts";
 import { phoneStorage } from "./phone-storage.ts";
 import { writeRequest } from "./write-request.ts";
 import { server } from "./server.ts";
 import { bearer, bearerPerson, tokenStore } from "./token.ts";
 import { queryDefaults } from "./queries.ts";
-import { keptPhoneWarning, signOutFromPhone } from "../core/sign-out.ts";
+import { erasePhone, keptPhoneWarning, signOutFromPhone } from "../core/sign-out.ts";
 import { sessionPerson, sessionTransition } from "../core/session.ts";
 import type { Credential, Session } from "../core/session.ts";
 
@@ -185,8 +185,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         revoke: () => auth.signOut(),
         remove: () => tokenStore.clear(token),
         erase: async () => {
-          if (live.current?.person === person) live.current.owner.retire();
-          if (person) await confirmStorage(phoneStorage.remove({ server, person }));
+          if (!person) return;
+          const owner = live.current?.person === person ? live.current.owner : null;
+          await erasePhone(owner, phoneStorage, { server, person });
         },
         forget,
       },

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { PhoneEntries } from "../src/core/phone-entries.ts";
+import { erasePhone } from "../src/core/sign-out.ts";
 import type { Answer, Scope } from "../src/core/write-model.ts";
 import {
   command,
@@ -40,11 +41,10 @@ it.each(["storing", "sending", "afterReceipt"] as const)(
     expect(dispatch).toHaveBeenCalledTimes(1);
   },
 );
-async function setup(
+function createOwner(
   storage = new FakePhone(),
   dispatch = vi.fn<() => Promise<Answer>>(() => new Promise<never>(() => undefined)),
   identity: () => Scope | null = () => scope,
-  prior?: PhoneEntries,
 ) {
   const owner = new PhoneEntries({
     reportError: vi.fn(),
@@ -56,8 +56,17 @@ async function setup(
     storageTimeoutMs: 50,
     requestTimeoutMs: 100,
   });
-  await owner.restore(prior);
   return { owner, storage, dispatch };
+}
+async function setup(
+  storage?: FakePhone,
+  dispatch?: ReturnType<typeof vi.fn<() => Promise<Answer>>>,
+  identity?: () => Scope | null,
+  prior?: PhoneEntries,
+) {
+  const fixture = createOwner(storage, dispatch, identity);
+  await fixture.owner.restore(prior);
+  return fixture;
 }
 it("confirms the entry and key and removes its draft atomically before dispatch", async () => {
   const { owner, storage, dispatch } = await setup();
@@ -146,6 +155,64 @@ it("clears the draft storage warning when Save confirms", async () => {
   expect(storage.saved().entries[id]).toMatchObject({ command });
   expect(owner.draftFailed(id, "attempt")).toBe(false);
 });
+it("clears a refused handoff's draft warning when a fresh form opens", async () => {
+  const { owner } = await setup();
+  await owner.save(command, draft, false);
+  await owner.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+  owner.updateDraft({ ...draft, note: "Late handoff" }, id, "attempt");
+  expect(owner.draftFailed(id, "attempt")).toBe(true);
+  owner.begin(id, "attempt");
+  expect(owner.snapshot(id).state).toBe("editing");
+  expect(owner.draftFailed(id, "attempt")).toBe(false);
+});
+it("refuses Save before loading a dispatched entry", async () => {
+  const { owner, storage } = await setup();
+  await owner.save(command, draft, false);
+  owner.retire();
+  const current = createOwner(storage);
+  await current.owner.save(command, draft, false);
+  expect(current.owner.snapshot(id).state).toBe("editing");
+  expect(current.owner.draftFailed(id, "attempt")).toBe(false);
+  await current.owner.restore();
+  expect(current.owner.snapshot(id)).toMatchObject({ state: "unknown", entry: { command } });
+  expect(current.dispatch).not.toHaveBeenCalled();
+});
+it.each(["typing", "clearing", "discarding"] as const)(
+  "protects a dispatched key from %s after an earlier store missed confirmation",
+  async (action) => {
+    vi.useFakeTimers();
+    const { owner, storage } = await setup();
+    const gate = Promise.withResolvers<undefined>();
+    storage.gate = gate.promise;
+    const saving = owner.save(command, draft, false);
+    await vi.advanceTimersByTimeAsync(51);
+    await saving;
+    expect(owner.snapshot(id).state).toBe("storageFailed");
+    gate.resolve(undefined);
+    await flush();
+    expect(storage.saved().entries[id]?.command.payload.key).toBe(key);
+    owner.retire();
+    const sender = await setup();
+    const sent = { ...command, payload: { ...command.payload, key: id } };
+    await sender.owner.save(sent, draft, false);
+    expect(sender.dispatch).toHaveBeenCalledOnce();
+    sender.owner.retire();
+    await storage.replace(scope, sender.storage.saved());
+    const current = await setup(storage, undefined, undefined, owner);
+    const before = structuredClone(storage.saved());
+    if (action === "discarding") {
+      await current.owner.discardDraft(id, "attempt").catch(() => undefined);
+    } else {
+      current.owner.updateDraft(action === "typing" ? draft : null, id, "attempt");
+      await current.owner.background();
+    }
+    expect(storage.saved()).toEqual(before);
+    expect(current.owner.snapshot(id)).toMatchObject({
+      state: "unknown",
+      entry: { command: sent },
+    });
+  },
+);
 it("warns when new typing cannot be kept after an initial store lands too late", async () => {
   vi.useFakeTimers();
   const { owner, storage } = await setup();
@@ -378,10 +445,9 @@ it("sign-out removes only the named server and person, and failed removal preser
   const other = { ...scope, person: "another-person" };
   await storage.replace(other, storage.saved());
   storage.failure = storage.writes + 1;
-  owner.retire();
-  await expect(storage.remove(scope)).rejects.toThrow();
+  await expect(erasePhone(owner, storage, scope)).rejects.toThrow();
   expect(await storage.load(scope)).toEqual(await storage.load(other));
-  await storage.remove(scope);
+  await erasePhone(owner, storage, scope);
   expect(await storage.load(scope)).toBeNull();
   expect(await storage.load(other)).not.toBeNull();
 });
@@ -402,8 +468,7 @@ it("a repaired status cannot overwrite a later dispatch", async () => {
 it("an old draft callback cannot recreate a removed phone store", async () => {
   const { owner, storage } = await setup();
   await owner.keepDraft(draft, id, "attempt");
-  owner.retire();
-  await storage.remove(scope);
+  await erasePhone(owner, storage, scope);
   await expect(owner.keepDraft(draft, id, "attempt")).rejects.toThrow("retired");
   expect(storage.saved().drafts).toEqual({});
 });
@@ -452,6 +517,65 @@ it("keeps later typing across session end when an initial store landed late", as
   expect(restored.owner.entries()).toEqual([]);
   expect(dispatch).not.toHaveBeenCalled();
 });
+it("carries the latest text through an ended owner retired while storage is slow", async () => {
+  vi.useFakeTimers();
+  const { owner, storage, dispatch } = await setup();
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const saving = owner.save(command, draft, false);
+  await vi.advanceTimersByTimeAsync(51);
+  await saving;
+  const latest = { ...draft, note: "Typed while storage was slow" };
+  owner.updateDraft(latest, id, "attempt");
+  owner.retire();
+  const ended = createOwner(storage, undefined, () => null);
+  const restoring = ended.owner.restore(owner);
+  ended.owner.retire();
+  const signingIn = setup(storage, undefined, undefined, ended.owner);
+  gate.resolve(undefined);
+  const current = await signingIn;
+  await restoring;
+  await current.owner.background();
+  expect(current.owner.draft(id, "attempt")).toEqual(latest);
+  expect(current.owner.entries()).toEqual([]);
+  expect(dispatch).not.toHaveBeenCalled();
+});
+it("keeps the latest draft when a queued Save retires before its storage starts", async () => {
+  const { owner, storage, dispatch } = await setup();
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const oldDraft = owner.keepDraft(draft, id, "attempt");
+  await flush();
+  const latest = { ...draft, note: "Typed just before Save" };
+  const saving = owner.save(
+    { ...command, payload: { ...command.payload, note: latest.note } },
+    latest,
+    false,
+  );
+  owner.retire();
+  const signingIn = setup(storage, undefined, undefined, owner);
+  gate.resolve(undefined);
+  const current = await signingIn;
+  await Promise.all([oldDraft, saving]);
+  storage.failure = storage.writes + 1;
+  await current.owner.background();
+  expect(current.owner.draftFailed(id, "attempt")).toBe(true);
+  await current.owner.background();
+  expect(current.owner.draft(id, "attempt")).toEqual(latest);
+  expect(dispatch).not.toHaveBeenCalled();
+});
+it("keeps the latest draft after the successor reloads following a load failure", async () => {
+  vi.useFakeTimers();
+  const { owner, storage } = await setup();
+  owner.updateDraft(draft, id, "attempt");
+  owner.retire();
+  const current = createOwner(storage);
+  vi.spyOn(storage, "load").mockRejectedValueOnce(new Error("Load failed."));
+  await expect(current.owner.restore(owner)).rejects.toThrow("Load failed.");
+  await current.owner.restore();
+  await current.owner.background();
+  expect(current.owner.draft(id, "attempt")).toEqual(draft);
+});
 it("drops a queued storage change once its owner retires", async () => {
   const { owner, storage } = await setup();
   const gate = Promise.withResolvers<undefined>();
@@ -471,7 +595,6 @@ it("freezes the stored payload against later edits to the caller's draft and com
   const { owner, storage } = await setup();
   const mutableDraft = structuredClone(draft);
   const mutableCommand = structuredClone(command);
-  if (mutableCommand.operation !== "attempt") throw new Error("Expected an attempt.");
   await owner.save(mutableCommand, mutableDraft, true);
   mutableDraft.note = "Changed later";
   mutableCommand.payload.note = "Changed later";
