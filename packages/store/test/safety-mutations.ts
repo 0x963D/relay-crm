@@ -65,8 +65,8 @@ const definitions: {
     name: "edit-current-actor",
     file: assignment,
     before:
-      'const current = await currentActor(tx, actor);\n    await scopedLead(tx, current, id, "edit");',
-    after: 'const current = actor;\n    await scopedLead(tx, current, id, "edit");',
+      'const current = await currentActor(tx, actor);\n    const row = await scopedLead(tx, current, id, "edit");',
+    after: 'const current = actor;\n    const row = await scopedLead(tx, current, id, "edit");',
     test: "editLead reloads the actor after management access is revoked",
   },
   {
@@ -392,8 +392,10 @@ definitions.push(
   {
     name: "work-account-order",
     file: "packages/store/src/accounts.ts",
-    before: 'orderBy: [{ lead: { name: "asc" } }, { lead: { email: "asc" } }, { id: "asc" }],',
-    after: 'orderBy: [{ createdAt: "desc" }, { id: "desc" }],',
+    before:
+      'const orderBy: Prisma.AccountOrderByWithRelationInput[] = [\n      { lead: { name: "asc" } },\n      { lead: { email: "asc" } },\n      { id: "asc" },\n    ];',
+    after:
+      'const orderBy: Prisma.AccountOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];',
     test: "account lists sort by person name with a scoped total and payment summary",
     testFile: "packages/store/test/work.int.test.ts",
   },
