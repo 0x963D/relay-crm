@@ -7,8 +7,7 @@ import superjson from "superjson";
 import { z } from "zod";
 import type { AppRouter } from "../../src/server/rpc.ts";
 import { browserState, browserDirectory } from "./paths.ts";
-export function rpc(page: Page) {
-  const { url } = browserState();
+export function rpc(page: Page, url = browserState().url) {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
@@ -31,8 +30,11 @@ export function browserErrors(page: Page) {
   return errors;
 }
 const sessions = new Map<string, Awaited<ReturnType<BrowserContext["cookies"]>>>();
-export async function signIn(page: Page, role: "manager" | "agent" | "accountant") {
-  const { url } = browserState();
+export async function signIn(
+  page: Page,
+  role: "manager" | "agent" | "accountant",
+  url = browserState().url,
+) {
   const key = `${url}:${role}`;
   const cookies = sessions.get(key);
   if (cookies) await page.context().addCookies(cookies);

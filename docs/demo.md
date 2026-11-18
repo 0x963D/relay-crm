@@ -88,6 +88,8 @@ These follow from shared logins and invented data. None of them is acceptable wi
 
 ## Host it
 
+To deploy your own public demo on Vercel and managed PostgreSQL, follow the [hosting guide](hosted-demo.md).
+
 The Compose file is for one machine. To host the demo elsewhere, give the app these settings. The app image reads them from a JSON file at `/run/relay-secrets/app/config.json`, and `pnpm start` reads them from the environment.
 
 | Setting                                                                                        | Value                                                                                        |

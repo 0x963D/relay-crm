@@ -2,7 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { seedDemo, resetDemo, demoSchedule } from "@relay/store/demo";
+import { seedDemo } from "@relay/store/demo";
+import { maintainDemo } from "../src/server/demo-maintenance.ts";
 import { demoOptions } from "../src/server/demo.ts";
 import { loadDemoConfiguration, readDemoSetupEnv, commandEnvironment } from "../src/server/env.ts";
 
@@ -27,12 +28,11 @@ for (;;) {
 process.stdout.write("Demo setup is ready.\n");
 for (;;) {
   try {
-    const schedule = await demoSchedule(migrationUrl, env.timeZone);
-    if (schedule.seededAt < schedule.start) {
-      await resetDemo({ ...demoOptions(env, migrationUrl), demo: true });
+    const result = await maintainDemo(env, migrationUrl);
+    if (result.state === "reset") {
       process.stdout.write("Restored the demo for the local day.\n");
     } else {
-      await sleep(Math.max(1, schedule.next.getTime() - Date.now()));
+      await sleep(Math.max(1, result.next.getTime() - Date.now()));
     }
   } catch {
     process.stderr.write("Demo reset failed. Retrying in five seconds.\n");

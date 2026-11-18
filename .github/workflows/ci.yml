@@ -89,6 +89,8 @@ jobs:
       - run: psql postgresql://relay:relay@localhost:5432/relay -v owner_password=fake-local-owner-password -v app_password=fake-local-app-password -f packages/store/scripts/setup-roles.sql
       - run: pnpm db:migrate
       - run: pnpm test:int
+      - name: Prove role bootstrap as a limited administrator
+        run: pnpm exec tsx packages/store/test/setup-roles-proof.ts
       - run: pnpm test:proofs
       - run: pnpm test:prod
 

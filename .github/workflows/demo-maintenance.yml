@@ -1,0 +1,55 @@
+name: Demo maintenance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: demo-maintenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: Apply migrations
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          pnpm --filter @relay/store migrate 2>&1 | sed -nE '
+            s/^Datasource "db": PostgreSQL database .*/Datasource "db": PostgreSQL database [redacted]/p
+            /^[0-9]+ migrations? found in prisma\/migrations$/p
+            /^Applying migration `[A-Za-z0-9_]+`$/p
+            /^All migrations have been successfully applied\.$/p
+            /^No pending migrations to apply\.$/p
+            s/^Error: (P[0-9]{4})(:.*)?$/Migration failed (\1)./p
+          '
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      - name: Maintain the demo
+        run: pnpm exec tsx apps/web/scripts/demo-maintenance.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          NODE_ENV: production
+          RELAY_DEMO: "1"
+          RELAY_EMAIL_MODE: disabled
+          RELAY_TIME_ZONE: UTC
