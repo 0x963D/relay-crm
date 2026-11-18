@@ -93,7 +93,11 @@ export type Answer =
   | { readonly kind: "receipt"; readonly receipt: Receipt }
   | { readonly kind: "refused"; readonly reason: string | null }
   | { readonly kind: "401" }
-  | { readonly kind: "unknown"; readonly cause: "network" | "timeout" | "unreadable" | "server" };
+  | {
+      readonly kind: "unknown";
+      readonly cause: "network" | "timeout" | "unreadable" | "server";
+      readonly sessionEnded?: true;
+    };
 export interface WriteSnapshot {
   readonly state: WriteState;
   readonly view: WriteView;

@@ -51,7 +51,11 @@ export function createClient(options: {
   timeoutMs?: number;
 }) {
   const request = createRequester(options);
-  const writeRequest = createRequester({ ...options, timeoutMs: null });
+  const writeRequest = createRequester({
+    fetch: options.fetch,
+    token: options.token,
+    timeoutMs: null,
+  });
   const rpc = createTRPCClient<AppRouter>({
     links: [
       httpLink({

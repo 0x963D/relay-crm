@@ -44,6 +44,7 @@ async function setup(
   storage = new FakePhone(),
   dispatch = vi.fn<() => Promise<Answer>>(() => new Promise<never>(() => undefined)),
   identity: () => Scope | null = () => scope,
+  prior?: PhoneEntries,
 ) {
   const owner = new PhoneEntries({
     reportError: vi.fn(),
@@ -55,7 +56,7 @@ async function setup(
     storageTimeoutMs: 50,
     requestTimeoutMs: 100,
   });
-  await owner.restore();
+  await owner.restore(prior);
   return { owner, storage, dispatch };
 }
 it("confirms the entry and key and removes its draft atomically before dispatch", async () => {
@@ -111,6 +112,59 @@ it("times out a store without dispatch, even if the abandoned store later commit
     entry: { command, attempt: 1 },
   });
 });
+it.each(["edited", "cleared"] as const)(
+  "keeps %s typing after an initial store lands too late",
+  async (change) => {
+    vi.useFakeTimers();
+    const { owner, storage, dispatch } = await setup();
+    const gate = Promise.withResolvers<undefined>();
+    storage.gate = gate.promise;
+    const saving = owner.save(command, draft, false);
+    await vi.advanceTimersByTimeAsync(51);
+    await saving;
+    expect(owner.snapshot(id).state).toBe("storageFailed");
+    gate.resolve(undefined);
+    await flush();
+    expect(storage.saved().entries[id]).toMatchObject({ command });
+    const latest = change === "edited" ? { ...draft, note: "The latest text" } : null;
+    owner.updateDraft(latest, id, "attempt");
+    await owner.background();
+    const restored = await setup(storage);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(restored.owner.snapshot(id).state).toBe("editing");
+    expect(restored.owner.draft(id, "attempt")).toEqual(latest);
+    expect(owner.draftFailed(id, "attempt")).toBe(false);
+  },
+);
+it("clears the draft storage warning when Save confirms", async () => {
+  const { owner, storage } = await setup();
+  storage.failure = 1;
+  owner.updateDraft(draft, id, "attempt");
+  await owner.background();
+  expect(owner.draftFailed(id, "attempt")).toBe(true);
+  await owner.save(command, draft, false);
+  expect(storage.saved().entries[id]).toMatchObject({ command });
+  expect(owner.draftFailed(id, "attempt")).toBe(false);
+});
+it("warns when new typing cannot be kept after an initial store lands too late", async () => {
+  vi.useFakeTimers();
+  const { owner, storage } = await setup();
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const saving = owner.save(command, draft, false);
+  await vi.advanceTimersByTimeAsync(51);
+  await saving;
+  gate.resolve(undefined);
+  await flush();
+  storage.failure = storage.writes + 1;
+  const latest = { ...draft, note: "The latest text" };
+  owner.updateDraft(latest, id, "attempt");
+  await owner.background();
+  expect(owner.draftFailed(id, "attempt")).toBe(true);
+  await owner.background();
+  expect(owner.draft(id, "attempt")).toEqual(latest);
+  expect(owner.draftFailed(id, "attempt")).toBe(false);
+});
 it.each(["beforeStore", "afterStore", "afterDispatch", "afterTimeout", "afterRetryStore"] as const)(
   "restores conservatively when killed at %s",
   async (step) => {
@@ -152,6 +206,19 @@ it("stores the retry number and uncertainty before dispatch and keeps the exact 
   });
   await owner.retry(id, false);
   expect(dispatch).toHaveBeenNthCalledWith(2, command, expect.any(AbortSignal));
+});
+it("ignores duplicate retry taps during storage and dispatch", async () => {
+  const { owner, storage, dispatch } = await setup();
+  await owner.save(command, draft, true);
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const retrying = owner.retry(id, false);
+  await expect(owner.retry(id, false)).resolves.toBeUndefined();
+  gate.resolve(undefined);
+  await retrying;
+  await expect(owner.retry(id, false)).resolves.toBeUndefined();
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(storage.saved().entries[id]?.attempt).toBe(1);
 });
 it("a failed retry store sends nothing and leaves the last stored state", async () => {
   vi.useFakeTimers();
@@ -308,11 +375,15 @@ it("a retry's 401 preserves uncertainty, and a first 401 can safely become a dra
 it("sign-out removes only the named server and person, and failed removal preserves data", async () => {
   const { owner, storage } = await setup();
   await owner.keepDraft(draft, id, "attempt");
+  const other = { ...scope, person: "another-person" };
+  await storage.replace(other, storage.saved());
   storage.failure = storage.writes + 1;
-  await expect(owner.removeAll()).rejects.toThrow();
-  expect(owner.counts().drafts).toBe(1);
-  await owner.removeAll();
-  expect(owner.counts()).toEqual({ entries: 0, drafts: 0 });
+  owner.retire();
+  await expect(storage.remove(scope)).rejects.toThrow();
+  expect(await storage.load(scope)).toEqual(await storage.load(other));
+  await storage.remove(scope);
+  expect(await storage.load(scope)).toBeNull();
+  expect(await storage.load(other)).not.toBeNull();
 });
 it("a repaired status cannot overwrite a later dispatch", async () => {
   vi.useFakeTimers();
@@ -331,9 +402,70 @@ it("a repaired status cannot overwrite a later dispatch", async () => {
 it("an old draft callback cannot recreate a removed phone store", async () => {
   const { owner, storage } = await setup();
   await owner.keepDraft(draft, id, "attempt");
-  await owner.removeAll();
-  await expect(owner.keepDraft(draft, id, "attempt")).rejects.toThrow("removed");
+  owner.retire();
+  await storage.remove(scope);
+  await expect(owner.keepDraft(draft, id, "attempt")).rejects.toThrow("retired");
   expect(storage.saved().drafts).toEqual({});
+});
+it("lets only the next owner of the same scope keep pending typing", async () => {
+  vi.useFakeTimers();
+  const storage = new FakePhone();
+  const ended = await setup(storage);
+  ended.owner.updateDraft(draft, id, "attempt");
+  ended.owner.retire();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(storage.writes).toBe(0);
+  const next = await setup(storage, undefined, undefined, ended.owner);
+  await next.owner.background();
+  const restored = await setup(storage);
+  expect(restored.owner.draft(id, "attempt")).toEqual(draft);
+  const otherScope = { ...scope, person: "another-person" };
+  const other = new PhoneEntries({
+    scope: otherScope,
+    storage,
+    identity: () => otherScope,
+    dispatch: pending(),
+    now: () => now,
+    reportError: vi.fn(),
+  });
+  await other.restore(ended.owner);
+  await other.background();
+  expect(await storage.load(otherScope)).toBeNull();
+});
+it("keeps later typing across session end when an initial store landed late", async () => {
+  vi.useFakeTimers();
+  const { owner, storage, dispatch } = await setup();
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const saving = owner.save(command, draft, false);
+  await vi.advanceTimersByTimeAsync(51);
+  await saving;
+  gate.resolve(undefined);
+  await flush();
+  const latest = { ...draft, note: "The latest text" };
+  owner.updateDraft(latest, id, "attempt");
+  owner.retire();
+  const ended = await setup(storage, undefined, () => null, owner);
+  await ended.owner.background();
+  const restored = await setup(storage);
+  expect(restored.owner.draft(id, "attempt")).toEqual(latest);
+  expect(restored.owner.entries()).toEqual([]);
+  expect(dispatch).not.toHaveBeenCalled();
+});
+it("drops a queued storage change once its owner retires", async () => {
+  const { owner, storage } = await setup();
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const accepted = owner.keepDraft(draft, id, "attempt");
+  await flush();
+  const stale = owner.keepDraft({ ...draft, note: "Stale typing" }, id, "attempt");
+  owner.retire();
+  gate.resolve(undefined);
+  await accepted;
+  await expect(stale).rejects.toThrow("retired");
+  expect(storage.writes).toBe(1);
+  const current = await setup(storage);
+  expect(current.owner.draft(id, "attempt")).toEqual(draft);
 });
 it("freezes the stored payload against later edits to the caller's draft and command", async () => {
   const { owner, storage } = await setup();

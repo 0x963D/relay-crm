@@ -13,7 +13,15 @@ pnpm db:generate
 
 Use a running Relay CRM server. For a local server, follow the [development guide](development.md). The [Docker demo](../README.md#run-it) also accepts phone sessions. Its default port is 3107, and its default bind address accepts connections only from the host computer.
 
-Set `EXPO_PUBLIC_RELAY_URL` to the server's origin before starting the app. For example, in PowerShell:
+Set `EXPO_PUBLIC_RELAY_URL` to the server's origin before starting the app.
+
+In a POSIX shell:
+
+```sh
+EXPO_PUBLIC_RELAY_URL=https://relay.example pnpm --filter @relay/mobile dev
+```
+
+In PowerShell:
 
 ```powershell
 $env:EXPO_PUBLIC_RELAY_URL = "https://relay.example"
@@ -34,7 +42,7 @@ Sign-out asks before removing your unresolved entries and drafts and names their
 
 **Remove sign-in from this phone** skips server revocation and has its own confirmation. The server session can remain open until it expires. If token removal fails, local data stays. If phone-data erasure fails after token removal, the app tells you that items are still on this phone. To retry, sign in as the same person, then sign out or remove sign-in again. Those items stay isolated from other people who sign in.
 
-Entries and drafts are stored per server and person in the app's private SQLite database. Deleted content is overwritten by SQLite's secure-delete setting. The database is not encrypted beyond the platform's storage protection. Expo Go owns its per-project storage. Tokens and remembered sign-in addresses use secure platform storage. The app does not log your note text. Copy actions put the selected text on the system clipboard.
+Entries and drafts are stored per server and person in the app's private SQLite database. SQLite's secure-delete setting overwrites deleted row content in the database file. The database is not encrypted beyond the platform's storage protection. Expo Go owns its per-project storage. Tokens and remembered sign-in addresses use secure platform storage. The app does not log your note text. Copy actions put the selected text on the system clipboard.
 
 The queue is kept only in memory. A failed refresh can show an earlier queue from the current run with its age. Restarting requires a new queue read. There is no stored queue snapshot containing names, contact details, or last notes.
 
@@ -44,7 +52,7 @@ While you type, the app keeps a draft after 500 ms and writes pending drafts imm
 
 Phone storage has five seconds to confirm. If the initial store does not confirm, nothing is sent. The form stays editable and offers another try or copying your note. Discard also removes an initial store that lands after its confirmation deadline.
 
-The app waits 20 seconds for a write's answer. At that point it stops waiting, marks the outcome unknown, and leaves the request open. It does not abort the write. An answer that still arrives is a late answer. A network error, server error, proxy page, or malformed receipt also leaves the outcome unknown. Reads retain their own timeouts and cancellation.
+The app marks a write's outcome unknown after waiting 20 seconds for an answer. A network error, server error, proxy page, or malformed receipt also leaves the outcome unknown. Reads retain their own timeouts and cancellation.
 
 Use the outcome shown on the entry to decide what to do.
 
@@ -60,7 +68,7 @@ Use the outcome shown on the entry to decide what to do.
 
 Retries keep the original payload and key, so a repeated request cannot create a second activity. After a restart, a stored sending entry becomes unknown. The app does not send it automatically.
 
-A receipt from any attempt settles an entry that is still sending or unknown. Refusals and session-ended answers count only for the latest attempt. A receipt arriving while retry storage is pending waits for storage to settle and prevents another dispatch. Deleted entries, other people or servers, and terminal refusals ignore late answers.
+A receipt from any open attempt in the current session settles an entry that is still sending or unknown. Refusals and session-ended answers count only for the latest attempt. A receipt arriving while retry storage is pending waits for storage to settle and prevents another dispatch. Session end closes the session's open requests. Deleted entries and terminal refusals ignore late answers.
 
 Entry review appears on the lead and queue. Failed status updates keep a storage warning and retry when the form opens again. If a saved entry's local deletion fails, **Clear it** retries deletion. Until that succeeds, a restart conservatively restores the remaining disk copy as unknown.
 
@@ -84,6 +92,8 @@ Closing requires an explicit outcome and a separate confirmation. The choice fre
 
 Each queue group holds at most 100 leads. The app has no payments, account management, search, callback notifications, tablet layout, lead-contact editing, theme setting, or offline sign-in. Won results do not survive restart. A discarded unknown entry may already exist on the server. A phone that cannot confirm storage can lose the latest typed text when terminated. A refused retry stays uncertain, and a key conflict cannot be matched to another request.
 
-Native behavior still needs device verification, including storage surviving immediate termination, requests during suspension, platform handoffs and pickers, accessibility focus, keyboard layouts, and large text. Leaving a request open does not guarantee that a suspended or terminated app receives its answer. Expo Go owns its native manifest and calendar appearance, so some handoff schemes and picker colors need a dedicated native build to configure.
+After the 20-second deadline, the app keeps the request open for up to two minutes to accept a late answer. If the app closes the request at that limit, the outcome stays unknown and you can retry with the original key.
+
+A suspended or terminated app may miss an answer. Expo Go owns its native manifest and calendar appearance, so some handoff schemes and picker colors need a dedicated native build to configure.
 
 Archivo is bundled under its [SIL Open Font License](../apps/mobile/assets/fonts/OFL.txt). Text follows the system's size setting.

@@ -51,6 +51,8 @@ export function writeRequest(client: ReturnType<typeof createClient>["rpc"]) {
         case "unreadable":
           return { kind: "unknown", cause: "unreadable" };
         case "http":
+          if (failure.status === 401)
+            return { kind: "unknown", cause: "unreadable", sessionEnded: true };
           return { kind: "unknown", cause: failure.status >= 500 ? "server" : "unreadable" };
       }
     }

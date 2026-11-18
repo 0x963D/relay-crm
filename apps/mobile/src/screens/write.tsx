@@ -76,6 +76,7 @@ export function WriteScreen({
 }) {
   const c = useTheme();
   const session = useSession();
+  const person = sessionPerson(session.state);
   const reachability = useNetworkState();
   const owner = session.phone;
   const router = useRouter();
@@ -163,10 +164,10 @@ export function WriteScreen({
       ? "Storing…"
       : "Sending…";
   const hasContent = draftHasContent(draft, initial.current);
-  const openingOwner = useRef(owner);
+  const openingPerson = useRef(person);
   const protectedForm =
     !leaving &&
-    owner === openingOwner.current &&
+    person === openingPerson.current &&
     (busy || confirmation !== null || (editing && hasContent));
   const disablePrevention = usePreventRemove(protectedForm, () => {
     dismiss();
@@ -214,7 +215,7 @@ export function WriteScreen({
     const stored = owner?.draft(id, operation);
     setDraft(snapshot.entry?.draft ?? stored ?? baseline);
     initialized.current = true;
-    openingOwner.current = owner;
+    openingPerson.current = person;
     if (stored) setRestored(stored.changedAt);
   }, [
     session.phoneReady,
@@ -226,6 +227,7 @@ export function WriteScreen({
     callback,
     channel,
     contact.name,
+    person,
     zone,
   ]);
   useEffect(() => {
@@ -330,8 +332,11 @@ export function WriteScreen({
     return undefined;
   });
   useEffect(() => showOutcome(), [shown.state, shown.view]);
+  const lastOwner = useRef(owner);
   useEffect(() => {
-    if (snapshot.state !== "editing") return;
+    const sameOwner = lastOwner.current === owner;
+    lastOwner.current = owner;
+    if (snapshot.state !== "editing" || !sameOwner) return;
     const kept = owner?.draft(id, operation);
     if (kept && initialized.current) {
       setDraft(kept);
@@ -440,7 +445,8 @@ export function WriteScreen({
   const availability = lead.data
     ? closingAvailability(lead.data, new Date(), latestRefusal)
     : { won: false, lost: false, duplicate: false, wrongNumber: false, doNotContact: false };
-  const locked = !editing || busy || confirmation !== null || !initialized.current;
+  const locked =
+    !editing || busy || confirmation !== null || !initialized.current || !session.phoneReady;
   const title =
     operation === "attempt"
       ? "Log an attempt"
@@ -458,6 +464,10 @@ export function WriteScreen({
     zone,
   );
   const currentNote = shown.entry ? entryNote(shown.entry) : draft.note;
+  const showDraftWarning =
+    !busy &&
+    (snapshot.state === "editing" || snapshot.state === "storageFailed") &&
+    (draftFailed || discardFailed);
   const refusal = shown.entry?.refusal;
   const frozenRefused = shown.state === "refused" || shown.state === "refusedAfterUnknown";
   const signInBand = editing && !signedIn;
@@ -514,7 +524,7 @@ export function WriteScreen({
       )}
     </View>
   );
-  if (initialized.current && owner !== openingOwner.current)
+  if (initialized.current && person !== openingPerson.current)
     return (
       <Screen>
         <View />
@@ -564,7 +574,7 @@ export function WriteScreen({
                   ? ` · ${draft.handoff.channel === "call" ? "dialler opened" : "WhatsApp link opened"} ${clock(new Date(draft.handoff.at), zone)}`
                   : ""}
               </T>
-              {draftFailed || discardFailed ? (
+              {showDraftWarning ? (
                 <T variant="caption" color={c.waitFg}>
                   Not kept on this phone yet
                 </T>
@@ -1029,7 +1039,7 @@ export function WriteScreen({
               kind="wait"
               icon="lock"
               title="Your session ended"
-              text="What you typed stays on this phone. It can be saved once you are back in."
+              text="You can save once you are back in."
             />
           ) : signedAgain && editing ? (
             <Band

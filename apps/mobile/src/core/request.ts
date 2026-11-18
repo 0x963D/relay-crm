@@ -4,7 +4,7 @@ export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promi
 export function createRequester(options: {
   readonly fetch: Fetch;
   readonly token: () => string | null;
-  readonly sessionEnded: () => void;
+  readonly sessionEnded?: () => void;
   readonly timeoutMs?: number | null;
 }): Fetch {
   return async (input, init) => {
@@ -41,7 +41,7 @@ export function createRequester(options: {
             });
             status = response.status;
             if (status === 401 && token !== null && token === options.token())
-              options.sessionEnded();
+              options.sessionEnded?.();
             const body = await response.arrayBuffer();
             return new Response([204, 205, 304].includes(status) ? null : body, {
               status,

@@ -1,9 +1,18 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import { Alert, AppState } from "react-native";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { auth, failureFrom, rpc, setSessionEnded } from "./client.ts";
-import { PhoneEntries } from "../core/phone-entries.ts";
+import { confirmStorage, PhoneEntries } from "../core/phone-entries.ts";
 import { phoneStorage } from "./phone-storage.ts";
 import { writeRequest } from "./write-request.ts";
 import { server } from "./server.ts";
@@ -26,51 +35,71 @@ interface SessionActions {
   readonly reloadPhone: () => Promise<void>;
 }
 const Context = createContext<SessionActions | null>(null);
+interface PhoneSession {
+  readonly person: string;
+  readonly ended: boolean;
+  readonly owner: PhoneEntries;
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(sessionTransition, { kind: "restoring" });
   const person = sessionPerson(state);
-  const phone = useMemo(
-    () =>
-      person
-        ? new PhoneEntries({
-            reportError: () => {
-              Alert.alert(
-                "This action could not finish",
-                "Reopen this lead to review its current state before trying again.",
-              );
-            },
-            scope: { server, person },
-            storage: phoneStorage,
-            identity: () => {
-              const current = bearerPerson();
-              return current ? { server, person: current } : null;
-            },
-            dispatch: writeRequest(rpc),
-            now: () => new Date(),
-          })
-        : null,
-    [person],
-  );
+  const ended = state.kind === "ended";
+  const live = useRef<PhoneSession | null>(null);
+  const [phoneSession, setPhoneSession] = useState<PhoneSession | null>(null);
+  const phone =
+    phoneSession?.person === person && phoneSession.ended === ended ? phoneSession.owner : null;
+  const endSession = useCallback(() => {
+    if (!live.current?.ended) live.current?.owner.retire();
+    dispatch({ type: "ended" });
+  }, []);
   const [phoneReady, setPhoneReady] = useState(false);
   const [phoneError, setPhoneError] = useState(false);
   const [, changed] = useReducer((version: number) => version + 1, 0);
   async function reloadPhone() {
+    if (!phone) return;
     setPhoneReady(false);
     setPhoneError(false);
     try {
-      await phone?.restore();
-      setPhoneReady(true);
+      await phone.restore();
+      if (live.current?.owner === phone) setPhoneReady(true);
     } catch {
-      setPhoneError(true);
+      if (live.current?.owner === phone) setPhoneError(true);
     }
   }
-  useEffect(() => {
-    let current = true;
+  useLayoutEffect(() => {
+    const prior = live.current;
     setPhoneReady(false);
     setPhoneError(false);
-    const unsubscribe = phone?.subscribe(changed);
-    void phone
-      ?.restore()
+    if (!person) {
+      live.current = null;
+      setPhoneSession(null);
+      return;
+    }
+    const owner = new PhoneEntries({
+      reportError: () => {
+        Alert.alert(
+          "This action could not finish",
+          "Reopen this lead to review its current state before trying again.",
+        );
+      },
+      scope: { server, person },
+      storage: phoneStorage,
+      identity: () => {
+        const current = bearerPerson();
+        return !ended && current ? { server, person: current } : null;
+      },
+      dispatch: writeRequest(rpc),
+      now: () => new Date(),
+      sessionEnded: endSession,
+    });
+    const next = { person, ended, owner };
+    live.current = next;
+    setPhoneSession(next);
+    const unsubscribe = owner.subscribe(changed);
+    let current = true;
+    void owner
+      .restore(prior?.owner)
       .then(() => {
         if (current) setPhoneReady(true);
       })
@@ -78,37 +107,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (current) setPhoneError(true);
       });
     const background = AppState.addEventListener("change", (status) => {
-      if (status !== "active") phone?.run(() => phone.background());
+      if (status !== "active") owner.run(() => owner.background());
     });
     return () => {
       background.remove();
       current = false;
-      unsubscribe?.();
+      unsubscribe();
+      owner.retire();
     };
-  }, [phone]);
+  }, [person, ended, endSession]);
   const [queries] = useState(
     () =>
       new QueryClient({
         defaultOptions: queryDefaults,
       }),
   );
-  async function verify() {
+  const verify = useCallback(async () => {
     const token = bearer();
     try {
       await auth.verify();
       if (token === bearer()) dispatch({ type: "verified" });
     } catch (error) {
       const failure = failureFrom(error);
-      if (token === bearer())
-        dispatch(
-          failure.kind === "sessionEnded" ? { type: "ended" } : { type: "unavailable", failure },
-        );
+      if (token !== bearer()) return;
+      if (failure.kind === "sessionEnded") endSession();
+      else dispatch({ type: "unavailable", failure });
     }
-  }
+  }, [endSession]);
   useEffect(() => {
-    setSessionEnded(() => {
-      dispatch({ type: "ended" });
-    });
+    setSessionEnded(endSession);
     void tokenStore
       .restore()
       .then(async ({ credential, email }) => {
@@ -125,11 +152,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setSessionEnded(null);
       sub.remove();
     };
-  }, []);
+  }, [endSession, verify]);
   useEffect(() => {
     if (state.kind !== "signedIn") return;
     const ends = () => {
-      if (new Date(state.credential.expiresAt).getTime() <= Date.now()) dispatch({ type: "ended" });
+      if (
+        state.credential.token === bearer() &&
+        new Date(state.credential.expiresAt).getTime() <= Date.now()
+      )
+        endSession();
     };
     const timer = setTimeout(
       ends,
@@ -142,7 +173,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       clearTimeout(timer);
       subscription.remove();
     };
-  }, [state]);
+  }, [state, endSession]);
   function forget() {
     queries.clear();
     dispatch({ type: "signedOut" });
@@ -154,7 +185,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         revoke: () => auth.signOut(),
         remove: () => tokenStore.clear(token),
         erase: async () => {
-          await phone?.removeAll();
+          if (live.current?.person === person) live.current.owner.retire();
+          if (person) await confirmStorage(phoneStorage.remove({ server, person }));
         },
         forget,
       },
@@ -167,8 +199,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       value={{
         state,
         phone,
-        phoneReady,
-        phoneError,
+        phoneReady: phone !== null && phoneReady,
+        phoneError: phone !== null && phoneError,
         reloadPhone,
         verify,
         rememberEmail: async (email) => {
@@ -178,6 +210,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         },
         accept: async (credential, email) => {
           await tokenStore.save(credential, email);
+          const previous = live.current;
+          if (previous && (previous.ended || previous.person !== credential.user.id))
+            previous.owner.retire();
           const prior = state.kind === "ended" ? state.personId : null;
           if (prior !== credential.user.id) queries.clear();
           else void queries.invalidateQueries();

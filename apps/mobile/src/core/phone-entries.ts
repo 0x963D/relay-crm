@@ -1,5 +1,5 @@
 import { transitionWrite } from "./write-machine.ts";
-import type { WriteContext, WriteEvent } from "./write-machine.ts";
+import type { WriteContext, WriteEvent, WriteState } from "./write-machine.ts";
 import {
   commandSchema,
   draftSchema,
@@ -30,6 +30,7 @@ interface Options {
   readonly dispatch: (command: Command, signal: AbortSignal) => Promise<Answer>;
   readonly now: () => Date;
   readonly reportError: (error: unknown) => void;
+  readonly sessionEnded?: () => void;
   readonly storageTimeoutMs?: number;
   readonly requestTimeoutMs?: number;
 }
@@ -43,15 +44,36 @@ const editing = (): WriteSnapshot => ({
   receipt: null,
 });
 const idleSnapshot = editing();
+const busy = (state: WriteState) =>
+  state === "storing" || state === "sendingFirst" || state === "sendingRetry";
+const lateAnswerMs = 120000;
+
+export async function confirmStorage<T>(work: Promise<T>, timeoutMs = 5000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("Storage did not confirm."));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class PhoneEntries {
   private data = emptyPhone();
   private loaded = false;
-  private removed = false;
+  private retired = false;
   private tail = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   private readonly views = new Map<string, WriteSnapshot>();
   private readonly deferred = new Map<string, Extract<Answer, { kind: "receipt" }>>();
-  private readonly repairs = new Map<string, () => Promise<void>>();
+  private readonly repairs = new Map<string, () => Promise<unknown>>();
+  private readonly requests = new Set<() => void>();
   private readonly drafts = new Map<
     string,
     {
@@ -74,9 +96,11 @@ export class PhoneEntries {
     };
   }
   private emit() {
+    if (this.retired) return;
     for (const listener of this.listeners) listener();
   }
   private show(id: string, snapshot: WriteSnapshot) {
+    if (this.retired) return;
     this.views.set(id, snapshot);
     this.emit();
   }
@@ -84,6 +108,7 @@ export class PhoneEntries {
     return this.views.get(id) ?? idleSnapshot;
   }
   begin(id: string) {
+    if (this.retired) return;
     if (!this.data.entries[id] && this.snapshot(id).state === "saved") {
       this.views.delete(id);
       this.emit();
@@ -96,28 +121,36 @@ export class PhoneEntries {
     return { entries: this.entries().length, drafts: Object.keys(this.data.drafts).length };
   }
   run(work: () => Promise<unknown>) {
-    void (async () => work())().catch(this.options.reportError);
+    if (this.retired) return;
+    void (async () => work())().catch((error: unknown) => {
+      if (!this.retired) this.options.reportError(error);
+    });
   }
   draftFailed(id: string, operation: Draft["operation"]) {
     return this.draftErrors.has(draftKey(id, operation));
   }
-  private canDraft(id: string) {
-    return (
-      !this.removed &&
-      !this.data.entries[id] &&
-      ["editing", "storageFailed"].includes(this.snapshot(id).state)
-    );
+  private canDraft(id: string, operation: Draft["operation"]) {
+    const state = this.snapshot(id).state;
+    const entry = this.data.entries[id];
+    return entry
+      ? state === "storageFailed" && entry.command.operation === operation
+      : state === "editing" || state === "storageFailed";
   }
-  private stopDrafts(id?: string) {
+  private stopDrafts(id: string) {
     for (const [key, pending] of this.drafts) {
-      if (id !== undefined && pending.id !== id) continue;
+      if (pending.id !== id) continue;
       clearTimeout(pending.timer);
       this.drafts.delete(key);
     }
   }
   updateDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
-    if (!this.canDraft(id)) return;
+    if (this.retired) return;
     const key = draftKey(id, operation);
+    if (!this.canDraft(id, operation)) {
+      this.draftErrors.add(key);
+      this.emit();
+      return;
+    }
     clearTimeout(this.drafts.get(key)?.timer);
     this.drafts.set(key, {
       id,
@@ -130,6 +163,7 @@ export class PhoneEntries {
     });
   }
   async flushDraft(id: string, operation: Draft["operation"]) {
+    if (this.retired) return;
     const key = draftKey(id, operation);
     const pending = this.drafts.get(key);
     if (!pending) return;
@@ -137,7 +171,10 @@ export class PhoneEntries {
     clearTimeout(pending.timer);
     pending.work = (async () => {
       try {
-        await this.keepDraft(pending.draft, id, operation);
+        if (!(await this.keepDraft(pending.draft, id, operation))) {
+          if (this.drafts.get(key) === pending) this.draftErrors.add(key);
+          return;
+        }
         if (this.drafts.get(key) === pending) {
           this.drafts.delete(key);
           this.draftErrors.delete(key);
@@ -160,7 +197,7 @@ export class PhoneEntries {
     return this.data.drafts[draftKey(id, operation)] ?? null;
   }
   private active() {
-    return sameScope(this.options.identity(), this.options.scope);
+    return !this.retired && sameScope(this.options.identity(), this.options.scope);
   }
   private context(entry: Entry | null, extra: Partial<WriteContext> = {}): WriteContext {
     return {
@@ -181,45 +218,44 @@ export class PhoneEntries {
       ...extra,
     };
   }
-  private async confirmed(work: Promise<void>) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        work,
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => {
-            reject(new Error("Storage did not confirm."));
-          }, this.options.storageTimeoutMs ?? 5000);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
-  }
   private commit(change: (data: PhoneData) => PhoneData) {
     const work = this.tail.then(async () => {
+      if (this.retired) throw new Error("This phone store has been retired.");
       if (!this.loaded) throw new Error("Phone storage has not loaded.");
-      if (this.removed) throw new Error("This phone store has been removed.");
       const next = change(this.data);
-      if (next === this.data) return;
+      if (next === this.data) return false;
       await this.options.storage.replace(this.options.scope, next);
       this.data = next;
       this.emit();
+      return true;
     });
-    this.tail = work.catch(() => undefined);
-    return this.confirmed(work);
+    this.tail = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    return confirmStorage(work, this.options.storageTimeoutMs);
   }
-  async restore() {
+  async restore(prior?: PhoneEntries) {
+    const predecessor =
+      prior?.retired && sameScope(prior.options.scope, this.options.scope) ? prior : undefined;
+    await predecessor?.tail;
     await this.tail;
-    this.data = (await this.options.storage.load(this.options.scope)) ?? emptyPhone();
+    const data = await this.options.storage.load(this.options.scope);
+    if (this.retired) return;
+    this.data = data ?? emptyPhone();
     this.loaded = true;
     for (const entry of this.entries()) {
+      const id = entry.command.payload.id;
+      if (predecessor?.snapshot(id).state === "storageFailed") {
+        this.show(id, { ...editing(), state: "storageFailed", view: "storageFailed" });
+        continue;
+      }
       const launch = transitionWrite(stateOf(entry), "relaunch", this.context(entry));
       const restored: Entry =
         entry.status === "sending"
           ? { ...entry, status: "unknown", unknownCause: "interrupted" }
           : entry;
-      this.show(entry.command.payload.id, {
+      this.show(id, {
         state: launch.next,
         view: entry.status === "sending" ? "interrupted" : "unchanged",
         entry: restored,
@@ -228,32 +264,38 @@ export class PhoneEntries {
       });
       if (entry.status === "sending") {
         await this.repairable(
-          entry.command.payload.id,
+          id,
           () =>
             this.commit((data) => ({
               ...data,
-              entries: { ...data.entries, [entry.command.payload.id]: restored },
+              entries: { ...data.entries, [id]: restored },
             })),
           "record",
         );
       }
     }
+    if (predecessor) {
+      for (const { draft, id, operation } of predecessor.drafts.values()) {
+        this.updateDraft(draft, id, operation);
+      }
+    }
     this.emit();
   }
-  async keepDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
-    await this.commit((data) => {
-      if (draft && !this.canDraft(id)) return data;
+  keepDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
+    return this.commit((data) => {
+      if (!this.canDraft(id, operation)) return data;
       const key = draftKey(id, operation);
       const drafts = without(data.drafts, key);
       if (draft) drafts[key] = draftSchema.parse(draft);
-      return { ...data, drafts };
+      // An initial store that missed confirmation was never dispatched.
+      const entries = data.entries[id] ? without(data.entries, id) : data.entries;
+      return { ...data, drafts, entries };
     });
   }
   async save(command: Command, draft: Draft, offline: boolean) {
     const id = command.payload.id;
     const before = this.snapshot(id);
-    if (!this.active() || ["storing", "sendingFirst", "sendingRetry"].includes(before.state))
-      return;
+    if (!this.active() || busy(before.state)) return;
     if (this.data.entries[id] && before.state !== "storageFailed")
       throw new Error("Review the kept entry first.");
     this.stopDrafts(id);
@@ -284,6 +326,7 @@ export class PhoneEntries {
       this.updateDraft(draft, id, command.operation);
       return;
     }
+    this.draftErrors.delete(draftKey(id, command.operation));
     const stored = transitionWrite("storing", "stored", this.context(entry, { offline }));
     this.show(id, { ...editing(), entry, state: stored.next, view: stored.view });
     if (stored.action === "dispatch" && this.active()) this.send(entry);
@@ -291,7 +334,7 @@ export class PhoneEntries {
   async retry(id: string, offline: boolean, signedIn = true) {
     const before = this.snapshot(id);
     const prior = before.entry;
-    if (!prior || !this.active()) return;
+    if (!prior || !this.active() || busy(before.state)) return;
     const decision = transitionWrite(
       before.state,
       "retry",
@@ -329,15 +372,33 @@ export class PhoneEntries {
   private send(entry: Entry) {
     const key = entry.command.payload.key;
     const controller = new AbortController();
+    const deadline = this.options.requestTimeoutMs ?? 20000;
     const timer = setTimeout(() => {
       this.run(() => this.answer(key, entry.attempt, { kind: "unknown", cause: "timeout" }));
-    }, this.options.requestTimeoutMs ?? 20000);
+    }, deadline);
+    const forget = () => {
+      clearTimeout(timer);
+      clearTimeout(ceiling);
+      this.requests.delete(close);
+    };
+    const close = () => {
+      forget();
+      controller.abort();
+    };
+    const ceiling = setTimeout(close, deadline + lateAnswerMs);
+    this.requests.add(close);
     this.run(async () => {
       const answer = await this.options
         .dispatch(entry.command, controller.signal)
         .catch((): Answer => ({ kind: "unknown", cause: "network" }));
-      clearTimeout(timer);
+      forget();
+      if (controller.signal.aborted || !this.active()) return;
       await this.answer(key, entry.attempt, answer);
+      if (
+        this.active() &&
+        (answer.kind === "401" || (answer.kind === "unknown" && answer.sessionEnded))
+      )
+        this.options.sessionEnded?.();
     });
   }
   async answer(key: string, attempt: number, answer: Answer) {
@@ -421,7 +482,8 @@ export class PhoneEntries {
       "record",
     );
   }
-  private async repairable(id: string, work: () => Promise<void>, error: "record" | "remove") {
+  private async repairable(id: string, work: () => Promise<unknown>, error: "record" | "remove") {
+    if (this.retired) return;
     this.repairs.set(id, work);
     try {
       await work();
@@ -435,7 +497,7 @@ export class PhoneEntries {
     }
   }
   async repair(id: string) {
-    if (!this.active() || this.removed) return;
+    if (this.retired) return;
     const work = this.repairs.get(id);
     if (work)
       await this.repairable(id, work, this.snapshot(id).state === "saved" ? "remove" : "record");
@@ -450,6 +512,7 @@ export class PhoneEntries {
     });
   }
   async discard(id: string) {
+    if (this.retired) return;
     const current = this.snapshot(id);
     transitionWrite(current.state, "discard", this.context(current.entry));
     try {
@@ -462,6 +525,7 @@ export class PhoneEntries {
     }
   }
   async discardDraft(id: string, operation: Draft["operation"]) {
+    if (this.retired) return;
     const state = this.snapshot(id).state;
     if (state !== "editing" && state !== "storageFailed")
       throw new Error("Review the kept entry first.");
@@ -486,6 +550,7 @@ export class PhoneEntries {
     });
   }
   async edit(id: string) {
+    if (this.retired) return;
     const current = this.snapshot(id);
     const entry = current.entry;
     if (!entry || current.storageError) return;
@@ -499,19 +564,13 @@ export class PhoneEntries {
       "record",
     );
   }
-  async removeAll() {
-    this.stopDrafts();
-    this.removed = true;
-    const work = this.tail.then(async () => {
-      await this.options.storage.remove(this.options.scope);
-      this.data = emptyPhone();
-      this.views.clear();
-      this.repairs.clear();
-      this.deferred.clear();
-      this.emit();
-    });
-    this.tail = work.catch(() => undefined);
-    await this.confirmed(work);
+  retire() {
+    this.retired = true;
+    this.listeners.clear();
+    this.repairs.clear();
+    this.deferred.clear();
+    for (const pending of this.drafts.values()) clearTimeout(pending.timer);
+    for (const close of this.requests) close();
   }
 }
 function refusalEvent(reason: string | null): WriteEvent {

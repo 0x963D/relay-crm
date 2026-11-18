@@ -4,17 +4,30 @@ import { createClient } from "../src/api/client.ts";
 import { writeRequest } from "../src/api/write-request.ts";
 import { PhoneEntries } from "../src/core/phone-entries.ts";
 import { signOutFromPhone } from "../src/core/sign-out.ts";
-import type { Command } from "../src/core/write-model.ts";
+import type { Command, Scope } from "../src/core/write-model.ts";
 import type { Fetch } from "../src/core/request.ts";
 import { command, draft, FakePhone, flush, id, key, now, scope } from "./write-fixtures.ts";
 
 vi.mock("../src/api/token.ts", () => ({ bearer: () => null }));
 afterEach(() => vi.useRealTimers());
-function requester(fetch: Fetch) {
+function requester(fetch: Fetch, sessionEnded = vi.fn()) {
   return writeRequest(
-    createClient({ origin: scope.server, fetch, token: () => "token", sessionEnded: vi.fn() }).rpc,
+    createClient({ origin: scope.server, fetch, token: () => "token", sessionEnded }).rpc,
   );
 }
+const unauthorized = () =>
+  Response.json(
+    {
+      error: {
+        json: {
+          message: "Unauthorized",
+          code: -32001,
+          data: { code: "UNAUTHORIZED", httpStatus: 401 },
+        },
+      },
+    },
+    { status: 401 },
+  );
 it("a rejected fetch after dispatch becomes outcome unknown and keeps the key", async () => {
   const storage = new FakePhone();
   const fetch = vi.fn(() => Promise.reject(new TypeError("Connection reset after sending")));
@@ -52,7 +65,7 @@ it("a timeout leaves fetch open and a late receipt settles the unknown entry", a
   });
   await owner.restore();
   await owner.save(command, draft, false);
-  await vi.advanceTimersByTimeAsync(20001);
+  await vi.advanceTimersByTimeAsync(139999);
   expect(signal?.aborted).toBe(false);
   expect(owner.snapshot(id)).toMatchObject({
     state: "unknown",
@@ -64,6 +77,159 @@ it("a timeout leaves fetch open and a late receipt settles the unknown entry", a
   await vi.advanceTimersByTimeAsync(1);
   expect(owner.snapshot(id).state).toBe("saved");
   expect(owner.entries()).toEqual([]);
+});
+it("closes a request two minutes after the deadline and retries with the same key", async () => {
+  vi.useFakeTimers();
+  const storage = new FakePhone();
+  let signal: AbortSignal | null | undefined;
+  const bodies: (BodyInit | null | undefined)[] = [];
+  const owner = new PhoneEntries({
+    scope,
+    storage,
+    identity: () => scope,
+    dispatch: requester((_input, init) => {
+      bodies.push(init?.body);
+      if (bodies.length === 2)
+        return Promise.resolve(
+          Response.json({ result: { data: superjson.serialize({ id, accountId: null }) } }),
+        );
+      signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    }),
+    now: () => now,
+    reportError: vi.fn(),
+  });
+  await owner.restore();
+  await owner.save(command, draft, false);
+  await vi.advanceTimersByTimeAsync(20000);
+  const unknown = storage.saved().entries[id];
+  expect(unknown).toMatchObject({
+    command,
+    attempt: 1,
+    status: "unknown",
+    unknownCause: "timeout",
+  });
+  await vi.advanceTimersByTimeAsync(119999);
+  expect(signal?.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(signal?.aborted).toBe(true);
+  expect(storage.saved().entries[id]).toEqual(unknown);
+  expect(owner.snapshot(id)).toMatchObject({ state: "unknown", entry: unknown });
+  await owner.retry(id, false);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(bodies).toEqual([bodies[0], bodies[0]]);
+  expect(owner.snapshot(id).state).toBe("saved");
+  expect(storage.saved().entries).toEqual({});
+});
+it.each(["receipt", "401"] as const)(
+  "ignores a %s that arrives after the request was closed",
+  async (kind) => {
+    vi.useFakeTimers();
+    const storage = new FakePhone();
+    const response = Promise.withResolvers<Response>();
+    const sessionEnded = vi.fn();
+    const owner = new PhoneEntries({
+      scope,
+      storage,
+      identity: () => scope,
+      dispatch: requester(() => response.promise, sessionEnded),
+      now: () => now,
+      reportError: vi.fn(),
+      sessionEnded,
+    });
+    await owner.restore();
+    await owner.save(command, draft, false);
+    await vi.advanceTimersByTimeAsync(140000);
+    const row = structuredClone(storage.saved());
+    response.resolve(
+      kind === "receipt"
+        ? Response.json({ result: { data: superjson.serialize({ id, accountId: null }) } })
+        : unauthorized(),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(storage.saved()).toEqual(row);
+    expect(owner.snapshot(id).state).toBe("unknown");
+    expect(sessionEnded).not.toHaveBeenCalled();
+  },
+);
+it.each(["api", "proxy"] as const)(
+  "records the %s 401 outcome before ending the session",
+  async (source) => {
+    const storage = new FakePhone();
+    const response = Promise.withResolvers<Response>();
+    const ended = vi.fn();
+    const endSession = vi.fn(() => {
+      expect(storage.saved().entries[id]?.status).toBe(source === "api" ? "notSaved" : "unknown");
+      owner.retire();
+    });
+    const owner = new PhoneEntries({
+      scope,
+      storage,
+      identity: () => scope,
+      dispatch: requester(() => response.promise, ended),
+      now: () => now,
+      reportError: vi.fn(),
+      sessionEnded: endSession,
+    });
+    await owner.restore();
+    await owner.save(command, draft, false);
+    response.resolve(
+      source === "api" ? unauthorized() : new Response("Unauthorized", { status: 401 }),
+    );
+    await vi.waitFor(() => {
+      expect(endSession).toHaveBeenCalledOnce();
+    });
+    expect(storage.saved().entries[id]?.status).toBe(source === "api" ? "notSaved" : "unknown");
+    expect(ended).not.toHaveBeenCalled();
+  },
+);
+it("keeps the current owner's row when a retired request answers after another sign-in", async () => {
+  vi.useFakeTimers();
+  const storage = new FakePhone();
+  const response = Promise.withResolvers<Response>();
+  let signal: AbortSignal | null | undefined;
+  let signedIn = scope;
+  const makeOwner = (ownerScope: Scope, fetch: Fetch) =>
+    new PhoneEntries({
+      scope: ownerScope,
+      identity: () => signedIn,
+      storage,
+      dispatch: requester(fetch),
+      now: () => now,
+      reportError: vi.fn(),
+    });
+  const original = makeOwner(scope, (_input, init) => {
+    signal = init?.signal;
+    return response.promise;
+  });
+  await original.restore();
+  await original.save(command, draft, false);
+  signedIn = { ...scope, person: "another-person" };
+  original.retire();
+  const other = makeOwner(signedIn, vi.fn());
+  await other.restore();
+  expect(other.entries()).toEqual([]);
+  other.retire();
+  signedIn = scope;
+  const current = makeOwner(scope, vi.fn());
+  await current.restore();
+  const latestDraft = { ...draft, id: "another-lead", note: "Kept by the current owner" };
+  await current.keepDraft(latestDraft, latestDraft.id, "attempt");
+  const before = structuredClone(storage.saved());
+  const writes = storage.writes;
+  response.resolve(
+    Response.json({ result: { data: superjson.serialize({ id, accountId: null }) } }),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  await original.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+  expect(storage.saved()).toEqual(before);
+  expect(storage.writes).toBe(writes);
+  expect(current.snapshot(id)).toMatchObject({ state: "unknown", entry: { command, attempt: 1 } });
+  expect(signal?.aborted).toBe(true);
 });
 const commands: readonly Command[] = [
   command,
@@ -126,7 +292,8 @@ it.each([false, true])(
         },
         erase: async () => {
           order.push("phone");
-          await owner.removeAll();
+          owner.retire();
+          await storage.remove(scope);
         },
         forget: () => {
           order.push("memory");

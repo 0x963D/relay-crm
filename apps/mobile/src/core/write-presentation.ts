@@ -22,8 +22,8 @@ export function writeBand(
   let words: BandWords | null = null;
   if (snapshot.state === "storageFailed")
     words = {
-      title: "Not kept on this phone",
-      text: "Nothing was sent. What you typed is only on this screen.",
+      title: "Could not confirm the save on this phone",
+      text: "Nothing was sent. Keep editing, try again, or copy your note.",
       kind: "wait",
       icon: "help",
     };
