@@ -15,3 +15,4 @@ Server.prototype.emit = function (
     ? connections.run(request.socket.remoteAddress ?? "", dispatch)
     : dispatch();
 };
+globalThis.relayCapturesSocketPeer = true;

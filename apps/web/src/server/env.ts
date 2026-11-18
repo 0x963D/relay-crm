@@ -5,6 +5,7 @@ import {
   ROLES,
   type Role,
 } from "@relay/domain";
+import { postgresStartupIdentity } from "@relay/store/connection-settings";
 import { z } from "zod";
 import { applyDemoConfiguration } from "./env-file.ts";
 
@@ -32,6 +33,11 @@ const Variables = z.object({
     .max(3600000)
     .default(RECEIPT_SEND_TIMEOUT_MS),
   RELAY_OUTBOX_SECRET: Secret.optional(),
+  CRON_SECRET: z.string().optional(),
+  VERCEL: z.string().optional(),
+  VERCEL_ENV: z.string().optional(),
+  RELAY_EMAIL_MODE: z.literal("disabled").optional(),
+  MIGRATION_DATABASE_URL: z.string().optional(),
   RELAY_TIME_ZONE: z
     .string()
     .refine((value) => {
@@ -68,7 +74,7 @@ const Variables = z.object({
     .optional(),
   META_GRAPH_BASE_URL: z.url().default("https://graph.facebook.com"),
   NODE_ENV: z.string().optional(),
-  RELAY_TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).max(32).default(0),
+  RELAY_TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).max(32).optional(),
   RELAY_DEV_ACTOR: z
     .literal("1", { error: "must be 1 to turn the dev actor on, or unset" })
     .optional(),
@@ -83,14 +89,24 @@ export interface MetaEnv {
   readonly graphBaseUrl: string;
 }
 
+interface SmtpEmail {
+  readonly kind: "smtp";
+  readonly url: string;
+  readonly from: string;
+}
+
+interface DisabledEmail {
+  readonly kind: "disabled";
+}
+
+type Email = SmtpEmail | DisabledEmail | null;
+
 export interface AuthEnv {
   readonly trustedProxyCount: number;
   readonly globalLimit: number;
   readonly secret: string;
   readonly baseUrl: string;
-  readonly delivery:
-    | { readonly kind: "smtp"; readonly url: string; readonly from: string }
-    | { readonly kind: "developmentConsole" };
+  readonly delivery: SmtpEmail | DisabledEmail | { readonly kind: "developmentConsole" };
 }
 
 export interface PaymentEnv {
@@ -106,7 +122,9 @@ export interface PaymentEnv {
 
 export interface Env {
   readonly publicForm: boolean;
-  readonly smtp: Extract<AuthEnv["delivery"], { kind: "smtp" }> | null;
+  readonly email: Email;
+  readonly hosted: boolean;
+  readonly scheduledSecret: string | null;
   readonly timeZone: string;
   readonly demo: boolean;
   readonly receipts: {
@@ -174,24 +192,57 @@ function metaEnv(variables: z.infer<typeof Variables>): MetaEnv | null {
   };
 }
 
-function smtpEnv(v: z.infer<typeof Variables>): Env["smtp"] {
+function emailEnv(v: z.infer<typeof Variables>): Email {
+  if (v.RELAY_EMAIL_MODE === "disabled") {
+    if (v.RELAY_DEMO !== "1") throw new EnvError("Disabled email requires RELAY_DEMO=1.");
+    if (v.SMTP_URL || v.SMTP_FROM) throw new EnvError("Disabled email cannot use SMTP settings.");
+    return { kind: "disabled" };
+  }
   if (!v.SMTP_URL && !v.SMTP_FROM) return null;
   if (!v.SMTP_URL || !v.SMTP_FROM) throw new EnvError("SMTP needs SMTP_URL and SMTP_FROM.");
   return { kind: "smtp", url: v.SMTP_URL, from: v.SMTP_FROM };
 }
 
-function authEnv(v: z.infer<typeof Variables>, smtp: Env["smtp"]): AuthEnv | null {
+function authEnv(v: z.infer<typeof Variables>, email: Email): AuthEnv | null {
   if (!v.AUTH_SECRET && !v.AUTH_URL) return null;
   if (!v.AUTH_SECRET || !v.AUTH_URL) throw new EnvError("Sign-in needs AUTH_SECRET and AUTH_URL.");
-  if (!smtp && v.NODE_ENV !== "development")
+  if (!email && v.NODE_ENV !== "development")
     throw new EnvError("Sign-in outside development needs SMTP.");
   return {
-    trustedProxyCount: v.RELAY_TRUSTED_PROXY_COUNT,
+    trustedProxyCount: v.RELAY_TRUSTED_PROXY_COUNT ?? 0,
     globalLimit: v.RELAY_AUTH_GLOBAL_LIMIT,
     secret: v.AUTH_SECRET,
     baseUrl: v.AUTH_URL,
-    delivery: smtp ?? { kind: "developmentConsole" },
+    delivery: email ?? { kind: "developmentConsole" },
   };
+}
+
+function requireAppDatabase(url: string) {
+  const protocol = URL.parse(url)?.protocol;
+  const identity =
+    protocol === "postgresql:" || protocol === "postgres:" ? postgresStartupIdentity(url) : null;
+  if (identity?.user !== "relay_app") throw new EnvError("Demo DATABASE_URL must use relay_app.");
+  if (identity.options)
+    throw new EnvError("Demo DATABASE_URL cannot use PostgreSQL startup options.");
+}
+
+function hostedSecret(v: z.infer<typeof Variables>): string {
+  if (v.VERCEL === "1" && v.VERCEL_ENV !== "production")
+    throw new EnvError("The no-email demo requires a Production deployment on Vercel.");
+  if (v.MIGRATION_DATABASE_URL)
+    throw new EnvError("Keep MIGRATION_DATABASE_URL in the demo maintenance environment.");
+  const proxyCount = v.RELAY_TRUSTED_PROXY_COUNT;
+  if (proxyCount === undefined || (proxyCount === 0 && !globalThis.relayCapturesSocketPeer))
+    throw new EnvError(
+      "Set RELAY_TRUSTED_PROXY_COUNT to the number of trusted proxy hops (1 for a single proxy). Use 0 only with the Relay HTTP entry point.",
+    );
+  if (!v.AUTH_SECRET || !v.AUTH_URL || !v.RELAY_SANDBOX || !v.RELAY_OUTBOX_SECRET)
+    throw new EnvError(
+      "The no-email demo requires sign-in, sandbox payments and RELAY_OUTBOX_SECRET.",
+    );
+  const secret = Secret.safeParse(v.CRON_SECRET);
+  if (!secret.success) throw new EnvError(`Invalid CRON_SECRET:\n${z.prettifyError(secret.error)}`);
+  return secret.data;
 }
 
 export function parseEnv(
@@ -199,6 +250,7 @@ export function parseEnv(
   developmentBuild = process.env.RELAY_DEVELOPMENT_BUILD === undefined
     ? variables.NODE_ENV !== "production"
     : process.env.RELAY_DEVELOPMENT_BUILD === "true",
+  purpose: "server" | "maintenance" = "server",
 ): Env {
   const parsed = Variables.safeParse(withoutEmpty(variables));
   if (!parsed.success) {
@@ -223,9 +275,16 @@ export function parseEnv(
     throw new EnvError(
       "RELAY_DEV_ACTOR is forbidden in a production build. Unset it before starting the server.",
     );
-  const smtp = smtpEnv(parsed.data);
+  const email = emailEnv(parsed.data);
+  if (email?.kind === "disabled") requireAppDatabase(DATABASE_URL);
+  const scheduledSecret =
+    email?.kind === "disabled" && purpose === "server" ? hostedSecret(parsed.data) : null;
+  if (scheduledSecret !== null && secrets.includes(scheduledSecret))
+    throw new EnvError("CRON_SECRET must be distinct from the other application secrets.");
   return {
-    smtp,
+    email,
+    hosted: scheduledSecret !== null,
+    scheduledSecret,
     publicForm: parsed.data.RELAY_PUBLIC_FORM === "1",
     timeZone: parsed.data.RELAY_TIME_ZONE,
     demo: parsed.data.RELAY_DEMO === "1",
@@ -236,8 +295,8 @@ export function parseEnv(
     },
     outboxSecret: parsed.data.RELAY_OUTBOX_SECRET ?? null,
     payments: paymentEnv(parsed.data),
-    trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT,
-    auth: authEnv(parsed.data, smtp),
+    trustedProxyCount: parsed.data.RELAY_TRUSTED_PROXY_COUNT ?? 0,
+    auth: authEnv(parsed.data, email),
     databaseUrl: DATABASE_URL,
     meta: metaEnv(parsed.data),
     devRole:
@@ -252,7 +311,10 @@ export function readEnv(developmentBuild?: boolean): Env {
 }
 
 export function readDemoSetupEnv() {
-  return { env: readEnv(), migrationUrl: process.env.MIGRATION_DATABASE_URL ?? null };
+  return {
+    env: parseEnv(process.env, undefined, "maintenance"),
+    migrationUrl: process.env.MIGRATION_DATABASE_URL ?? null,
+  };
 }
 
 export function commandEnvironment(overrides: Readonly<Record<string, string>>) {

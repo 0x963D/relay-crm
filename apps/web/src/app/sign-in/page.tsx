@@ -6,5 +6,6 @@ import { SignIn } from "@/components/sign-in";
 export default async function SignInPage() {
   const session = await getSession();
   if (session) redirect(homeFor(session.profile.role));
-  return <SignIn demo={composition().env.demo} />;
+  const { demo, email } = composition().env;
+  return <SignIn demo={demo} emailDisabled={email?.kind === "disabled"} />;
 }

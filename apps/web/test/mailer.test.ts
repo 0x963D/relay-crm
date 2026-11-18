@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import nodemailer from "nodemailer";
 import { createSocket } from "node:dgram";
 import { once } from "node:events";
 import { describe, expect, it, vi } from "vitest";
@@ -207,5 +208,27 @@ it("aborting a send after DATA closes its local SMTP connection", async () => {
     });
   } finally {
     await inbox.close();
+  }
+});
+
+it("suppresses a receipt for a supplied address without constructing a transport", async () => {
+  const transport = vi.spyOn(nodemailer, "createTransport");
+  try {
+    const deliver = createReceiptMailer({ kind: "disabled" });
+    expect(
+      await deliver(
+        {
+          id: "fake-receipt",
+          paymentId: "fake-payment",
+          email: "visitor@example.com",
+          amount: "48000",
+          currency: "GBP",
+        },
+        new AbortController().signal,
+      ),
+    ).toMatchObject({ state: "suppressed" });
+    expect(transport).not.toHaveBeenCalled();
+  } finally {
+    transport.mockRestore();
   }
 });

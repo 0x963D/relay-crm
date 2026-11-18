@@ -4,5 +4,6 @@ import { SignIn } from "@/components/sign-in";
 
 export default async function NotSignedIn() {
   await connection();
-  return <SignIn demo={composition().env.demo} />;
+  const { demo, email } = composition().env;
+  return <SignIn demo={demo} emailDisabled={email?.kind === "disabled"} />;
 }

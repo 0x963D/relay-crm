@@ -8,6 +8,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./connection-settings": "./src/connection-settings.ts",
     "./demo": "./src/demo.ts",
     "./testing": "./src/testing/index.ts",
     "./testing/database": "./src/testing/database.ts"

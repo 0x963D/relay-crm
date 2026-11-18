@@ -1,8 +1,9 @@
 import { composition } from "@/server/composition.ts";
 import { protectHttp } from "@/server/errors.ts";
-import { authorizeJob, rateLimited } from "@/server/rate-limit.ts";
-import { reconcilePayments } from "@/server/payments/reconcile.ts";
+import { authorizeJob } from "@/server/rate-limit.ts";
 import { readBody } from "@/server/http.ts";
+import { runReconcile } from "@/server/payments/jobs.ts";
+
 export function POST(request: Request) {
   return protectHttp("reconcile.failed", async () => {
     const app = composition();
@@ -16,16 +17,6 @@ export function POST(request: Request) {
     );
     if (denied) return denied;
     if ((await readBody(request)) === null) return new Response(null, { status: 413 });
-    const payments = app.payments;
-    const intervalMs = app.env.payments.intervalMs;
-    const run = await app.store.exclusiveJob("reconcile", (signal) =>
-      reconcilePayments(app.store, payments.provider, intervalMs, new Date(), signal),
-    );
-    if (!run.ran) return rateLimited();
-    const results = run.result;
-    return Response.json({
-      checked: results.length,
-      changed: results.filter((r) => r.changed).length,
-    });
+    return runReconcile(app.store, app.payments.provider, app.env.payments.intervalMs);
   });
 }

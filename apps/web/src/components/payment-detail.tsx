@@ -1,4 +1,5 @@
 "use client";
+import { hostedRecoveryNote } from "@/lib/demo-copy";
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
@@ -23,7 +24,17 @@ import { Textarea } from "./ui/textarea";
 import { Icon } from "./icons";
 
 type Action = "approve" | "reject" | "cancel" | "closeReview" | "closeCheckout" | "requeueReceipt";
-export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
+export function PaymentDetail({
+  id,
+  zone,
+  emailDisabled,
+  hosted,
+}: {
+  id: string;
+  zone: string;
+  emailDisabled: boolean;
+  hosted: boolean;
+}) {
   const trpc = useTRPC();
   const api = useTRPCClient();
   const client = useQueryClient();
@@ -433,27 +444,35 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
               <section className="space-y-3">
                 <h3 className="font-semibold">What happens next</h3>
                 <p>When the customer pays, the provider sends a signed webhook.</p>
-                <p>If no webhook arrives, the reconciler asks the provider.</p>
+                <p>
+                  {hosted
+                    ? hostedRecoveryNote
+                    : "If no webhook arrives, the reconciler asks the provider."}
+                </p>
                 <dl className="grid grid-cols-label-value gap-x-4 gap-y-2 text-caption">
-                  <dt>First check</dt>
-                  <dd>
-                    {payment.reconciliation
-                      ? shortDate(
-                          new Date(
-                            payment.createdAt.getTime() + payment.reconciliation.firstCheckMs,
-                          ),
-                          zone,
-                        )
-                      : "Reconciliation is unavailable"}
-                  </dd>
-                  <dt>Next check</dt>
-                  <dd>{shortDate(payment.nextCheckAt, zone)}</dd>
-                  <dt>Check interval</dt>
-                  <dd>
-                    {payment.reconciliation
-                      ? `${String(payment.reconciliation.intervalMs / 1000)} seconds`
-                      : "Unavailable"}
-                  </dd>
+                  {!hosted && (
+                    <>
+                      <dt>First check</dt>
+                      <dd>
+                        {payment.reconciliation
+                          ? shortDate(
+                              new Date(
+                                payment.createdAt.getTime() + payment.reconciliation.firstCheckMs,
+                              ),
+                              zone,
+                            )
+                          : "Reconciliation is unavailable"}
+                      </dd>
+                      <dt>Next check</dt>
+                      <dd>{shortDate(payment.nextCheckAt, zone)}</dd>
+                      <dt>Check interval</dt>
+                      <dd>
+                        {payment.reconciliation
+                          ? `${String(payment.reconciliation.intervalMs / 1000)} seconds`
+                          : "Unavailable"}
+                      </dd>
+                    </>
+                  )}
                   <dt>Checkout expires</dt>
                   <dd>
                     {payment.expiresAt
@@ -524,6 +543,7 @@ export function PaymentDetail({ id, zone }: { id: string; zone: string }) {
             <Receipt
               payment={payment}
               zone={zone}
+              emailDisabled={emailDisabled}
               busy={command.isPending}
               sendAgain={() => {
                 run("requeueReceipt");
@@ -677,11 +697,13 @@ function PaymentEvents({ payment, zone }: { payment: PaymentView; zone: string }
 function Receipt({
   payment,
   zone,
+  emailDisabled,
   busy,
   sendAgain,
 }: {
   payment: PaymentView;
   zone: string;
+  emailDisabled: boolean;
   busy: boolean;
   sendAgain: () => void;
 }) {
@@ -705,6 +727,11 @@ function Receipt({
   return (
     <section aria-label="Receipt" className="space-y-3">
       <h3 className="font-semibold">Receipt</h3>
+      {emailDisabled && (
+        <p className="text-caption text-secondary-foreground">
+          Receipt email is disabled in this demo.
+        </p>
+      )}
       {!receipt ? (
         <p className="text-caption text-secondary-foreground">
           No receipt is queued. A receipt is queued after the payment completes.
@@ -714,7 +741,7 @@ function Receipt({
           <div className="flex items-center gap-2">
             <Icon name="mail" />
             <strong>Receipt email</strong>
-            {presentation && (
+            {presentation && (!emailDisabled || receipt.state === "suppressed") && (
               <span className="ms-auto">
                 <Slip
                   kind={
@@ -752,17 +779,22 @@ function Receipt({
             {receipt.attempts} {receipt.attempts === 1 ? "attempt" : "attempts"} of{" "}
             {payment.receiptAttemptLimit} allowed.
           </p>
-          {presentation?.explainUnknown && (
+          {!emailDisabled && presentation?.explainUnknown && (
             <p className="text-caption">
               The message left Relay CRM without a clear delivery answer. It will not retry by
               itself. Sending again may deliver a duplicate receipt.
             </p>
           )}
-          {receipt.state === "suppressed" && (
+          {receipt.state === "suppressed" && !emailDisabled && (
             <p className="text-caption">
               {receipt.history.find((attempt) => attempt.state === "suppressed")?.reason ??
                 "Delivery is suppressed."}{" "}
               It will not retry.
+            </p>
+          )}
+          {emailDisabled && receipt.history.some((attempt) => attempt.number > 0) && (
+            <p className="text-caption text-secondary-foreground">
+              Demo history may include simulated delivery attempts.
             </p>
           )}
           <ol className="space-y-2">
@@ -796,12 +828,12 @@ function Receipt({
                 </li>
               ))}
           </ol>
-          {payment.actions.requeueReceipt && (
+          {!emailDisabled && payment.actions.requeueReceipt && (
             <Button variant="outline" busy={busy} onClick={sendAgain}>
               Send again
             </Button>
           )}
-          {atCap && receipt.state !== "sent" && (
+          {!emailDisabled && atCap && receipt.state !== "sent" && (
             <Refusal announce={false} title="The receipt cannot be sent again">
               {failureMessages.receiptAttemptLimit}
             </Refusal>

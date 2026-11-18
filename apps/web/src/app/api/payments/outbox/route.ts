@@ -1,7 +1,9 @@
 import { composition } from "@/server/composition.ts";
 import { protectHttp } from "@/server/errors.ts";
-import { authorizeJob, rateLimited } from "@/server/rate-limit.ts";
+import { authorizeJob } from "@/server/rate-limit.ts";
 import { readBody } from "@/server/http.ts";
+import { runOutbox } from "@/server/payments/jobs.ts";
+
 export function POST(request: Request) {
   return protectHttp("outbox.failed", async () => {
     const app = composition();
@@ -15,20 +17,6 @@ export function POST(request: Request) {
     );
     if (denied) return denied;
     if ((await readBody(request)) === null) return new Response(null, { status: 413 });
-    const mailer = app.receiptMailer;
-    const run = await app.store.exclusiveJob("outbox", (signal) =>
-      app.store.runOutbox(mailer, { signal }),
-    );
-    if (!run.ran) return rateLimited();
-    const results = run.result;
-    return Response.json({
-      processed: results.length,
-      recordingFailed: results.filter((r) => r.state === "recordingFailed").length,
-      superseded: results.filter((r) => r.state === "superseded").length,
-      sent: results.filter((r) => r.state === "sent").length,
-      failed: results.filter((r) => r.state === "failed").length,
-      suppressed: results.filter((r) => r.state === "suppressed").length,
-      unknown: results.filter((r) => r.state === "unknown").length,
-    });
+    return runOutbox(app.store, app.receiptMailer);
   });
 }
