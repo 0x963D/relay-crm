@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "../..",
+    "outDir": "./.api-types",
+    "paths": {
+      "@relay/store": ["../../packages/store/src/index.ts"],
+      "@relay/domain": ["../../packages/domain/src/index.ts"]
+    }
+  },
+  "include": ["src/api-types.ts"],
+  "exclude": ["node_modules"]
+}

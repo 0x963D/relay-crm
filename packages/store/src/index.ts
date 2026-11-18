@@ -5,6 +5,9 @@ import {
   type ReceiptDelivery,
   type OutboxOptions,
 } from "./outbox.ts";
+export type { WorkReceipt } from "./work.ts";
+export type { AuthenticationDatabase } from "./auth.ts";
+export type { Person } from "./payment-detail.ts";
 import type {
   PaymentId,
   Actor,

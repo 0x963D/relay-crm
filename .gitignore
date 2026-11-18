@@ -12,3 +12,7 @@ packages/store/src/generated/
 
 /test-results/
 /playwright-report/
+**/.expo/
+apps/mobile/dist/
+
+apps/web/.api-types/

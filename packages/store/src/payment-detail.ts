@@ -11,7 +11,7 @@ import type { Payment, PaymentApproval, ReceiptAttempt } from "./generated/clien
 import type { Tx } from "./tx.ts";
 import { InvariantError } from "./lead-row.ts";
 
-interface Person {
+export interface Person {
   readonly id: string;
   readonly name: string;
 }

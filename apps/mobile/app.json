@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Relay CRM",
+    "slug": "relay-crm",
+    "version": "0.1.0",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["android", "ios"],
+    "scheme": "relay-crm",
+    "ios": { "supportsTablet": false }
+  }
+}

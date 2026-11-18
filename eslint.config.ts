@@ -38,7 +38,15 @@ const STORE_TESTING = {
 };
 
 export default defineConfig(
-  globalIgnores(["**/node_modules/", "**/.next/", "**/generated/", "**/next-env.d.ts"]),
+  globalIgnores([
+    "**/node_modules/",
+    "**/.next/",
+    "**/generated/",
+    "**/next-env.d.ts",
+    "**/.expo/",
+    "apps/mobile/dist/",
+    "apps/web/.api-types/",
+  ]),
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -74,6 +82,29 @@ export default defineConfig(
     ignores: ["**/test/**"],
     rules: {
       "no-restricted-imports": ["error", { paths: [STORE_TESTING] }],
+    },
+  },
+  {
+    files: ["apps/mobile/src/**"],
+    ignores: ["apps/mobile/src/api/phone-storage.ts", "apps/mobile/src/api/token.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [STORE_TESTING],
+          patterns: [
+            {
+              group: [
+                "expo-file-system",
+                "expo-sqlite",
+                "expo-secure-store",
+                "@react-native-async-storage/*",
+              ],
+              message: "Keep phone data in phone-storage.ts and credentials in token.ts.",
+            },
+          ],
+        },
+      ],
     },
   },
   {
@@ -145,6 +176,7 @@ export default defineConfig(
       "packages/store/prisma.config.ts",
       "apps/web/src/server/env.ts",
       "apps/web/src/server/env-file.ts",
+      "apps/mobile/src/api/server.ts",
       "apps/web/test/production.prod.test.ts",
       "apps/web/test/browser/paths.ts",
     ],
