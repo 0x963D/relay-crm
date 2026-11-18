@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffectEvent, useEffect } from "react";
 import { BackHandler, View, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect, usePreventRemove, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -27,10 +27,11 @@ export function WonScreen({ id, name }: { id: string; name: string }) {
     disable();
     router.dismissTo("/");
   }
+  const goBack = useEffectEvent(back);
   useFocusEffect(
     useCallback(() => {
       const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-        back();
+        goBack();
         return true;
       });
       return () => {
@@ -38,9 +39,10 @@ export function WonScreen({ id, name }: { id: string; name: string }) {
       };
     }, []),
   );
+  const { refetch } = lead;
   useEffect(() => {
-    void lead.refetch();
-  }, []);
+    void refetch();
+  }, [refetch]);
   const closure = lead.data?.timeline.find((entry) => entry.kind === "closure");
   return (
     <Screen>

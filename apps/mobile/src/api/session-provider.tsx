@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useState } from "react";
 import type { ReactNode } from "react";
-import { AppState } from "react-native";
+import { Alert, AppState } from "react-native";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { auth, failureFrom, rpc, setSessionEnded } from "./client.ts";
 import { PhoneEntries } from "../core/phone-entries.ts";
@@ -9,7 +9,7 @@ import { writeRequest } from "./write-request.ts";
 import { server } from "./server.ts";
 import { bearer, bearerPerson, tokenStore } from "./token.ts";
 import { queryDefaults } from "./queries.ts";
-import { signOutFromPhone } from "../core/sign-out.ts";
+import { keptPhoneWarning, signOutFromPhone } from "../core/sign-out.ts";
 import { sessionPerson, sessionTransition } from "../core/session.ts";
 import type { Credential, Session } from "../core/session.ts";
 
@@ -33,6 +33,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () =>
       person
         ? new PhoneEntries({
+            reportError: () => {
+              Alert.alert(
+                "This action could not finish",
+                "Reopen this lead to review its current state before trying again.",
+              );
+            },
             scope: { server, person },
             storage: phoneStorage,
             identity: () => {
@@ -71,7 +77,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (current) setPhoneError(true);
       });
+    const background = AppState.addEventListener("change", (status) => {
+      if (status !== "active") phone?.run(() => phone.background());
+    });
     return () => {
+      background.remove();
       current = false;
       unsubscribe?.();
     };
@@ -137,9 +147,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     queries.clear();
     dispatch({ type: "signedOut" });
   }
-  function endSignIn(local = false) {
+  async function endSignIn(local = false) {
     const token = bearer();
-    return signOutFromPhone(
+    const removal = await signOutFromPhone(
       {
         revoke: () => auth.signOut(),
         remove: () => tokenStore.clear(token),
@@ -150,6 +160,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       local,
     );
+    if (removal === "kept") Alert.alert("Phone items could not be deleted", keptPhoneWarning);
   }
   return (
     <Context

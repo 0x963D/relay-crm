@@ -1,6 +1,7 @@
 import eslint from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
 import tseslint from "typescript-eslint";
+import hooks from "eslint-plugin-react-hooks";
 
 const PROCESS_ENV = {
   selector: "MemberExpression[object.name='process'][property.name='env']",
@@ -77,6 +78,11 @@ export default defineConfig(
         { considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: true },
       ],
     },
+  },
+  {
+    files: ["apps/mobile/**/*.tsx", "apps/mobile/**/*.ts"],
+    plugins: { "react-hooks": { rules: hooks.rules } },
+    rules: { "react-hooks/exhaustive-deps": "error" },
   },
   {
     ignores: ["**/test/**"],

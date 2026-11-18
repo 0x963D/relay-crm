@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { serverOrigin } from "../src/api/server.ts";
+import { configuredServer, serverOrigin } from "../src/api/server.ts";
 
 it.each([
   "localhost",
@@ -35,4 +35,11 @@ it.each([
   "ftp://relay.example",
 ])("rejects a non-origin configuration %s", (origin) => {
   expect(() => serverOrigin(origin)).toThrow();
+});
+
+it("requires a configured release origin and only defaults in development", () => {
+  expect(() => configuredServer(undefined, false)).toThrow("EXPO_PUBLIC_RELAY_URL");
+  expect(() => configuredServer("", false)).toThrow("EXPO_PUBLIC_RELAY_URL");
+  expect(configuredServer(undefined, true)).toBe("http://10.0.2.2:3107");
+  expect(configuredServer("https://relay.example", false)).toBe("https://relay.example");
 });

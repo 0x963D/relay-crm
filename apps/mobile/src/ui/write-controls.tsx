@@ -1,3 +1,4 @@
+import { entriesFact } from "../core/write-presentation.ts";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Animated, Easing, Platform, Pressable, View } from "react-native";
@@ -335,7 +336,8 @@ export function ReviewBand({ id, zone }: { id: string; zone?: string | undefined
         label={snapshot.state === "saved" ? "Clear it" : "Review"}
         busy={snapshot.state === "saved" && snapshot.storageError === null}
         onPress={() => {
-          if (snapshot.state === "saved") void session.phone?.repair(id);
+          if (snapshot.state === "saved")
+            session.phone?.run(() => session.phone?.repair(id) ?? Promise.resolve());
           else openWrite(router, entry.command.operation, id);
         }}
       />
@@ -350,19 +352,7 @@ export function EntriesStrip() {
   if (!oldest || !session.phone) return null;
   const states = entries.map((entry) => session.phone?.snapshot(entry.command.payload.id).state);
   const plural = entries.length > 1;
-  const fact = states.some(
-    (state) => state === "unknown" || state === "sendingRetry" || state === "refusedAfterUnknown",
-  )
-    ? plural
-      ? "Some may not have saved."
-      : "It may not have saved."
-    : states.includes("refused")
-      ? "It was refused."
-      : states.includes("notSaved")
-        ? "It was not saved."
-        : states.includes("neverSubmitted")
-          ? "It has not been sent."
-          : "It was saved.";
+  const fact = entriesFact(states);
   return (
     <View style={{ margin: 16 }}>
       <Band
@@ -381,7 +371,9 @@ export function EntriesStrip() {
           }
           onPress={() => {
             if (session.phone?.snapshot(oldest.command.payload.id).state === "saved")
-              void session.phone.repair(oldest.command.payload.id);
+              session.phone.run(
+                () => session.phone?.repair(oldest.command.payload.id) ?? Promise.resolve(),
+              );
             else openWrite(router, oldest.command.operation, oldest.command.payload.id);
           }}
         />

@@ -14,12 +14,39 @@ import {
 } from "./write-fixtures.ts";
 
 afterEach(() => vi.useRealTimers());
+it.each(["storing", "sending", "afterReceipt"] as const)(
+  "refuses a stale background draft while %s and keeps exactly one save",
+  async (phase) => {
+    const { owner, storage, dispatch } = await setup();
+    let release: () => void = () => undefined;
+    if (phase === "storing") {
+      storage.gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    const saving = owner.save(command, draft, false);
+    await flush();
+    if (phase !== "storing") await saving;
+    if (phase === "afterReceipt")
+      await owner.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+    const background = owner.keepDraft(draft, id, "attempt");
+    release();
+    await saving;
+    await background;
+    if (phase !== "afterReceipt")
+      await owner.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+    expect(storage.saved().drafts).toEqual({});
+    expect(owner.draft(id, "attempt")).toBeNull();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  },
+);
 async function setup(
   storage = new FakePhone(),
-  dispatch = pending(),
+  dispatch = vi.fn<() => Promise<Answer>>(() => new Promise<never>(() => undefined)),
   identity: () => Scope | null = () => scope,
 ) {
   const owner = new PhoneEntries({
+    reportError: vi.fn(),
     scope,
     storage,
     dispatch,
@@ -250,7 +277,11 @@ it.each(["person", "server", "removed"] as const)(
   "ignores answers after the entry changes %s",
   async (kind) => {
     let identity: Scope | null = scope;
-    const { owner } = await setup(new FakePhone(), pending(), () => identity);
+    const { owner } = await setup(
+      new FakePhone(),
+      vi.fn<() => Promise<Answer>>(() => new Promise<never>(() => undefined)),
+      () => identity,
+    );
     await owner.save(command, draft, true);
     if (kind === "removed") {
       await owner.discard(id);
@@ -322,7 +353,11 @@ it.each(["draft", "save", "retry", "answer", "receipt", "edit", "discard"] as co
     vi.useFakeTimers();
     for (const lands of [false, true]) {
       let identity: Scope | null = scope;
-      const { owner, storage, dispatch } = await setup(new FakePhone(), pending(), () => identity);
+      const { owner, storage, dispatch } = await setup(
+        new FakePhone(),
+        vi.fn<() => Promise<Answer>>(() => new Promise<never>(() => undefined)),
+        () => identity,
+      );
       if (step !== "draft") await owner.keepDraft(draft, id, "attempt");
       if (!["draft", "save"].includes(step))
         await owner.save(command, draft, step === "edit" || step === "discard");
@@ -378,4 +413,170 @@ it("keeps the old draft if a draft update or removal fails", async () => {
   storage.failure = storage.writes + 1;
   await expect(owner.keepDraft(null, id, "attempt")).rejects.toThrow();
   expect(owner.draft(id, "attempt")).toEqual(draft);
+});
+
+it("a slow close and its later receipt cannot restore the closing draft", async () => {
+  vi.useFakeTimers();
+  const { owner, storage, dispatch } = await setup();
+  const closing = { ...draft, operation: "close", closing: "won" } as const;
+  const close = { operation: "close", payload: { id, key, closing: { kind: "won" } } } as const;
+  await owner.keepDraft(closing, id, "close");
+  await owner.save(close, closing, false);
+  await vi.advanceTimersByTimeAsync(600);
+  await owner.keepDraft(closing, id, "close");
+  await owner.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+  expect(storage.saved().drafts).toEqual({});
+  expect(dispatch).toHaveBeenCalledTimes(1);
+});
+it("debounces drafts in the owner and flushes the latest text when leaving the foreground", async () => {
+  vi.useFakeTimers();
+  const { owner, storage } = await setup();
+  owner.updateDraft(draft, id, "attempt");
+  await vi.advanceTimersByTimeAsync(499);
+  expect(storage.writes).toBe(0);
+  const latest = { ...draft, note: "Latest" };
+  owner.updateDraft(latest, id, "attempt");
+  await owner.background();
+  expect(owner.draft(id, "attempt")).toEqual(latest);
+  await vi.advanceTimersByTimeAsync(600);
+  expect(storage.writes).toBe(1);
+});
+it.each(["storing", "sending", "close"] as const)(
+  "stops the owner draft lifecycle on Save during %s",
+  async (phase) => {
+    vi.useFakeTimers();
+    const { owner, storage, dispatch } = await setup();
+    const typed =
+      phase === "close" ? ({ ...draft, operation: "close", closing: "won" } as const) : draft;
+    const saved =
+      phase === "close"
+        ? ({ operation: "close", payload: { id, key, closing: { kind: "won" } } } as const)
+        : command;
+    owner.updateDraft(typed, id, typed.operation);
+    const gate = Promise.withResolvers<undefined>();
+    if (phase === "storing") storage.gate = gate.promise;
+    const saving = owner.save(saved, typed, false);
+    await flush();
+    await owner.background();
+    gate.resolve(undefined);
+    await saving;
+    await vi.advanceTimersByTimeAsync(600);
+    await owner.background();
+    await owner.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(owner.draft(id, typed.operation)).toBeNull();
+    expect(storage.saved().drafts).toEqual({});
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  },
+);
+it("discard removes a late-landing initial store without sending it", async () => {
+  vi.useFakeTimers();
+  const { owner, storage, dispatch } = await setup();
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const saving = owner.save(command, draft, false);
+  await vi.advanceTimersByTimeAsync(51);
+  await saving;
+  gate.resolve(undefined);
+  await flush();
+  await owner.discardDraft(id, "attempt");
+  await vi.advanceTimersByTimeAsync(600);
+  expect(storage.saved().entries).toEqual({});
+  expect(storage.saved().drafts).toEqual({});
+  expect(dispatch).not.toHaveBeenCalled();
+});
+it("a wrong-lead receipt becomes unknown instead of leaving Sending stuck", async () => {
+  const dispatch = vi.fn<() => Promise<Answer>>();
+  const { owner } = await setup(new FakePhone(), dispatch);
+  dispatch.mockResolvedValueOnce({
+    kind: "receipt",
+    receipt: { id: "00000000-0000-4000-8000-000000000003", accountId: null },
+  });
+  await owner.save(command, draft, false);
+  await flush();
+  expect(owner.snapshot(id)).toMatchObject({
+    state: "unknown",
+    entry: { unknownCause: "unreadable" },
+  });
+});
+it("reports an impossible event once through the same path used by UI and transport", async () => {
+  const reportError = vi.fn();
+  const owner = new PhoneEntries({
+    scope,
+    storage: new FakePhone(),
+    identity: () => scope,
+    dispatch: pending(),
+    now: () => now,
+    reportError,
+  });
+  await owner.restore();
+  await owner.save(command, draft, true);
+  owner.run(() => owner.retry(id, false));
+  await flush();
+  owner.run(() => owner.discard(id));
+  await flush();
+  expect(reportError).toHaveBeenCalledTimes(1);
+  expect(reportError.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  expect(owner.snapshot(id).state).toBe("sendingFirst");
+});
+it("writes the recovered sending status back as unknown", async () => {
+  const { owner, storage } = await setup();
+  await owner.save(command, draft, false);
+  const restored = await setup(storage);
+  expect(restored.owner.snapshot(id).state).toBe("unknown");
+  expect(storage.saved().entries[id]).toMatchObject({
+    status: "unknown",
+    unknownCause: "interrupted",
+  });
+});
+
+it("retries a failed draft flush on background and never resurrects a discarded flush", async () => {
+  vi.useFakeTimers();
+  const { owner, storage } = await setup();
+  owner.updateDraft(draft, id, "attempt");
+  storage.failure = 1;
+  await vi.advanceTimersByTimeAsync(500);
+  expect(owner.draftFailed(id, "attempt")).toBe(true);
+  await owner.background();
+  expect(owner.draftFailed(id, "attempt")).toBe(false);
+  expect(owner.draft(id, "attempt")).toEqual(draft);
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  storage.failure = storage.writes + 1;
+  owner.updateDraft({ ...draft, note: "discard this" }, id, "attempt");
+  const flushing = owner.background();
+  await flush();
+  const discarding = owner.discardDraft(id, "attempt");
+  gate.resolve(undefined);
+  await Promise.all([flushing, discarding]);
+  await owner.background();
+  expect(owner.draft(id, "attempt")).toBeNull();
+});
+it("reports a failure processing a transport answer through the same action boundary", async () => {
+  const reportError = vi.fn();
+  const dispatch = vi
+    .fn<() => Promise<Answer>>()
+    .mockResolvedValue({ kind: "receipt", receipt: { id, accountId: null } });
+  const owner = new PhoneEntries({
+    scope,
+    storage: new FakePhone(),
+    identity: () => scope,
+    dispatch,
+    now: () => now,
+    reportError,
+  });
+  await owner.restore();
+  const error = new Error("An impossible answer event");
+  vi.spyOn(owner, "answer").mockRejectedValueOnce(error);
+  await owner.save(command, draft, false);
+  await flush();
+  expect(reportError).toHaveBeenCalledExactlyOnceWith(error);
+});
+
+it("cannot start a second save from a completed form before a new form begins", async () => {
+  const { owner, dispatch } = await setup();
+  await owner.save(command, draft, false);
+  await owner.answer(key, 1, { kind: "receipt", receipt: { id, accountId: null } });
+  await expect(owner.save(command, draft, false)).rejects.toThrow("saved/save");
+  expect(dispatch).toHaveBeenCalledTimes(1);
 });

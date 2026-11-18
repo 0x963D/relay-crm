@@ -66,7 +66,7 @@ export function LeadScreen({ id }: { id: string }) {
     return () => {
       clearTimeout(timer);
     };
-  }, [notice?.entry.command.payload.key]);
+  }, [id, notice?.entry.command.payload.id, notice?.entry.command.payload.key, notice?.toast]);
   const moreButton = useRef<ComponentRef<typeof View>>(null);
   const sheetTitle = useRef<ComponentRef<typeof View>>(null);
   const openedMore = useRef(false);

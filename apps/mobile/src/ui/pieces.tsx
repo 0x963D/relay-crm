@@ -175,7 +175,7 @@ export function Heading({
       return () => {
         clearTimeout(timer);
       };
-    }, [state.kind, person]),
+    }, [state.kind]),
   );
   return (
     <T

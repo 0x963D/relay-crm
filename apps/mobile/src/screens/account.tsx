@@ -171,7 +171,11 @@ export function AccountScreen() {
                 label={busy ? "Signing out…" : "Sign out"}
                 busy={busy}
                 onPress={() => {
-                  const counts = storedCounts(session.phone?.counts() ?? { entries: 0, drafts: 0 });
+                  const counts = storedCounts(
+                    session.phoneReady && !session.phoneError && session.phone
+                      ? session.phone.counts()
+                      : null,
+                  );
                   Alert.alert(
                     counts ? "Delete what is kept and sign out?" : "Sign out?",
                     `${counts ? `${counts} will be deleted from this phone. ` : ""}Coming back needs a new code from your email.`,

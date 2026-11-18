@@ -28,7 +28,11 @@ export function RemoveSignIn() {
         label="Remove sign-in from this phone"
         busy={busy}
         onPress={() => {
-          const counts = storedCounts(session.phone?.counts() ?? { entries: 0, drafts: 0 });
+          const counts = storedCounts(
+            session.phoneReady && !session.phoneError && session.phone
+              ? session.phone.counts()
+              : null,
+          );
           Alert.alert(
             "Remove sign-in from this phone?",
             `${counts ? `${counts} will be deleted with it. ` : ""}The server may keep the session open until it ends on its own, within 24 hours.`,

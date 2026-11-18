@@ -51,6 +51,7 @@ export interface WriteContext {
   readonly prior: WriteState;
   readonly followsUnknown: boolean;
   readonly landed: boolean;
+  readonly landedStatus: "sending" | "neverSubmitted";
   readonly hasContent: boolean;
   readonly copyKept: boolean;
   readonly latest: boolean;
@@ -249,8 +250,18 @@ export const writeTable: Readonly<Record<WriteState, Row>> = {
         ? { next: "storageFailed", view: "storageFailed", action: "none" }
         : { next: c.prior, view: "retryNotRecorded", action: "none" },
     relaunch: (c) => ({
-      next: c.landed ? "unknown" : c.prior === "storageFailed" ? "editing" : c.prior,
-      view: c.landed ? "interrupted" : "restored",
+      next: c.landed
+        ? c.landedStatus === "neverSubmitted"
+          ? "neverSubmitted"
+          : "unknown"
+        : c.prior === "storageFailed"
+          ? "editing"
+          : c.prior,
+      view: c.landed
+        ? c.landedStatus === "neverSubmitted"
+          ? "offline"
+          : "interrupted"
+        : "restored",
       action: "restore",
     }),
     discard: cannot("Dismissal is disabled while storing."),
@@ -297,6 +308,7 @@ export const writeTable: Readonly<Record<WriteState, Row>> = {
   },
   notSaved: {
     ...idle("notSaved"),
+    sessionElsewhere: go("notSaved"),
     retry: retry("notSaved"),
     edit: go("editing", "unchanged", "storeDraft"),
     discard: go("notSaved", "discardNotSaved", "confirmRemoval"),

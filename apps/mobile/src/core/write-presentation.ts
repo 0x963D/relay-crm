@@ -1,3 +1,4 @@
+import type { WriteState } from "./write-machine.ts";
 import type { Lead } from "./api-types.ts";
 import { clock, contextualDate } from "./dates.ts";
 import type { Entry, WriteSnapshot } from "./write-model.ts";
@@ -184,7 +185,8 @@ export function removalWords(snapshot: WriteSnapshot, hasNote: boolean) {
     action: refused ? "Delete" : "Discard",
   };
 }
-export function storedCounts(counts: { entries: number; drafts: number }) {
+export function storedCounts(counts: { entries: number; drafts: number } | null) {
+  if (!counts) return "An unknown number of kept items";
   return [
     counts.entries
       ? `${String(counts.entries)} unresolved ${counts.entries === 1 ? "entry" : "entries"}`
@@ -227,4 +229,21 @@ export function successWords(entry: Entry, zone?: string, now = new Date()) {
       };
     }
   }
+}
+
+export function entriesFact(states: readonly (WriteState | undefined)[]) {
+  const uncertain = () =>
+    states.length > 1 ? "Some may not have saved." : "It may not have saved.";
+  if (
+    !states.length ||
+    states.some(
+      (state) =>
+        state === undefined || !["saved", "refused", "notSaved", "neverSubmitted"].includes(state),
+    )
+  )
+    return uncertain();
+  if (states.includes("refused")) return "It was refused.";
+  if (states.includes("notSaved")) return "It was not saved.";
+  if (states.includes("neverSubmitted")) return "It has not been sent.";
+  return "It was saved.";
 }

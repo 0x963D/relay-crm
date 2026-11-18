@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import type { ComponentRef } from "react";
 import {
   AccessibilityInfo,
@@ -68,12 +68,12 @@ export function SignIn({
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
-  function useDifferentEmail() {
+  const useDifferentEmail = useCallback(() => {
     setStep("email");
     setDigits("");
     setCodeState("ready");
     if (!paused) setMessage(null);
-  }
+  }, [paused]);
   useEffect(() => {
     if (step !== "code") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -83,7 +83,7 @@ export function SignIn({
     return () => {
       subscription.remove();
     };
-  }, [step, busy, paused]);
+  }, [step, busy, useDifferentEmail]);
   useEffect(() => {
     const shown = Keyboard.addListener("keyboardDidShow", () => {
       setKeyboard(true);

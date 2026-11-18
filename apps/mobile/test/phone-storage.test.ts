@@ -43,6 +43,7 @@ afterEach(() => {
 });
 it("uses full synchronization on the private connection", async () => {
   await phoneStorage.load(scope);
+  expect(state.db?.prepare("PRAGMA secure_delete").get()).toEqual({ secure_delete: 1 });
   expect(state.db?.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
   expect(state.db?.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "memory" });
 });

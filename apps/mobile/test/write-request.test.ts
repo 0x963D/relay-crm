@@ -6,7 +6,7 @@ import { PhoneEntries } from "../src/core/phone-entries.ts";
 import { signOutFromPhone } from "../src/core/sign-out.ts";
 import type { Command } from "../src/core/write-model.ts";
 import type { Fetch } from "../src/core/request.ts";
-import { command, draft, FakePhone, id, key, now, scope } from "./write-fixtures.ts";
+import { command, draft, FakePhone, flush, id, key, now, scope } from "./write-fixtures.ts";
 
 vi.mock("../src/api/token.ts", () => ({ bearer: () => null }));
 afterEach(() => vi.useRealTimers());
@@ -19,6 +19,7 @@ it("a rejected fetch after dispatch becomes outcome unknown and keeps the key", 
   const storage = new FakePhone();
   const fetch = vi.fn(() => Promise.reject(new TypeError("Connection reset after sending")));
   const owner = new PhoneEntries({
+    reportError: vi.fn(),
     scope,
     storage,
     identity: () => scope,
@@ -33,28 +34,36 @@ it("a rejected fetch after dispatch becomes outcome unknown and keeps the key", 
   expect(fetch).toHaveBeenCalledOnce();
   expect(storage.saved().entries[id]).toMatchObject({ command, status: "unknown", attempt: 1 });
 });
-it("a timeout aborts fetch and preserves an unknown entry without claiming to cancel the server", async () => {
+it("a timeout leaves fetch open and a late receipt settles the unknown entry", async () => {
   vi.useFakeTimers();
   let signal: AbortSignal | null | undefined;
+  const response = Promise.withResolvers<Response>();
   const storage = new FakePhone();
   const owner = new PhoneEntries({
+    reportError: vi.fn(),
     scope,
     storage,
     identity: () => scope,
     dispatch: requester((_input, init) => {
       signal = init?.signal;
-      return new Promise(() => undefined);
+      return response.promise;
     }),
     now: () => now,
   });
   await owner.restore();
   await owner.save(command, draft, false);
   await vi.advanceTimersByTimeAsync(20001);
-  expect(signal?.aborted).toBe(true);
+  expect(signal?.aborted).toBe(false);
   expect(owner.snapshot(id)).toMatchObject({
     state: "unknown",
     entry: { command, unknownCause: "timeout" },
   });
+  response.resolve(
+    Response.json({ result: { data: superjson.serialize({ id, accountId: null }) } }),
+  );
+  await vi.advanceTimersByTimeAsync(1);
+  expect(owner.snapshot(id).state).toBe("saved");
+  expect(owner.entries()).toEqual([]);
 });
 const commands: readonly Command[] = [
   command,
@@ -94,6 +103,7 @@ it.each([false, true])(
   async (local) => {
     const storage = new FakePhone();
     const owner = new PhoneEntries({
+      reportError: vi.fn(),
       scope,
       storage,
       identity: () => scope,
@@ -128,6 +138,7 @@ it.each([false, true])(
       local ? ["token", "phone", "memory"] : ["server", "token", "phone", "memory"],
     );
     const restored = new PhoneEntries({
+      reportError: vi.fn(),
       scope,
       storage,
       identity: () => scope,
@@ -138,3 +149,34 @@ it.each([false, true])(
     expect(restored.counts()).toEqual({ entries: 0, drafts: 0 });
   },
 );
+
+it("a real late transport receipt during retry storage settles saved without another dispatch", async () => {
+  vi.useFakeTimers();
+  const storage = new FakePhone();
+  const response = Promise.withResolvers<Response>();
+  const fetch = vi.fn(() => response.promise);
+  const owner = new PhoneEntries({
+    scope,
+    storage,
+    identity: () => scope,
+    dispatch: requester(fetch),
+    now: () => now,
+    reportError: vi.fn(),
+  });
+  await owner.restore();
+  await owner.save(command, draft, false);
+  await vi.advanceTimersByTimeAsync(20001);
+  const gate = Promise.withResolvers<undefined>();
+  storage.gate = gate.promise;
+  const retry = owner.retry(id, false);
+  await flush();
+  response.resolve(
+    Response.json({ result: { data: superjson.serialize({ id, accountId: null }) } }),
+  );
+  await flush();
+  expect(owner.snapshot(id).state).toBe("storing");
+  gate.resolve(undefined);
+  await retry;
+  expect(owner.snapshot(id).state).toBe("saved");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

@@ -5,7 +5,7 @@ import type { PhoneStorage } from "../core/phone-entries.ts";
 async function open() {
   const db = await openDatabaseAsync("relay-work-v1.db");
   await db.execAsync(
-    "PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL; CREATE TABLE IF NOT EXISTS phone_work (server TEXT NOT NULL, person TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (server, person));",
+    "PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON; CREATE TABLE IF NOT EXISTS phone_work (server TEXT NOT NULL, person TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (server, person));",
   );
   return db;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { ComponentRef } from "react";
 import {
   AccessibilityInfo,
@@ -48,7 +48,8 @@ import {
 } from "../core/write-presentation.ts";
 import { timelinePresentation } from "../core/timeline.ts";
 import { type } from "../core/theme.ts";
-import { backgroundWrite, dismissWrite } from "../core/write-dismissal.ts";
+import { WriteInteraction } from "../core/write-interaction.ts";
+import { dismissWrite } from "../core/write-dismissal.ts";
 import { useHandoff } from "../ui/handoff.tsx";
 import { Band, Button, Heading, IconButton, Screen, Slip, T } from "../ui/pieces.tsx";
 import { CallbackFields } from "../ui/callback-fields.tsx";
@@ -99,18 +100,16 @@ export function WriteScreen({
   const currentDraft = useRef(draft);
   currentDraft.current = draft;
   const initialized = useRef(false);
-  const dirty = useRef(false);
-  const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const busyUntil = useRef(0);
+  const [interaction] = useState(() => new WriteInteraction(() => Date.now()));
   const retryBand = useRef<WriteSnapshot | null>(null);
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<{ command: Command; readyAt: number } | null>(
     null,
   );
   const [confirmReady, setConfirmReady] = useState(false);
-  const frozenClosing = useRef<Command | null>(null);
   const [error, setError] = useState<FormError | null>(null);
-  const [draftFailed, setDraftFailed] = useState(false);
+  const draftFailed = owner?.draftFailed(id, operation) ?? false;
+  const [discardFailed, setDiscardFailed] = useState(false);
   const [restored, setRestored] = useState<string | null>(null);
   const [keyboard, setKeyboard] = useState(false);
   const [copy, setCopy] = useState(false);
@@ -134,18 +133,20 @@ export function WriteScreen({
       change({ channel: openedChannel === "call" ? "call" : "whatsApp" });
     },
   );
-  const handoffStarted = useRef(false);
   const signedIn = session.state.kind === "signedIn";
   const wasSignedIn = useRef(signedIn);
   const correctionRead = useRef<{ view: WriteView; updatedAt: number } | null>(null);
+  const refreshCorrection = useEffectEvent((correction: boolean) => {
+    if (correction) correctionRead.current = { view: snapshot.view, updatedAt: lead.dataUpdatedAt };
+    void lead.refetch({ cancelRefetch: false });
+  });
   useEffect(() => {
     const correction =
       snapshot.state === "editing" &&
       ["closingUnavailable", "wrongNumberUnavailable", "past"].includes(snapshot.view);
     if (!correction && snapshot.state !== "refused" && snapshot.state !== "refusedAfterUnknown")
       return;
-    if (correction) correctionRead.current = { view: snapshot.view, updatedAt: lead.dataUpdatedAt };
-    void lead.refetch({ cancelRefetch: false });
+    refreshCorrection(correction);
   }, [snapshot.state, snapshot.view, snapshot.entry?.refusal]);
   const busy =
     offlineBusy ||
@@ -176,24 +177,12 @@ export function WriteScreen({
     if (toQueue) router.dismissTo("/");
     else router.back();
   }
-  async function keepDraft() {
-    if (!owner || !initialized.current || !dirty.current) return;
-    try {
-      const current = currentDraft.current;
-      await owner.keepDraft(
-        draftHasContent(current, initial.current) ? current : null,
-        id,
-        operation,
-      );
-      setDraftFailed(false);
-    } catch {
-      setDraftFailed(true);
-    }
-  }
   function change(next: Partial<Draft>) {
-    if (frozenClosing.current) return;
-    dirty.current = true;
-    setDraft((prior) => ({ ...prior, ...next, changedAt: new Date().toISOString() }));
+    if (interaction.confirmation) return;
+    const updated = { ...currentDraft.current, ...next, changedAt: new Date().toISOString() };
+    currentDraft.current = updated;
+    setDraft(updated);
+    owner?.updateDraft(draftHasContent(updated, initial.current) ? updated : null, id, operation);
     setError(null);
   }
   function revealNote() {
@@ -206,10 +195,10 @@ export function WriteScreen({
       });
     });
   }
-  function withdrawConfirmation() {
-    frozenClosing.current = null;
+  const withdrawConfirmation = useCallback(() => {
+    interaction.withdraw();
     setConfirmation(null);
-  }
+  }, [interaction]);
   useEffect(() => {
     if (!session.phoneReady || initialized.current || (!lead.data && !snapshot.entry)) return;
     const baseline = initialDraft({
@@ -224,11 +213,21 @@ export function WriteScreen({
     owner?.begin(id);
     const stored = owner?.draft(id, operation);
     setDraft(snapshot.entry?.draft ?? stored ?? baseline);
-    dirty.current = stored !== null && stored !== undefined;
     initialized.current = true;
     openingOwner.current = owner;
     if (stored) setRestored(stored.changedAt);
-  }, [session.phoneReady, lead.data, owner, snapshot.entry]);
+  }, [
+    session.phoneReady,
+    lead.data,
+    owner,
+    snapshot.entry,
+    id,
+    operation,
+    callback,
+    channel,
+    contact.name,
+    zone,
+  ]);
   useEffect(() => {
     if (!restored) return;
     const timer = setTimeout(() => {
@@ -239,33 +238,15 @@ export function WriteScreen({
     };
   }, [restored]);
   useEffect(() => {
-    if (!initialized.current || !editing || confirmation) return;
-    clearTimeout(draftTimer.current);
-    if (AppState.currentState !== "active") {
-      void keepDraft();
-      return;
-    }
-    draftTimer.current = setTimeout(() => {
-      void keepDraft();
-    }, 500);
-    return () => {
-      clearTimeout(draftTimer.current);
-    };
-  }, [draft, editing, confirmation]);
-  useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
         withdrawConfirmation();
-        if (backgroundWrite(snapshot.state) === "keepDraft") {
-          clearTimeout(draftTimer.current);
-          void keepDraft();
-        }
       }
     });
     return () => {
       sub.remove();
     };
-  }, [editing, owner]);
+  }, [withdrawConfirmation]);
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", () => {
       setKeyboard(true);
@@ -285,20 +266,16 @@ export function WriteScreen({
       setSignedAgain(false);
     } else if (!wasSignedIn.current) setSignedAgain(true);
     wasSignedIn.current = signedIn;
-  }, [signedIn]);
+  }, [signedIn, withdrawConfirmation]);
   useEffect(() => {
-    const currentBusy =
-      snapshot.state === "storing" ||
-      snapshot.state === "sendingFirst" ||
-      snapshot.state === "sendingRetry";
-    const delay = currentBusy ? 0 : Math.max(0, busyUntil.current - Date.now());
+    const delay = interaction.displayDelay(snapshot.state);
     const timer = setTimeout(() => {
       setShown(snapshot);
     }, delay);
     return () => {
       clearTimeout(timer);
     };
-  }, [snapshot.state, snapshot.view, snapshot.entry, snapshot.storageError, snapshot.receipt]);
+  }, [snapshot, interaction]);
   useEffect(() => {
     if (!confirmation) {
       setConfirmReady(false);
@@ -314,7 +291,7 @@ export function WriteScreen({
       clearTimeout(timer);
     };
   }, [confirmation]);
-  useEffect(() => {
+  const showOutcome = useEffectEvent(() => {
     if (shown.state === "saved" && shown.receipt) {
       if (
         shown.entry?.command.operation === "close" &&
@@ -351,20 +328,20 @@ export function WriteScreen({
     if (shown.state === "editing" && shown.view === "past")
       setError({ field: "time", text: "That is in the past. Choose a later one." });
     return undefined;
-  }, [shown.state, shown.view]);
+  });
+  useEffect(() => showOutcome(), [shown.state, shown.view]);
   useEffect(() => {
     if (snapshot.state !== "editing") return;
     const kept = owner?.draft(id, operation);
     if (kept && initialized.current) {
       setDraft(kept);
-      dirty.current = true;
     }
-  }, [snapshot.state]);
+  }, [snapshot.state, id, operation, owner]);
   const dismissCurrent = useRef(dismiss);
   dismissCurrent.current = dismiss;
   useFocusEffect(
     useCallback(() => {
-      void owner?.repair(id);
+      owner?.run(() => owner.repair(id));
       const sub = BackHandler.addEventListener("hardwareBackPress", () => {
         dismissCurrent.current();
         return true;
@@ -374,12 +351,14 @@ export function WriteScreen({
       };
     }, [owner, id]),
   );
+  const openHandoff = useEffectEvent(() => {
+    void handoff.open(channel === "whatsApp" ? "whatsapp" : "call", phone ?? "");
+  });
   useEffect(() => {
-    if (!presented || !phone || !initialized.current || handoffStarted.current || snapshot.entry)
+    if (!interaction.startHandoff(presented, phone, initialized.current, snapshot.entry !== null))
       return;
-    handoffStarted.current = true;
-    void handoff.open(channel === "whatsApp" ? "whatsapp" : "call", phone);
-  }, [presented, phone, session.phoneReady, lead.data]);
+    openHandoff();
+  }, [presented, phone, session.phoneReady, lead.data, snapshot.entry, interaction]);
   function signIn() {
     router.push({ pathname: "/sign-in", params: { surface: editing ? "form" : "review" } });
   }
@@ -402,15 +381,13 @@ export function WriteScreen({
             text: "Discard",
             style: "destructive",
             onPress: () => {
-              clearTimeout(draftTimer.current);
               void owner
-                ?.keepDraft(null, id, operation)
+                ?.discardDraft(id, operation)
                 .then(() => {
-                  dirty.current = false;
                   leave();
                 })
                 .catch(() => {
-                  setDraftFailed(true);
+                  setDiscardFailed(true);
                 });
             },
           },
@@ -419,7 +396,7 @@ export function WriteScreen({
     } else leave();
   }
   async function submit(clear = false) {
-    if (!owner || busy || frozenClosing.current || !session.phoneReady) return;
+    if (!owner || busy || interaction.confirmation || !session.phoneReady) return;
     if (!signedIn) {
       signIn();
       return;
@@ -438,14 +415,12 @@ export function WriteScreen({
     }
     if (operation === "close") {
       Keyboard.dismiss();
-      frozenClosing.current = command;
-      setConfirmation({ command, readyAt: Date.now() + 400 });
-      await keepDraft();
+      setConfirmation(interaction.confirm(command));
+      await owner.flushDraft(id, operation);
       return;
     }
-    busyUntil.current = Date.now() + 400;
+    interaction.startBusy();
     retryBand.current = null;
-    clearTimeout(draftTimer.current);
     Keyboard.dismiss();
     await owner.save(command, draft, networkOffline());
   }
@@ -589,7 +564,7 @@ export function WriteScreen({
                   ? ` · ${draft.handoff.channel === "call" ? "dialler opened" : "WhatsApp link opened"} ${clock(new Date(draft.handoff.at), zone)}`
                   : ""}
               </T>
-              {draftFailed ? (
+              {draftFailed || discardFailed ? (
                 <T variant="caption" color={c.waitFg}>
                   Not kept on this phone yet
                 </T>
@@ -682,7 +657,7 @@ export function WriteScreen({
                       icon="edit"
                       label="Edit this entry"
                       onPress={() => {
-                        void owner?.edit(id);
+                        owner?.run(() => owner.edit(id));
                       }}
                     />
                   )}
@@ -943,7 +918,7 @@ export function WriteScreen({
                         label="Clear callback"
                         disabled={locked}
                         onPress={() => {
-                          void submit(true);
+                          owner?.run(() => submit(true));
                         }}
                       />
                       <T variant="caption" color={c.text3}>
@@ -1106,11 +1081,10 @@ export function WriteScreen({
                     label="Yes, close it"
                     disabled={!confirmReady}
                     onPress={() => {
-                      if (Date.now() < confirmation.readyAt || !signedIn) return;
-                      const frozen = confirmation.command;
+                      const frozen = interaction.accept(signedIn);
+                      if (!frozen) return;
                       withdrawConfirmation();
-                      busyUntil.current = Date.now() + 400;
-                      void owner?.save(frozen, draft, networkOffline());
+                      owner?.run(() => owner.save(frozen, draft, networkOffline()));
                     }}
                   />
                 </View>
@@ -1156,7 +1130,7 @@ export function WriteScreen({
                       (draft.closing === "dead" && (!draft.reason || !availability[draft.reason]))))
                 }
                 onPress={() => {
-                  void submit();
+                  owner?.run(() => submit());
                 }}
               />
             </View>
@@ -1210,7 +1184,7 @@ export function WriteScreen({
                     onPress={() => {
                       if (!signedIn) signIn();
                       else {
-                        busyUntil.current = Date.now() + 400;
+                        interaction.startBusy();
                         retryBand.current = shown;
                         if (networkOffline()) {
                           setOfflineBusy(true);
@@ -1218,7 +1192,7 @@ export function WriteScreen({
                             setOfflineBusy(false);
                           }, 400);
                         }
-                        void owner?.retry(id, networkOffline());
+                        owner?.run(() => owner.retry(id, networkOffline()));
                       }
                     }}
                   />
@@ -1245,7 +1219,8 @@ export function WriteScreen({
         text: words.action,
         style: "destructive",
         onPress: () => {
-          void owner?.discard(id).then(() => {
+          owner?.run(async () => {
+            await owner.discard(id);
             if (!owner.entries().some((entry) => entry.command.payload.id === id)) leave();
           });
         },

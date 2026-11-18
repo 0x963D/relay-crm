@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import {
   AppState,
   Pressable,
@@ -59,15 +59,21 @@ export function QueueScreen() {
   const focus = useQueueFocus(display.data, folded);
   const network = useNetworkState();
   useReadOnReturn(queue.refetch);
+  const rememberEmail = useEffectEvent((email: string) => {
+    void session.rememberEmail(email).catch(() => undefined);
+  });
   useEffect(() => {
-    if (profile.data?.email) void session.rememberEmail(profile.data.email).catch(() => undefined);
+    if (profile.data?.email) rememberEmail(profile.data.email);
   }, [profile.data?.email]);
+  const refreshQueue = useEffectEvent(() => {
+    void queue.refetch({ cancelRefetch: false });
+  });
   useEffect(() => {
     if (!display.data || session.state.kind !== "signedIn") return;
     const timer = setTimeout(
       () => {
         setNow(new Date());
-        void queue.refetch({ cancelRefetch: false });
+        refreshQueue();
       },
       nextQueueRefresh(new Date(), display.data.timeZone, display.data.nextCallbackAt),
     );

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { signOutFromPhone } from "../src/core/sign-out.ts";
+import { keptPhoneWarning, signOutFromPhone } from "../src/core/sign-out.ts";
 import { sessionDisplay, signInOptions } from "../src/core/session-display.ts";
 
 it("deletes the token only after confirmed revocation, then forgets the cache", async () => {
@@ -107,4 +107,19 @@ it("leaves an ended launch email blank and offers removal while retaining modal 
     email: "previous@example.com",
     remove: false,
   });
+});
+
+it("reports kept items after erase failure and tells the agent how to retry", async () => {
+  const forget = vi.fn();
+  const result = await signOutFromPhone({
+    revoke: vi.fn(),
+    remove: () => Promise.resolve(true),
+    erase: () => Promise.reject(new Error("disk")),
+    forget,
+  });
+  expect(result).toBe("kept");
+  expect(forget).toHaveBeenCalledOnce();
+  expect(keptPhoneWarning).toContain("Items are still on this phone");
+  expect(keptPhoneWarning).toContain("same person");
+  expect(keptPhoneWarning).toContain("retry removal");
 });

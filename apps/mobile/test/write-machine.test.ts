@@ -16,6 +16,7 @@ const context: WriteContext = {
   prior: "editing",
   followsUnknown: false,
   landed: true,
+  landedStatus: "sending",
   hasContent: true,
   copyKept: false,
   latest: true,
@@ -31,7 +32,7 @@ const expected: Record<WriteState, string> = {
   sendingRetry: "B x x SAV RA RA RA RA RA RA CONA RA US UN UN UN = = INTERRUPT x x x SE = x SAV",
   neverSubmitted: `x x x ${unavailableAnswers} = = REST RET DU EDIT SE = SO x`,
   unknown: `x = NR ${unavailableAnswers} = = REST RET DX x SE = SO SAV`,
-  notSaved: `x = NR ${unavailableAnswers} = = REST RET DN EDIT SE = SO x`,
+  notSaved: `x = NR ${unavailableAnswers} = = REST RET DN EDIT = = SO x`,
   refused: `x = NR ${unavailableAnswers} = = REST x DR x SE = SO x`,
   refusedAfterUnknown: `x = NR ${unavailableAnswers} = = REST x DA x SE = SO =`,
   saved: `x = COPY ${unavailableAnswers} = = REST x x x SE = = =`,
@@ -227,4 +228,10 @@ it("uses the sending row for latest late refusals and ignores late transport fai
     next: "unknown",
     action: "none",
   });
+});
+
+it("a landed offline store relaunches as never submitted", () => {
+  expect(
+    transitionWrite("storing", "relaunch", { ...context, landedStatus: "neverSubmitted" }),
+  ).toEqual({ next: "neverSubmitted", view: "offline", action: "restore" });
 });

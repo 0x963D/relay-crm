@@ -29,6 +29,7 @@ interface Options {
   readonly identity: () => Scope | null;
   readonly dispatch: (command: Command, signal: AbortSignal) => Promise<Answer>;
   readonly now: () => Date;
+  readonly reportError: (error: unknown) => void;
   readonly storageTimeoutMs?: number;
   readonly requestTimeoutMs?: number;
 }
@@ -41,6 +42,7 @@ const editing = (): WriteSnapshot => ({
   storageError: null,
   receipt: null,
 });
+const idleSnapshot = editing();
 export class PhoneEntries {
   private data = emptyPhone();
   private loaded = false;
@@ -50,6 +52,17 @@ export class PhoneEntries {
   private readonly views = new Map<string, WriteSnapshot>();
   private readonly deferred = new Map<string, Extract<Answer, { kind: "receipt" }>>();
   private readonly repairs = new Map<string, () => Promise<void>>();
+  private readonly drafts = new Map<
+    string,
+    {
+      id: string;
+      operation: Draft["operation"];
+      draft: Draft | null;
+      timer: ReturnType<typeof setTimeout>;
+      work: Promise<void> | null;
+    }
+  >();
+  private readonly draftErrors = new Set<string>();
   private readonly options: Options;
   constructor(options: Options) {
     this.options = options;
@@ -68,7 +81,7 @@ export class PhoneEntries {
     this.emit();
   }
   snapshot(id: string): WriteSnapshot {
-    return this.views.get(id) ?? editing();
+    return this.views.get(id) ?? idleSnapshot;
   }
   begin(id: string) {
     if (!this.data.entries[id] && this.snapshot(id).state === "saved") {
@@ -81,6 +94,67 @@ export class PhoneEntries {
   }
   counts() {
     return { entries: this.entries().length, drafts: Object.keys(this.data.drafts).length };
+  }
+  run(work: () => Promise<unknown>) {
+    void (async () => work())().catch(this.options.reportError);
+  }
+  draftFailed(id: string, operation: Draft["operation"]) {
+    return this.draftErrors.has(draftKey(id, operation));
+  }
+  private canDraft(id: string) {
+    return (
+      !this.removed &&
+      !this.data.entries[id] &&
+      ["editing", "storageFailed"].includes(this.snapshot(id).state)
+    );
+  }
+  private stopDrafts(id?: string) {
+    for (const [key, pending] of this.drafts) {
+      if (id !== undefined && pending.id !== id) continue;
+      clearTimeout(pending.timer);
+      this.drafts.delete(key);
+    }
+  }
+  updateDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
+    if (!this.canDraft(id)) return;
+    const key = draftKey(id, operation);
+    clearTimeout(this.drafts.get(key)?.timer);
+    this.drafts.set(key, {
+      id,
+      operation,
+      draft: draft ? draftSchema.parse(draft) : null,
+      work: null,
+      timer: setTimeout(() => {
+        this.run(() => this.flushDraft(id, operation));
+      }, 500),
+    });
+  }
+  async flushDraft(id: string, operation: Draft["operation"]) {
+    const key = draftKey(id, operation);
+    const pending = this.drafts.get(key);
+    if (!pending) return;
+    if (pending.work) return pending.work;
+    clearTimeout(pending.timer);
+    pending.work = (async () => {
+      try {
+        await this.keepDraft(pending.draft, id, operation);
+        if (this.drafts.get(key) === pending) {
+          this.drafts.delete(key);
+          this.draftErrors.delete(key);
+        }
+      } catch {
+        if (this.drafts.get(key) === pending) this.draftErrors.add(key);
+      } finally {
+        pending.work = null;
+        this.emit();
+      }
+    })();
+    await pending.work;
+  }
+  async background() {
+    await Promise.all(
+      [...this.drafts.values()].map(({ id, operation }) => this.flushDraft(id, operation)),
+    );
   }
   draft(id: string, operation: Draft["operation"]) {
     return this.data.drafts[draftKey(id, operation)] ?? null;
@@ -99,6 +173,7 @@ export class PhoneEntries {
       prior: "editing",
       followsUnknown: entry?.followsUnknown ?? false,
       landed: true,
+      landedStatus: entry?.status === "neverSubmitted" ? "neverSubmitted" : "sending",
       hasContent: true,
       copyKept: false,
       latest: true,
@@ -126,6 +201,7 @@ export class PhoneEntries {
       if (!this.loaded) throw new Error("Phone storage has not loaded.");
       if (this.removed) throw new Error("This phone store has been removed.");
       const next = change(this.data);
+      if (next === this.data) return;
       await this.options.storage.replace(this.options.scope, next);
       this.data = next;
       this.emit();
@@ -150,11 +226,23 @@ export class PhoneEntries {
         storageError: null,
         receipt: null,
       });
+      if (entry.status === "sending") {
+        await this.repairable(
+          entry.command.payload.id,
+          () =>
+            this.commit((data) => ({
+              ...data,
+              entries: { ...data.entries, [entry.command.payload.id]: restored },
+            })),
+          "record",
+        );
+      }
     }
     this.emit();
   }
   async keepDraft(draft: Draft | null, id: string, operation: Draft["operation"]) {
     await this.commit((data) => {
+      if (draft && !this.canDraft(id)) return data;
       const key = draftKey(id, operation);
       const drafts = without(data.drafts, key);
       if (draft) drafts[key] = draftSchema.parse(draft);
@@ -163,12 +251,12 @@ export class PhoneEntries {
   }
   async save(command: Command, draft: Draft, offline: boolean) {
     const id = command.payload.id;
-    this.begin(id);
     const before = this.snapshot(id);
     if (!this.active() || ["storing", "sendingFirst", "sendingRetry"].includes(before.state))
       return;
     if (this.data.entries[id] && before.state !== "storageFailed")
       throw new Error("Review the kept entry first.");
+    this.stopDrafts(id);
     const decision = transitionWrite(
       before.state,
       before.state === "storageFailed" ? "retry" : "save",
@@ -193,6 +281,7 @@ export class PhoneEntries {
     } catch {
       const failed = transitionWrite("storing", "storeFail", this.context(null));
       this.show(id, { ...editing(), state: failed.next, view: failed.view });
+      this.updateDraft(draft, id, command.operation);
       return;
     }
     const stored = transitionWrite("storing", "stored", this.context(entry, { offline }));
@@ -241,16 +330,15 @@ export class PhoneEntries {
     const key = entry.command.payload.key;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      void this.answer(key, entry.attempt, { kind: "unknown", cause: "timeout" });
-      controller.abort();
+      this.run(() => this.answer(key, entry.attempt, { kind: "unknown", cause: "timeout" }));
     }, this.options.requestTimeoutMs ?? 20000);
-    void this.options
-      .dispatch(entry.command, controller.signal)
-      .catch((): Answer => ({ kind: "unknown", cause: "network" }))
-      .then(async (answer) => {
-        clearTimeout(timer);
-        await this.answer(key, entry.attempt, answer);
-      });
+    this.run(async () => {
+      const answer = await this.options
+        .dispatch(entry.command, controller.signal)
+        .catch((): Answer => ({ kind: "unknown", cause: "network" }));
+      clearTimeout(timer);
+      await this.answer(key, entry.attempt, answer);
+    });
   }
   async answer(key: string, attempt: number, answer: Answer) {
     if (!this.active()) return;
@@ -262,6 +350,8 @@ export class PhoneEntries {
     )
       return;
     const id = entry.command.payload.id;
+    if (answer.kind === "receipt" && answer.receipt.id !== id)
+      answer = { kind: "unknown", cause: "unreadable" };
     const current = this.snapshot(id);
     if (current.state === "storing") {
       if (answer.kind === "receipt" && answer.receipt.id === id) this.deferred.set(key, answer);
@@ -271,7 +361,6 @@ export class PhoneEntries {
     const latestEntry = current.entry ?? entry;
     const latest = attempt === latestEntry.attempt;
     if (answer.kind !== "receipt" && !latest) return;
-    if (answer.kind === "receipt" && answer.receipt.id !== id) return;
     const event: WriteEvent =
       answer.kind === "receipt"
         ? "ok"
@@ -372,6 +461,20 @@ export class PhoneEntries {
       this.show(id, { ...current, storageError: "remove" });
     }
   }
+  async discardDraft(id: string, operation: Draft["operation"]) {
+    const state = this.snapshot(id).state;
+    if (state !== "editing" && state !== "storageFailed")
+      throw new Error("Review the kept entry first.");
+    this.stopDrafts(id);
+    await this.commit((data) => ({
+      ...data,
+      entries: state === "storageFailed" ? without(data.entries, id) : data.entries,
+      drafts: without(data.drafts, draftKey(id, operation)),
+    }));
+    this.views.delete(id);
+    this.draftErrors.delete(draftKey(id, operation));
+    this.emit();
+  }
   private toDraft(id: string, entry: Entry) {
     return this.commit((data) => {
       const entries = without(data.entries, id);
@@ -397,6 +500,7 @@ export class PhoneEntries {
     );
   }
   async removeAll() {
+    this.stopDrafts();
     this.removed = true;
     const work = this.tail.then(async () => {
       await this.options.storage.remove(this.options.scope);

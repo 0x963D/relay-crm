@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -28,20 +28,23 @@ export function WriteFeedbackProvider({ children }: { children: ReactNode }) {
   currentPerson.current = person;
   const [notice, setNotice] = useState<Notice | null>(null);
   const seen = useRef(new Set<string>());
-  async function refresh(entry: Entry) {
-    if (!person) return;
-    const options = queriesFor(person);
-    const results = await Promise.allSettled([
-      client.query({ ...options.lead(entry.command.payload.id), staleTime: 0 }),
-      client.query({ ...options.queue, staleTime: 0 }),
-    ]);
-    if (person === currentPerson.current)
-      setNotice((prior) =>
-        prior?.entry.command.payload.key === entry.command.payload.key
-          ? { ...prior, historyFailed: results.some((item) => item.status === "rejected") }
-          : prior,
-      );
-  }
+  const refresh = useCallback(
+    async (entry: Entry) => {
+      if (!person) return;
+      const options = queriesFor(person);
+      const results = await Promise.allSettled([
+        client.query({ ...options.lead(entry.command.payload.id), staleTime: 0 }),
+        client.query({ ...options.queue, staleTime: 0 }),
+      ]);
+      if (person === currentPerson.current)
+        setNotice((prior) =>
+          prior?.entry.command.payload.key === entry.command.payload.key
+            ? { ...prior, historyFailed: results.some((item) => item.status === "rejected") }
+            : prior,
+        );
+    },
+    [person, client],
+  );
   useEffect(() => {
     setNotice(null);
     seen.current.clear();
@@ -65,7 +68,7 @@ export function WriteFeedbackProvider({ children }: { children: ReactNode }) {
         void refresh(entry);
       }
     });
-  }, [session.phone]);
+  }, [session.phone, person, refresh]);
   useEffect(() => {
     if (!notice?.toast) return;
     const timer = setTimeout(() => {

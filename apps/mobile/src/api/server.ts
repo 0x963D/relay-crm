@@ -1,3 +1,5 @@
+declare const __DEV__: boolean;
+
 const configured: unknown = process.env.EXPO_PUBLIC_RELAY_URL;
 
 export function serverOrigin(value: string): string {
@@ -30,6 +32,9 @@ export function serverOrigin(value: string): string {
   return url.origin;
 }
 
-export const server = serverOrigin(
-  typeof configured === "string" ? configured : "http://10.0.2.2:3107",
-);
+export function configuredServer(value: unknown, development: boolean): string {
+  if (typeof value === "string" && value.trim()) return serverOrigin(value);
+  if (!development) throw new Error("Set EXPO_PUBLIC_RELAY_URL before building the app.");
+  return serverOrigin("http://10.0.2.2:3107");
+}
+export const server = configuredServer(configured, typeof __DEV__ !== "undefined" && __DEV__);

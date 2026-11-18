@@ -50,25 +50,54 @@ async function setup(db: TestDatabase) {
   let token: string | null = null;
   let dropNext = false;
   let dropped = latch();
+  let together: PromiseWithResolvers<void> | null = null;
+  let arrivals = 0;
   const nativeFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
-    if (request.url.includes("/api/auth/")) {
-      const response = await connections.run("127.0.0.1", () => auth.handle(request));
-      for (const task of tasks.splice(0)) await task();
+    request.signal.throwIfAborted();
+    const work = async () => {
+      if (together && request.url.includes("leads.logAttempt")) {
+        const gate = together;
+        arrivals += 1;
+        if (arrivals === 2) {
+          together = null;
+          gate.resolve();
+        }
+        await gate.promise;
+      }
+      if (request.url.includes("/api/auth/")) {
+        const response = await connections.run("127.0.0.1", () => auth.handle(request));
+        for (const task of tasks.splice(0)) await task();
+        return response;
+      }
+      const response = await handleRpc(
+        request,
+        async () => ({ store: db.store, principal: await auth.principal(request.headers) }),
+        origin,
+      );
+      if (dropNext && request.url.includes("leads.logAttempt")) {
+        dropNext = false;
+        expect(response.status, await response.clone().text()).toBe(200);
+        dropped.resolve();
+        throw new TypeError("The response was lost after commit.");
+      }
       return response;
+    };
+    let onAbort = () => undefined;
+    try {
+      return await Promise.race([
+        work(),
+        new Promise<never>((_resolve, reject) => {
+          onAbort = () => {
+            reject(new DOMException("The request was aborted.", "AbortError"));
+          };
+          request.signal.addEventListener("abort", onAbort, { once: true });
+          if (request.signal.aborted) onAbort();
+        }),
+      ]);
+    } finally {
+      request.signal.removeEventListener("abort", onAbort);
     }
-    const response = await handleRpc(
-      request,
-      async () => ({ store: db.store, principal: await auth.principal(request.headers) }),
-      origin,
-    );
-    if (dropNext && request.url.includes("leads.logAttempt")) {
-      dropNext = false;
-      expect(response.status, await response.clone().text()).toBe(200);
-      dropped.resolve();
-      return new Promise(() => undefined);
-    }
-    return response;
   };
   const client = createClient({
     origin,
@@ -94,12 +123,13 @@ async function setup(db: TestDatabase) {
   };
   const scope = { server: origin, person };
   const owner = new PhoneEntries({
+    reportError: vi.fn(),
     scope,
     storage,
     identity: () => scope,
     dispatch: writeRequest(client.rpc),
     now: () => new Date(),
-    requestTimeoutMs: 20,
+    requestTimeoutMs: 20000,
   });
   await owner.restore();
   const draft = {
@@ -123,6 +153,13 @@ async function setup(db: TestDatabase) {
     command,
     scope,
     storage,
+    dispatch: writeRequest(client.rpc),
+    nativeFetch,
+    concurrent: () => {
+      together = latch();
+      arrivals = 0;
+    },
+    arrivals: () => arrivals,
     drop: () => {
       dropped = latch();
       dropNext = true;
@@ -187,6 +224,10 @@ test("a committed attempt followed by lost access is refused after unknown witho
 });
 test("an attempt without a callback removes the lead's existing callback", async ({ db }) => {
   const { owner, client, lead, command, draft } = await setup(db);
+  const states: string[] = [];
+  owner.subscribe(() => {
+    states.push(owner.snapshot(lead).state);
+  });
   await client.rpc.leads.setCallback.mutate({
     id: lead,
     key: randomUUID(),
@@ -199,7 +240,35 @@ test("an attempt without a callback removes the lead's existing callback", async
   await vi.waitFor(() => {
     expect(owner.snapshot(lead).state).toBe("saved");
   });
+  expect(states).not.toContain("unknown");
   expect(await db.rows("SELECT call_back_at,stage FROM leads WHERE id=$1", [lead])).toEqual([
     { call_back_at: null, stage: "noAnswer" },
   ]);
 });
+
+test("two in-flight requests for the same key save one activity and return identical receipts", async ({
+  db,
+}) => {
+  const { dispatch, command, lead, concurrent, arrivals } = await setup(db);
+  concurrent();
+  const [first, second] = await Promise.all([dispatch(command), dispatch(command)]);
+  expect(arrivals()).toBe(2);
+  expect(first).toMatchObject({ kind: "receipt", receipt: { id: lead } });
+  expect(second).toEqual(first);
+  expect(
+    await db.rows(
+      "SELECT count(*)::int AS count FROM activities WHERE lead_id=$1 AND kind='attempt'",
+      [lead],
+    ),
+  ).toEqual([{ count: 1 }]);
+});
+for (const phase of ["already", "in flight"]) {
+  test(`the integration transport rejects an aborted request ${phase}`, async ({ db }) => {
+    const { nativeFetch } = await setup(db);
+    const controller = new AbortController();
+    if (phase === "already") controller.abort();
+    const request = nativeFetch(`${origin}/api/auth/get-session`, { signal: controller.signal });
+    controller.abort();
+    await expect(request).rejects.toThrow();
+  });
+}
