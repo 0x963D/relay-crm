@@ -1,6 +1,5 @@
 import { channel } from "node:diagnostics_channel";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { PoolConfig } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type Prisma } from "./generated/client.ts";
 
@@ -32,7 +31,11 @@ export function storeNow(db: Db): Date {
   return (clocks.get(db) ?? (() => new Date()))();
 }
 
-export type StorePoolOptions = Pick<PoolConfig, "max" | "connectionTimeoutMillis">;
+/** The pool settings a caller may set. Declared here so the published types need no driver. */
+export interface StorePoolOptions {
+  readonly max?: number | undefined;
+  readonly connectionTimeoutMillis?: number | undefined;
+}
 
 export function connect(
   connectionString: string,
