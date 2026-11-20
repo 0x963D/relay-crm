@@ -3,7 +3,7 @@ import { requireSession, getQueryClient, trpc, HydrateClient } from "@/lib/trpc/
 import { isLeadManager } from "@/lib/workspace";
 import { Workspace } from "@/components/workspace";
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
-  const { profile, demo } = await requireSession();
+  const { profile, demo, emailDisabled } = await requireSession();
   const client = getQueryClient();
   const reads: Promise<unknown>[] = [
     client.query(trpc.accounts.list.queryOptions({ limit: 20, offset: 0 })),
@@ -20,7 +20,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
   await Promise.allSettled(reads);
   return (
     <HydrateClient>
-      <Workspace profile={profile} demo={demo}>
+      <Workspace profile={profile} demo={demo} emailDisabled={emailDisabled}>
         {children}
       </Workspace>
     </HydrateClient>

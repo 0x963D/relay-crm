@@ -7,6 +7,7 @@ export async function rpcContext(headers: Headers, publicQuery = false): Promise
   return {
     store: app.store,
     demo: app.env.demo,
+    emailDisabled: app.env.email?.kind === "disabled",
     timeZone: app.env.timeZone,
     principal: publicQuery ? null : await resolvePrincipal(app, headers),
     payments:

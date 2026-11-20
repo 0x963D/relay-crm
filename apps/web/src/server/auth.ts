@@ -44,7 +44,7 @@ type Schedule = (task: () => Promise<void>) => void;
 export function createAuthentication(
   store: Store,
   env: AuthEnv,
-  mailer: Mailer,
+  mailer: Mailer | null,
   schedule: Schedule,
   demo = false,
 ) {
@@ -110,16 +110,20 @@ export function createAuthentication(
           nativeDemoSignIn: demoEndpoint("/native/demo"),
         },
       },
-      emailOTP({
-        disableSignUp: true,
-        expiresIn: 300,
-        allowedAttempts: 3,
-        storeOTP: "hashed",
-        sendVerificationOTP: ({ email, otp }) => {
-          schedule(() => mailer({ email, code: otp }));
-          return Promise.resolve();
-        },
-      }),
+      ...(mailer && env.delivery.kind !== "disabled"
+        ? [
+            emailOTP({
+              disableSignUp: true,
+              expiresIn: 300,
+              allowedAttempts: 3,
+              storeOTP: "hashed",
+              sendVerificationOTP: ({ email, otp }) => {
+                schedule(() => mailer({ email, code: otp }));
+                return Promise.resolve();
+              },
+            }),
+          ]
+        : []),
     ],
   });
 
@@ -186,6 +190,11 @@ export function createAuthentication(
     const requestedPath = new URL(request.url).pathname.replace(/^\/api\/auth/, "");
     const native = nativeRoutes.has(requestedPath);
     const path = nativeRoutes.get(requestedPath) ?? requestedPath;
+    if (
+      env.delivery.kind === "disabled" &&
+      (path === "/email-otp/send-verification-otp" || path === "/sign-in/email-otp")
+    )
+      return new Response(null, { status: 404 });
     const credentials = sessionCredentials(request.headers);
     if (native) {
       if (request.method !== "POST" || (path === "/demo" && !demo))

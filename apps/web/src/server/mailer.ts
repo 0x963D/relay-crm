@@ -6,11 +6,11 @@ import {
 } from "@relay/domain";
 import nodemailer from "nodemailer";
 import type { SMTPConnectionOptions } from "nodemailer/lib/smtp-connection";
-import type { AuthEnv } from "./env.ts";
+import type { AuthEnv, Env } from "./env.ts";
 
 export type Mailer = (message: { readonly email: string; readonly code: string }) => Promise<void>;
 
-export function createMailer(delivery: AuthEnv["delivery"]): Mailer {
+export function createMailer(delivery: Exclude<AuthEnv["delivery"], { kind: "disabled" }>): Mailer {
   if (delivery.kind === "developmentConsole") {
     return ({ email, code }) => {
       // eslint-disable-next-line no-console -- parseEnv permits this sink only in development.
@@ -30,13 +30,15 @@ export function createMailer(delivery: AuthEnv["delivery"]): Mailer {
 }
 
 export function createReceiptMailer(
-  delivery: Extract<AuthEnv["delivery"], { kind: "smtp" }>,
+  delivery: NonNullable<Env["email"]>,
   timeouts: Pick<
     SMTPConnectionOptions,
     "connectionTimeout" | "greetingTimeout" | "socketTimeout" | "dnsTimeout"
   > = {},
 ) {
   return async (receipt: ReceiptMessage, signal: AbortSignal): Promise<DeliveryOutcome> => {
+    if (delivery.kind === "disabled")
+      return { state: "suppressed", reason: "Email is disabled in this demo." };
     const transmission = { started: false };
     const transport = nodemailer.createTransport({
       url: delivery.url,

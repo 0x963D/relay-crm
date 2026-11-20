@@ -37,7 +37,9 @@ export async function serve(
       name !== "NODE_ENV" &&
       name !== "DATABASE_URL" &&
       name !== "MIGRATION_DATABASE_URL" &&
-      !/^(META|RELAY|AUTH|SMTP)_/.test(name),
+      name !== "CRON_SECRET" &&
+      !/^(META|RELAY|AUTH|SMTP|VERCEL)_/.test(name) &&
+      name !== "VERCEL",
   );
   const server = spawn(
     process.execPath,

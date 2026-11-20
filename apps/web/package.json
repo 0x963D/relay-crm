@@ -11,6 +11,9 @@
       "types": "./.api-types/apps/web/src/api-types.d.ts"
     }
   },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "node scripts/serve.ts --dev",
     "build": "next build",

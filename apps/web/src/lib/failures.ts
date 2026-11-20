@@ -79,12 +79,19 @@ export const authMessages = {
 export async function authFailure(
   response: Response | null,
   phase: "send" | "code" | "demo",
+  emailDisabled = false,
 ): Promise<string> {
   if (!response) return authMessages.connection;
   if (response.status >= 500)
     return "The server could not complete sign-in. Try again in a moment.";
-  if (response.status === 404) return "Sign-in is unavailable. Ask your manager for help.";
-  if (response.status === 429) return authMessages.TOO_MANY_ATTEMPTS;
+  if (response.status === 404)
+    return emailDisabled
+      ? "Demo sign-in is unavailable."
+      : "Sign-in is unavailable. Ask your manager for help.";
+  if (response.status === 429)
+    return emailDisabled
+      ? "Too many tries. Wait a minute and try again."
+      : authMessages.TOO_MANY_ATTEMPTS;
   if (phase === "demo")
     return response.status === 403
       ? authMessages.demoUnavailable

@@ -31,12 +31,20 @@ export function storeNow(db: Db): Date {
   return (clocks.get(db) ?? (() => new Date()))();
 }
 
+/** The pool settings a caller may set. Declared here so the published types need no driver. */
+export interface StorePoolOptions {
+  readonly max?: number | undefined;
+  readonly connectionTimeoutMillis?: number | undefined;
+}
+
 export function connect(
   connectionString: string,
   clock: () => Date = () => new Date(),
   connection?: Db,
+  pool?: StorePoolOptions,
 ): Db {
-  const db = connection ?? new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  const db =
+    connection ?? new PrismaClient({ adapter: new PrismaPg({ ...pool, connectionString }) });
   clocks.set(db, clock);
   return db;
 }

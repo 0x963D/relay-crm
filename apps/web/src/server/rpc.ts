@@ -28,6 +28,7 @@ import { sessionCredentials } from "./session-credentials.ts";
 export interface RpcContext {
   readonly timeZone?: string;
   readonly demo?: boolean;
+  readonly emailDisabled?: boolean;
   readonly requestId?: string;
   readonly store: Store;
   readonly payments?: {
@@ -37,6 +38,10 @@ export interface RpcContext {
   } | null;
   readonly principal: SessionPrincipal | null;
 }
+function receiptResendEnabled(ctx: { readonly emailDisabled?: boolean | undefined }) {
+  return !ctx.emailDisabled;
+}
+
 async function paymentResponse<T extends object | null>(
   ctx: { readonly demo?: boolean | undefined; readonly payments?: RpcContext["payments"] },
   result: Promise<T>,
@@ -166,9 +171,10 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ctx.store.paymentUsingReceipt(ctx.actor, input.hash)),
     requeueReceipt: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
-      .mutation(({ ctx, input }) =>
-        paymentResponse(ctx, ctx.store.requeueReceipt(ctx.actor, input.id, ctx.requestId)),
-      ),
+      .mutation(({ ctx, input }) => {
+        if (!receiptResendEnabled(ctx)) throw new AccessError("accessDenied");
+        return paymentResponse(ctx, ctx.store.requeueReceipt(ctx.actor, input.id, ctx.requestId));
+      }),
     recordManual: authenticated
       .input(
         z
@@ -245,7 +251,11 @@ export const appRouter = t.router({
     ),
     get: authenticated
       .input(z.object({ id: identifier(PaymentId) }).strict())
-      .query(({ ctx, input }) => paymentResponse(ctx, ctx.store.getPayment(ctx.actor, input.id))),
+      .query(async ({ ctx, input }) => {
+        const payment = await paymentResponse(ctx, ctx.store.getPayment(ctx.actor, input.id));
+        payment.actions.requeueReceipt &&= receiptResendEnabled(ctx);
+        return payment;
+      }),
     closeCheckout: authenticated
       .input(
         z

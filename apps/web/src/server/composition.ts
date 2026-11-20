@@ -30,6 +30,7 @@ function compose(env: Env): Composition {
   const store = openStore({
     connectionString: env.databaseUrl,
     receipts: env.receipts,
+    ...(env.hosted ? { pool: { max: 5, connectionTimeoutMillis: 10_000 } } : {}),
     clock: now,
   });
   const log = logToConsole;
@@ -37,7 +38,7 @@ function compose(env: Env): Composition {
   return {
     env,
     store,
-    receiptMailer: env.smtp ? createReceiptMailer(env.smtp) : null,
+    receiptMailer: env.email ? createReceiptMailer(env.email) : null,
     payments: env.payments
       ? {
           provider: sandboxProvider(store, env.payments),
@@ -49,6 +50,7 @@ function compose(env: Env): Composition {
               after(task);
             },
             env.demo,
+            env.hosted,
           ),
         }
       : null,
@@ -58,7 +60,7 @@ function compose(env: Env): Composition {
         : createAuthentication(
             store,
             env.auth,
-            createMailer(env.auth.delivery),
+            env.auth.delivery.kind === "disabled" ? null : createMailer(env.auth.delivery),
             (task) => {
               after(async () => {
                 try {

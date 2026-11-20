@@ -23,7 +23,14 @@ export const getSession = cache(async () => {
   const ctx = await getContext();
   if (!ctx.principal) return null;
   const profile = await getQueryClient().query(trpc.session.profile.queryOptions());
-  return { profile, zone: ctx.timeZone ?? "UTC", demo: composition().env.demo };
+  const { hosted } = composition().env;
+  return {
+    profile,
+    zone: ctx.timeZone ?? "UTC",
+    demo: ctx.demo ?? false,
+    emailDisabled: ctx.emailDisabled ?? false,
+    hosted,
+  };
 });
 export async function requireSession() {
   const session = await getSession();

@@ -1,11 +1,13 @@
 import { expect, vi } from "vitest";
 import { test } from "@relay/store/testing";
 import { connections } from "../src/server/client-address.ts";
+import { MAX_BODY_BYTES } from "../src/server/http.ts";
 
 const latch = (): PromiseWithResolvers<void> => Promise.withResolvers();
 
 const state = vi.hoisted((): { app: unknown } => ({ app: null }));
 vi.mock("@/server/composition.ts", () => ({ composition: () => state.app }));
+import { POST as scheduled } from "../src/app/api/demo/jobs/route.ts";
 import { POST as outbox } from "../src/app/api/payments/outbox/route.ts";
 import { POST as reconcile } from "../src/app/api/payments/reconcile/route.ts";
 
@@ -78,3 +80,81 @@ for (const [name, post] of [
     expect((await request()).status).toBe(200);
   });
 }
+
+test("the hosted schedule requires its own bearer, with both jobs attempted in order", async ({
+  db,
+}) => {
+  const calls: string[] = [];
+  const env: {
+    scheduledSecret: string | null;
+    trustedProxyCount: number;
+    payments: { intervalMs: number; reconcileSecret: string };
+  } = {
+    scheduledSecret: null,
+    trustedProxyCount: 1,
+    payments: { intervalMs: 1000, reconcileSecret: "reconcile-test-only" },
+  };
+  let fail = true;
+  state.app = {
+    env,
+    store: {
+      ...db.store,
+      duePayments: () => {
+        calls.push("reconcile");
+        if (fail) throw new Error("test reconcile failure");
+        return [];
+      },
+      runOutbox: () => {
+        calls.push("outbox");
+        return [];
+      },
+    },
+    payments: { provider: {} },
+    receiptMailer: () => Promise.resolve({ state: "suppressed" }),
+  };
+  const request = (secret: string, forwarded?: string, body: string | null = null) =>
+    new Request("https://relay.example/api/demo/jobs", {
+      method: "POST",
+      body,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        ...(forwarded ? { "x-forwarded-for": forwarded } : {}),
+      },
+    });
+
+  expect((await scheduled(request("schedule-test-only"))).status).toBe(404);
+  env.scheduledSecret = "schedule-test-only";
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const denied = await scheduled(
+      request("reconcile-test-only", `192.0.2.${String(attempt + 1)}, 203.0.113.1`),
+    );
+    expect(denied.status).toBe(attempt < 5 ? 401 : 429);
+  }
+  const oversized = await scheduled(
+    request(env.scheduledSecret, undefined, "x".repeat(MAX_BODY_BYTES + 1)),
+  );
+  expect(oversized.status).toBe(413);
+  expect(calls).toEqual([]);
+  const partial = await scheduled(request(env.scheduledSecret));
+  expect(partial.status).toBe(503);
+  expect(await partial.json()).toEqual({ reconcile: 500, outbox: 200 });
+  fail = false;
+  const complete = await scheduled(request(env.scheduledSecret));
+  expect(complete.status).toBe(200);
+  expect(await complete.json()).toEqual({ reconcile: 200, outbox: 200 });
+  expect(calls).toEqual(["reconcile", "outbox", "reconcile", "outbox"]);
+
+  for (const held of ["reconcile", "outbox"] as const) {
+    calls.length = 0;
+    const lease = await db.store.exclusiveJob(held, async () => {
+      const response = await scheduled(request("schedule-test-only"));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        reconcile: held === "reconcile" ? 429 : 200,
+        outbox: held === "outbox" ? 429 : 200,
+      });
+      expect(calls).toEqual([held === "reconcile" ? "outbox" : "reconcile"]);
+    });
+    expect(lease.ran).toBe(true);
+  }
+});

@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 
 declare global {
   var relayConnections: AsyncLocalStorage<string> | undefined;
+  var relayCapturesSocketPeer: boolean | undefined;
 }
 
 // Next can bundle this module more than once in the same server process.

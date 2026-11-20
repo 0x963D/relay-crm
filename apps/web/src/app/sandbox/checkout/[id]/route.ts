@@ -1,5 +1,7 @@
 import { composition } from "@/server/composition.ts";
 import { protectHttp } from "@/server/errors.ts";
+export const maxDuration = 90;
+
 async function handle(request: Request, context: { params: Promise<{ id: string }> }) {
   return protectHttp(
     "sandbox.failed",

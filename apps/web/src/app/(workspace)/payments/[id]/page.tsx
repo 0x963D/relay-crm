@@ -6,7 +6,7 @@ import { Loading } from "@/components/pieces";
 import { ReadResult } from "@/components/read-result";
 export default async function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { zone } = await requireSession();
+  const { zone, emailDisabled, hosted } = await requireSession();
   const client = getQueryClient();
   const query = client.query(trpc.payments.get.queryOptions({ id }));
   void client
@@ -21,7 +21,13 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
     >
       <PaymentsScreen zone={zone} selected={id}>
         <Suspense fallback={<Loading label="Loading payment" />}>
-          <PaymentDetail key={id} id={id} zone={zone} />
+          <PaymentDetail
+            key={id}
+            id={id}
+            zone={zone}
+            emailDisabled={emailDisabled}
+            hosted={hosted}
+          />
         </Suspense>
       </PaymentsScreen>
     </ReadResult>

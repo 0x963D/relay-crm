@@ -71,4 +71,4 @@ Three packages, each with one job and one thing it must not do. Docker Compose p
 
 v0.1 has no payment reversal, task system, audit viewer or general email connector. The payment provider is a sandbox inside the app and moves no real money. Demo logins are shared, so one visitor can act as both approvers. Read the [full limits](docs/limits.md) before using it beyond the demo.
 
-[Demo and hosting](docs/demo.md) · [Payments](docs/payments.md) · [Access and security](docs/access-security.md) · [API](docs/api.md) · [Intake](docs/intake.md) · [Development](docs/development.md) · [MIT licence](LICENSE)
+[Demo and hosting](docs/demo.md) · [Host a demo on Vercel](docs/hosted-demo.md) · [Payments](docs/payments.md) · [Access and security](docs/access-security.md) · [API](docs/api.md) · [Intake](docs/intake.md) · [Development](docs/development.md) · [MIT licence](LICENSE)

@@ -52,3 +52,28 @@ it("refuses an unknown client with a fixed error and logs the configuration once
     log.mockRestore();
   }
 });
+
+describe("a hosted request with one trusted proxy and no socket peer", () => {
+  const forwarded = (value?: string) =>
+    new Request("https://relay.example", {
+      headers: { "x-real-ip": "192.0.2.99", ...(value ? { "x-forwarded-for": value } : {}) },
+    });
+
+  it("uses a single IPv4 or IPv6 address and canonicalizes mapped IPv4", () => {
+    expect(clientAddress(forwarded("192.0.2.1"), 1)).toBe("192.0.2.1");
+    expect(clientAddress(forwarded("2001:db8:0:0:0:0:0:1"), 1)).toBe("[2001:db8::1]");
+    expect(clientAddress(forwarded("::ffff:192.0.2.1"), 1)).toBe("192.0.2.1");
+  });
+
+  it("selects the verified hop even when the supplied prefix changes", () => {
+    expect(clientAddress(forwarded("203.0.113.4, 192.0.2.1"), 1)).toBe("192.0.2.1");
+    expect(clientAddress(forwarded("invalid, 192.0.2.1"), 1)).toBe("192.0.2.1");
+  });
+
+  it("refuses a missing, malformed or untrusted forwarded address", () => {
+    for (const value of [undefined, "invalid", "192.0.2.1, invalid"])
+      expect(() => clientAddress(forwarded(value), 1)).toThrow(/No client address/);
+    expect(() => clientAddress(forwarded("192.0.2.1"), 0)).toThrow(/No client address/);
+    expect(() => clientAddress(forwarded("192.0.2.1"), 2)).toThrow(/No client address/);
+  });
+});

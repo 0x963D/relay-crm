@@ -1,4 +1,5 @@
 "use client";
+import { noEmailDemoNotice } from "@/lib/demo-copy";
 import { type ReactNode, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,10 +35,12 @@ const accountCount = (data: Outputs["accounts"]["list"]) => data.total;
 export function Workspace({
   profile,
   demo,
+  emailDisabled,
   children,
 }: {
   profile: Outputs["session"]["profile"];
   demo: boolean;
+  emailDisabled: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -107,7 +110,11 @@ export function Workspace({
       });
       if (response.ok) location.assign("/");
       else
-        setError(role ? await authFailure(response, "demo") : "You could not sign out. Try again.");
+        setError(
+          role
+            ? await authFailure(response, "demo", emailDisabled)
+            : "You could not sign out. Try again.",
+        );
     } catch {
       setError("The server could not be reached. Check your connection and try again.");
     } finally {
@@ -165,7 +172,9 @@ export function Workspace({
             <Icon name="eye" size="small" />
             Demo
           </span>
-          <span className="hidden sm:inline">Invented data. It resets every night.</span>
+          <span className="hidden sm:inline">
+            {emailDisabled ? noEmailDemoNotice : "Invented data. It resets every night."}
+          </span>
           <span className="flex-1" />
           <span className="hidden lg:inline">You are viewing as</span>
           <ToggleGroup

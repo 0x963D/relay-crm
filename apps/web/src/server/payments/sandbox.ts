@@ -38,13 +38,14 @@ export function sandboxCheckout(
   env: PaymentEnv,
   defer: (task: () => Promise<void>) => void,
   demo = false,
+  hosted = false,
 ) {
   return async (request: Request, id: string): Promise<Response> => {
     const row = await store.getSandboxCheckoutByToken(id);
     if (!row) return new Response(null, { status: 404 });
     if (request.method === "GET") {
       const nonce = randomUUID();
-      return new Response(sandboxPage(row, demo, env.lateMs, nonce), {
+      return new Response(sandboxPage(row, demo, env.lateMs, nonce, hosted), {
         headers: {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store",
