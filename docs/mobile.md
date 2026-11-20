@@ -2,6 +2,15 @@
 
 The app in `apps/mobile` is for sales agents. It reads your callback queue and lead history, logs attempts, adds notes, changes callbacks, and closes leads. Account shows your profile and teams. Teams do not change your queue.
 
+<p>
+  <img alt="The agent's callback queue" src="images/mobile-queue.png" width="24%">
+  <img alt="A lead's details and timeline" src="images/mobile-lead.png" width="24%">
+  <img alt="A call attempt whose answer never came back" src="images/mobile-unknown.png" width="24%">
+  <img alt="The result of closing a lead as won" src="images/mobile-won.png" width="24%">
+</p>
+
+The screenshots are from Expo Go on an Android emulator against the Docker demo.
+
 ## Run the app
 
 Install Node.js 24 and the pnpm version in the root `package.json`. From the repository root, install the dependencies and generate the database client.
