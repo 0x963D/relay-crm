@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
+import { StatusBar } from "expo-status-bar";
 import { useNetworkState } from "expo-network";
 import { useSession } from "../api/session-provider.tsx";
 import { useReadOptions } from "../api/use-read-options.ts";
@@ -471,7 +472,9 @@ export function WriteScreen({
   const refusal = shown.entry?.refusal;
   const frozenRefused = shown.state === "refused" || shown.state === "refusedAfterUnknown";
   const signInBand = editing && !signedIn;
-  const caption = entryCaption(shown);
+  // A saved entry stays on screen until the next screen opens. It offers no further action.
+  const settled = leaving || shown.state === "saved";
+  const caption = settled ? "Saved" : entryCaption(shown);
   const shortcutPhrases =
     draft.channel === "call"
       ? ["Rang out", "Left a voicemail", "Line busy"]
@@ -532,6 +535,7 @@ export function WriteScreen({
     );
   return (
     <Screen>
+      <StatusBar style="dark" />
       <Stack.Screen
         options={{ gestureEnabled: !busy && !confirmation }}
         listeners={{
@@ -1184,12 +1188,21 @@ export function WriteScreen({
                     outline
                     style={{ flex: 1 }}
                     label="Discard"
-                    disabled={busy}
+                    disabled={busy || settled}
                     onPress={remove}
                   />
                   <Button
                     style={{ flex: 1 }}
-                    label={busy ? busyLabel : signedIn ? "Try again" : "Sign in again"}
+                    label={
+                      settled
+                        ? "Saved"
+                        : busy
+                          ? busyLabel
+                          : signedIn
+                            ? "Try again"
+                            : "Sign in again"
+                    }
+                    disabled={settled}
                     busy={busy}
                     onPress={() => {
                       if (!signedIn) signIn();

@@ -101,7 +101,7 @@ export function WonScreen({ id, name }: { id: string; name: string }) {
                   <T variant="caption" color={c.text3}>
                     {lead.isError || !closure
                       ? "Who and when did not load"
-                      : `${closure.actor ? "Closed by" : ""}${queue.data?.timeZone ? `${closure.actor ? " � " : ""}${clock(closure.at, queue.data.timeZone)}` : ""}`}
+                      : `${closure.actor ? "Closed by" : ""}${queue.data?.timeZone ? `${closure.actor ? " · " : ""}${clock(closure.at, queue.data.timeZone)}` : ""}`}
                   </T>
                 </>
               )}

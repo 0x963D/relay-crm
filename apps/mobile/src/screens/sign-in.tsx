@@ -123,7 +123,7 @@ export function SignIn({
     await session.accept(credential, email);
     onAuthenticated?.();
     if (prior !== credential.user.id) {
-      router.dismissAll();
+      if (router.canDismiss()) router.dismissAll();
       router.replace("/");
     } else if (modal) router.back();
   }

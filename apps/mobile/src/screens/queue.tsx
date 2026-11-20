@@ -321,7 +321,7 @@ export function QueueScreen() {
                 }}
                 accessibilityRole={section.count ? "button" : "text"}
                 accessibilityState={section.count ? { expanded: !folded.has(section.key) } : {}}
-                accessibilityLabel={`${section.title}, ${String(section.count)} leads`}
+                accessibilityLabel={`${section.title}, ${String(section.count)} ${section.count === 1 ? "lead" : "leads"}`}
                 accessibilityHint={section.caption}
                 onPress={() => {
                   if (section.count)
