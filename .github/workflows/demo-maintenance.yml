@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   maintain:
-    if: github.ref == 'refs/heads/main'
+    # The hourly run stays off until the repository variable DEMO_MAINTENANCE is "on".
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.DEMO_MAINTENANCE == 'on')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: demo-maintenance
