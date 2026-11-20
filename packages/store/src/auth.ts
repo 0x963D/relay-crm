@@ -5,7 +5,10 @@ import { InvariantError } from "./lead-row.ts";
 import { transact, type Db, type Tx } from "./tx.ts";
 import { DEMO_PEOPLE, DEMO_ROLES } from "./demo-state.ts";
 
-export function authenticationDatabase(db: Db) {
+export type AuthenticationDatabase = (
+  options: Parameters<ReturnType<typeof prismaAdapter>>[0],
+) => ReturnType<ReturnType<typeof prismaAdapter>>;
+export function authenticationDatabase(db: Db): AuthenticationDatabase {
   return prismaAdapter(db, { provider: "postgresql" });
 }
 

@@ -28,7 +28,7 @@ import { scopedLead, updateLifecycle, queueLeadRows, funnelLeadRows } from "./le
 import { transact, type Db } from "./tx.ts";
 import type { Activity, Lead, Prisma } from "./generated/client.ts";
 
-interface WorkReceipt {
+export interface WorkReceipt {
   readonly id: LeadId;
   readonly accountId: AccountId | null;
 }

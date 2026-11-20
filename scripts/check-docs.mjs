@@ -6,6 +6,20 @@ const errors = [];
 const readme = join(root, "README.md");
 if (readFileSync(readme).byteLength > 8000) errors.push("README.md exceeds 8000 bytes");
 
+const mobileServer = join(root, "apps/mobile/src/api/server.ts");
+const mobileGuide = join(root, "docs/mobile.md");
+if (existsSync(mobileServer) || existsSync(mobileGuide)) {
+  const variables = existsSync(mobileServer)
+    ? [...readFileSync(mobileServer, "utf8").matchAll(/\bprocess\.env\.(EXPO_PUBLIC_\w+)\b/g)]
+    : [];
+  const guide = existsSync(mobileGuide) ? readFileSync(mobileGuide, "utf8") : "";
+  if (!variables.length)
+    errors.push("Could not find the mobile server's public environment variable.");
+  for (const [, name] of variables) {
+    if (!guide.includes(`\`${name}\``)) errors.push(`docs/mobile.md must document ${name}.`);
+  }
+}
+
 function documents(directory) {
   if (!existsSync(directory)) return [];
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -64,4 +78,4 @@ for (const path of [readme, ...documents(join(root, "docs"))]) {
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exitCode = 1;
-} else console.log("Documentation links resolve; README is within 8000 bytes.");
+} else console.log("Documentation checks passed.");

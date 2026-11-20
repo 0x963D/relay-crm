@@ -38,6 +38,16 @@ A first run builds the app image, taking about two and a half minutes and about 
   <img alt="A payment recovered by the reconciler, followed by a late webhook and one balanced ledger posting" src="docs/images/payment-light.png">
 </picture>
 
+## On a phone
+
+Agents can work the same queue from the Expo app in `apps/mobile`. A write is stored on the phone before it is sent. If no answer comes back, the entry says so and stays open, and trying again never saves twice. The [phone guide](docs/mobile.md) covers running it and every outcome a write can have.
+
+<p>
+  <img alt="The agent's callback queue on a phone" src="docs/images/mobile-queue.png" width="32%">
+  <img alt="A lead's details and timeline on a phone" src="docs/images/mobile-lead.png" width="32%">
+  <img alt="A call attempt whose answer never came back, with Discard and Try again" src="docs/images/mobile-unknown.png" width="32%">
+</p>
+
 ## How it is built
 
 Three packages, each with one job and one thing it must not do. Docker Compose packages the demo.

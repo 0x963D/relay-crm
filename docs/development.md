@@ -168,4 +168,6 @@ The appearance follows the system setting until the person picks Light or Dark. 
 
 An exception needs an entry in `scripts/style-allowlist.json` with a written reason. The one entry covers the sandbox provider's page, which is styled as another company's page on purpose. An entry for a file that no longer exists fails the check.
 
-`pnpm lint` also runs `scripts/check-docs.mjs`. It resolves every relative link and heading fragment in the README and in each page under `docs/`, and it refuses a README above 8,000 bytes.
+`pnpm --filter @relay/web types:api` generates the mobile app's API types. Root and mobile lint and typecheck, and web typecheck, run it automatically.
+
+`pnpm lint` also runs `scripts/check-docs.mjs`. It checks relative links, heading fragments, the README's 8,000-byte limit, and the mobile guide's server environment variable.

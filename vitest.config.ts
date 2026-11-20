@@ -11,6 +11,7 @@ export default defineConfig({
       {
         test: {
           name: "unit",
+          env: { EXPO_PUBLIC_RELAY_URL: "http://localhost:3107" },
           include: TESTS,
           exclude: [...INTEGRATION_TESTS, ...PRODUCTION_TESTS],
         },
@@ -19,6 +20,7 @@ export default defineConfig({
         resolve: { alias: { "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)) } },
         test: {
           name: "integration",
+          env: { EXPO_PUBLIC_RELAY_URL: "http://localhost:3107" },
           fileParallelism: false,
           include: INTEGRATION_TESTS,
           globalSetup: ["packages/store/src/testing/global-setup.ts"],

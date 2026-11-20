@@ -6,11 +6,17 @@
   "license": "MIT",
   "author": "Dan Doca",
   "type": "module",
+  "exports": {
+    "./api-types": {
+      "types": "./.api-types/apps/web/src/api-types.d.ts"
+    }
+  },
   "scripts": {
     "dev": "node scripts/serve.ts --dev",
     "build": "next build",
     "start": "node scripts/serve.ts",
-    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.test.json"
+    "typecheck": "pnpm types:api && tsc --project tsconfig.json && tsc --project tsconfig.test.json",
+    "types:api": "node ../../scripts/link-api-types.mjs"
   },
   "dependencies": {
     "@relay/domain": "workspace:*",
