@@ -11,11 +11,12 @@
     "./connection-settings": "./src/connection-settings.ts",
     "./demo": "./src/demo.ts",
     "./testing": "./src/testing/index.ts",
-    "./testing/database": "./src/testing/database.ts"
+    "./testing/database": "./src/testing/database.ts",
+    "./migrate": "./src/migrate.ts"
   },
   "scripts": {
     "generate": "prisma generate",
-    "migrate": "prisma migrate deploy",
+    "migrate": "node src/migrate.ts",
     "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.test.json"
   },
   "dependencies": {

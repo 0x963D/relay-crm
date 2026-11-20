@@ -117,7 +117,7 @@ The development user exists only in a development server. A production build ref
 | `pnpm test:prod`                           | Builds the app and tests the production server over HTTP                             |
 | `pnpm test:browser`                        | Runs the browser tests against the built app                                         |
 | `pnpm test:mutations <directory> <prefix>` | Removes safety checks one at a time and requires a named test to fail                |
-| `pnpm test:image`                          | Builds the app image and checks what it contains and which user it runs as           |
+| `pnpm test:image`                          | Checks the app image and runs the maintenance entry point with networking disabled   |
 | `pnpm capture`                             | Writes screenshots of the built app under `test-results/evidence/built/`             |
 | `pnpm capture:readme`                      | Rewrites the six README images under `docs/images/`                                  |
 
