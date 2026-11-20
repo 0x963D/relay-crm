@@ -1,10 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Response as ReactNativeResponse } from "whatwg-fetch";
 import { createRequester } from "../src/core/request.ts";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 describe("native request boundary", () => {
+  it("keeps letters outside ASCII intact with React Native's Response", async () => {
+    const sent = { campaign: "IELTS evening · January intake", name: "Zoë Łukasiewicz" };
+    // The platform's response reads text as UTF-8 and hands bytes over untouched, as this one does.
+    const platform = Response.json(sent);
+    // React Native installs this Response, and the requester builds its answer with it.
+    vi.stubGlobal("Response", ReactNativeResponse);
+    const request = createRequester({ fetch: () => Promise.resolve(platform), token: () => null });
+    const response = await request("https://relay.example/api/trpc/work.queue");
+    expect(await response.json()).toEqual(sent);
+  });
   it("sends the owner's bearer token and removes browser credentials", async () => {
     const fetch = vi
       .fn<Parameters<typeof createRequester>[0]["fetch"]>()

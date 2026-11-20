@@ -147,6 +147,9 @@ importers:
       bun-types:
         specifier: 1.4.4
         version: 1.4.4
+      whatwg-fetch:
+        specifier: 3.6.20
+        version: 3.6.20
 
   apps/web:
     dependencies:

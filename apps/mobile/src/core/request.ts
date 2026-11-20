@@ -42,7 +42,9 @@ export function createRequester(options: {
             status = response.status;
             if (status === 401 && token !== null && token === options.token())
               options.sessionEnded?.();
-            const body = await response.arrayBuffer();
+            // React Native's Response decodes a byte body one character per byte, which breaks
+            // every letter outside ASCII. The platform's own text read decodes UTF-8.
+            const body = await response.text();
             return new Response([204, 205, 304].includes(status) ? null : body, {
               status,
               statusText: response.statusText,
