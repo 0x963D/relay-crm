@@ -47,6 +47,8 @@ export default defineConfig(
     "**/.expo/",
     "apps/mobile/dist/",
     "apps/web/.api-types/",
+    "test-results/",
+    "playwright-report/",
   ]),
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
