@@ -1,37 +1,67 @@
 # Relay CRM verification evidence
 
-Local run on 21 November 2026 from the `chore/verify-relay-crm` worktree at base `0e6ac82`. The [verification skill](../../.agents/skills/verify-relay-crm/SKILL.md) has the commands. Full logs and screenshots are in the worktree's `test-results/verify-relay-crm/`.
+Local runs on 21 November 2026 on Docker Desktop for Windows, from the `chore/verify-relay-crm` worktree. The [verification skill](../../.agents/skills/verify-relay-crm/SKILL.md) has the commands. Every Compose command named its project with `-p`.
 
-## Demo journeys
+## The resetter failed on a warm build cache
 
-Project `relay-verify-31a7d5e2` built the app from this worktree. On the first launch, the resetter exited when `pnpm db:migrate` tried to reinstall dependencies and hit `EACCES`. The app returned 503. After teardown, the skill's local override let the same image run migrations and seed fresh volumes. Compose reported a healthy app, and `GET /api/health` returned 200.
+At base `0e6ac82`, `docker compose -p relay-fixrepro-base up -d --wait` reused the cached `pnpm install` layer. The resetter exited and the app stayed unhealthy.
+
+```text
+cmd: 'pnpm db:migrate',
+"[EACCES] EACCES: permission denied, open '/app/_tmp_44_e10222ca2ad4ffea506c5e0eefc286cc'\n"
+'[ERROR] Command failed with exit code 243: pnpm install\n'
+dependency failed to start: container relay-fixrepro-base-app-1 is unhealthy
+```
+
+The maintenance image runs as `node` over a root-owned `/app`. Before `pnpm db:migrate`, pnpm compares the lockfile's time with the time of the last install. The image stores whole-second times, and pnpm counts a whole-second time as up to one second later. A lockfile written in the same second as the install then reads as modified, pnpm tries to rewrite its state under `node_modules`, and the write fails. With the check set to `error`, pnpm names the file.
+
+```text
+[ERR_PNPM_VERIFY_DEPS_BEFORE_RUN] EACCES: permission denied, open '/app/node_modules/.pnpm-workspace-state-v1.json.404895974'
+```
+
+Whether the times collide depends on the build cache, so CI's `demo` job passes while a local rebuild can fail. The resetter now runs `prisma migrate deploy` directly, without pnpm, and `pnpm test:image` runs it with stale manifest times and no network.
+
+```text
+Maintenance reached the database connection with a stale dependency status and no network.
+```
+
+## Demo check
+
+With the fix, `pnpm demo:check <directory> --cold` passed for project `relay-fixcold-7c41e2` on the same warm cache. It signed in all three roles, paid one checkout through the webhook, recovered a second through the reconciler, read the receipt and reset the demo.
+
+```text
+QUICKSTART {"wallMs":29234,"command":"docker compose up","roles":["Priya Raman","Dele Akinwale","Esther Okafor"], ...}
+LIVE_RECOVERY {"paymentId":"01a1fd68-a5f9-70ae-98f6-018505d6cc38","completedBy":"reconciler","wallMs":4159}
+LIVE_RESET {"sessionsEnded":true,"visitorPaymentRemoved":true, ...}
+```
+
+## Role journeys
+
+An earlier run on the same base drove two journeys by hand in a browser.
 
 | Actor         | Action                                                                             | Observed result                                                                                                                                                |
 | ------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Priya Raman   | Previewed and confirmed a round-robin assignment of Luca Ferraro and Nadia Rahimi. | Preview showed Ffion Pryce for Luca and Noor Haddad for Nadia. The app said “2 leads were assigned.” Both leads left the pool.                                 |
 | Dele Akinwale | Logged a **Spoke to them** attempt on Hye-jin Park.                                | The app said “Attempt saved. The lead is marked as contacted.” After reload the timeline still showed “Confirmed the evening class during local verification.” |
 
-Read `role-proof.log`, `manager-preview.png`, `manager-assigned.png`, `agent-attempt.png`, and `agent-reloaded.png` for the browser proof. Read `resetter-first.log` and `compose-retry-up.log` for startup.
+## Host checks
 
-## Queue mutation
+Each check ran on the host against a disposable PostgreSQL 17 container, one after another.
 
-`pnpm test:mutations test-results/verify-relay-crm/queue work-note-attempt` ran against a separate disposable PostgreSQL instance. The runner used a local image whose 116 store, domain, and test configuration inputs matched the worktree byte for byte. The worktree's `packages/store/src/work.ts` was mounted into the runner so the temporary edit stayed in this checkout.
+| Command                                                                     | Observed result                                                                                                |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:int`                                                             | 452 passed and 1 failed in 1,102 s. The failure was `P2028 Unable to start a transaction in the given time`.   |
+| `pnpm test:mutations test-results/verify-relay-crm/queue work-note-attempt` | Baseline 35 passed, mutation 1 failed and 34 skipped, restored 35 passed. `work.ts` matched `HEAD` afterwards. |
+| `pnpm build`, then `pnpm test:browser`                                      | 82 passed and 2 failed in 10.3 minutes, one on `P2028` and one on a 5-second heading wait.                     |
+| The two failed browser files, rerun alone                                   | 25 passed.                                                                                                     |
 
-The mutation let a note count as a call attempt. The standard integration test failed at the queue assertion. [Test](../../packages/store/test/work.int.test.ts#L906)
+The `P2028` failure was in `work.int.test.ts`, whose 35 tests all passed in the mutation baseline and restored runs. The mutation caught the broken rule at the queue assertion. [Test](../../packages/store/test/work.int.test.ts#L906)
 
 ```text
 FAIL  |integration| packages/store/test/work.int.test.ts > a note does not count as an attempt in the queue
 AssertionError: expected [] to deeply equal [ Array(1) ]
 ```
 
-| Run      | Observed result                                                                        |
-| -------- | -------------------------------------------------------------------------------------- |
-| Baseline | 35 passed                                                                              |
-| Mutation | 1 failed, 34 skipped. The lead left `notYetCalled`.                                    |
-| Restored | 35 passed. The mutation runner exited 0 and the source hash matched the starting hash. |
-
-The assertion is in `queue/work-note-attempt.log`. The other runs are in `queue/baseline.log` and `queue/restored.log`. See `queue/results.json` for exit statuses.
-
 ## Cleanup
 
-`docker compose down --volumes` removed both disposable projects. The Compose container listings were empty, and a name-filtered listing confirmed zero containers from this run. See `compose-down.log` and `queue-db-down.log`.
+Both Compose projects and the test database container were removed by name. Label-filtered container, volume and image listings for each name came back empty.
