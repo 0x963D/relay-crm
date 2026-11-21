@@ -86,6 +86,18 @@ exit 0
 containers:[] volumes:[] images:[] networks:[]
 ```
 
+## The migrate script needs Node 24.2
+
+`packages/store/src/migrate.ts` deploys migrations only when `import.meta.main` is true. Node added `import.meta.main` in v24.2.0, so on 24.0 or 24.1 `pnpm db:migrate` would exit 0 without migrating. [Node.js ESM docs](https://nodejs.org/docs/latest-v24.x/api/esm.html#importmetamain) The Dockerfile pins 24.14.0 and CI installs the newest 24, so only a host on 24.0 or 24.1 was affected. The root `engines` field and the development and mobile pages now say 24.2 or later. pnpm warns on an unsupported Node and does not refuse. The web app's `24.x` stays, because Vercel reads it as the newest 24.
+
+`packages/store/test/migrate.test.ts` runs the script without a database URL and expects Prisma's `migrate deploy` error. With the condition replaced by `undefined`, what Node 24.1 evaluates, the test failed. Restored, it passed.
+
+```text
+FAIL  |unit| packages/store/test/migrate.test.ts > running the migrate script runs prisma migrate deploy
+AssertionError: promise resolved "{ stdout: '', stderr: '' }" instead of rejecting
+Tests  1 passed (1)
+```
+
 ## Cleanup
 
 Both Compose projects and the test database container were removed by name. Label-filtered container, volume and image listings for each name came back empty.

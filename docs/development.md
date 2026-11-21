@@ -46,7 +46,7 @@ Operations with an idempotency key go through `idempotent` in `packages/store/sr
 
 ## Run it without Docker
 
-You need Node.js 24 or later, pnpm 11.18.0 and a PostgreSQL 17 server used for nothing else.
+You need Node.js 24.2 or later, pnpm 11.18.0 and a PostgreSQL 17 server used for nothing else.
 
 1. Install the dependencies and generate the Prisma client.
 
