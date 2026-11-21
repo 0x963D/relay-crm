@@ -140,7 +140,7 @@ docker buildx create --name relay-measure-builder --driver docker-container
 BUILDX_BUILDER=relay-measure-builder COMPOSE_PROJECT_NAME=relay-measure pnpm demo:check ../relay-demo-evidence --cold
 ```
 
-The check prints the time as `wallMs` on its `QUICKSTART` line. It then pays one sandbox checkout and waits for its webhook, pays a second with the webhook dropped and waits for the scheduler to recover it, reads the receipt from the inbox, resets the demo and confirms that the sessions ended and the visitor's payment is gone. `--cold` refuses to start if the project's images already exist. When the check ends it removes its containers and volumes, and with `--cold` the images it built. The directory argument must be outside the repository.
+The check prints the time as `wallMs` on its `QUICKSTART` line. It then pays one sandbox checkout and waits for its webhook, pays a second with the webhook dropped and waits for the scheduler to recover it, reads the receipt from the inbox, resets the demo and confirms that the sessions ended and the visitor's payment is gone. `--cold` refuses to start if the project's images already exist. When the check ends it removes its containers and volumes, and with `--cold` the images it built. The directory argument must be outside the repository. The check refuses to start unless `COMPOSE_PROJECT_NAME` names a project other than the folder's default and `relay-crm`, and it passes that name with `-p` to every Compose command.
 
 While the check's project is up, these commands in a second terminal report the two image sizes, the sum over the project's five images and the builder's cache.
 

@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { seedDemo } from "@relay/store/demo";
+import { deployMigrations } from "@relay/store/migrate";
 import { maintainDemo } from "../src/server/demo-maintenance.ts";
 import { demoOptions } from "../src/server/demo.ts";
 import { loadDemoConfiguration, readDemoSetupEnv, commandEnvironment } from "../src/server/env.ts";
@@ -11,11 +9,7 @@ await loadDemoConfiguration("/run/relay-secrets/reset/config.json");
 const { env, migrationUrl } = readDemoSetupEnv();
 if (!migrationUrl || !env.demo)
   throw new Error("Demo maintenance requires its owner configuration.");
-const migration = await promisify(execFile)("pnpm", ["db:migrate"], {
-  cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-  env: commandEnvironment({ MIGRATION_DATABASE_URL: migrationUrl }),
-});
-process.stdout.write(migration.stdout);
+await deployMigrations(commandEnvironment({ MIGRATION_DATABASE_URL: migrationUrl }));
 for (;;) {
   try {
     await seedDemo(demoOptions(env, migrationUrl));

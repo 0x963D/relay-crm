@@ -13,7 +13,7 @@ The screenshots are from Expo Go on an Android emulator against the Docker demo.
 
 ## Run the app
 
-Install Node.js 24 and the pnpm version in the root `package.json`. From the repository root, install the dependencies and generate the database client.
+Install Node.js 24.2 or later and the pnpm version in the root `package.json`. From the repository root, install the dependencies and generate the database client.
 
 ```sh
 pnpm install --frozen-lockfile
