@@ -19,7 +19,7 @@ Invoke-WebRequest 'http://127.0.0.1:3117/api/health' | Select-Object StatusCode
 
 The port settings matter only to `up`, so they share its line. Drive the app once `app` is healthy and the health endpoint returns 200. Open the app on the HTTP port and Mailpit on the inbox port. Use only the seeded company and invented inputs.
 
-For an automated run, `pnpm demo:check <directory>` replaces `up`. It needs the workspace dependencies and an evidence directory outside the checkout, runs the README quickstart, and removes its own containers and volumes. It reads the project name from the environment, so set it on the same line. It refuses a project that already has containers or volumes.
+For an automated run, `pnpm demo:check <directory>` replaces `up`. It needs the workspace dependencies and an evidence directory outside the checkout, runs the README quickstart, and removes its own containers and volumes. It takes the project name from `COMPOSE_PROJECT_NAME` and passes it with `-p` to every Compose call, so set it on the same line. It refuses to start without that name, with the folder's default name or with `relay-crm`, and it refuses a project that already has containers or volumes.
 
 ```powershell
 $env:COMPOSE_PROJECT_NAME = 'relay-verify-1a2b3c4d'; $env:RELAY_HTTP_PORT = '3117'; $env:RELAY_INBOX_PORT = '8137'; pnpm demo:check ..\relay-verify-evidence --cold

@@ -3,17 +3,27 @@ import { execFile, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import superjson from "superjson";
 import { createRequire } from "node:module";
-import { commandEnvironment } from "../src/server/env.ts";
+import { commandEnvironment, readComposeProject } from "../src/server/env.ts";
 import { z } from "zod";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
+const project = readComposeProject();
+const folderProject = basename(root)
+  .toLowerCase()
+  .replace(/[^a-z0-9_-]/g, "");
+if (!project || project === folderProject || project === "relay-crm")
+  throw new Error(
+    "Set COMPOSE_PROJECT_NAME to a fresh, disposable project name, such as relay-verify-1a2b3c4d. " +
+      `It must not be Compose's default for this folder (${folderProject}) or relay-crm.`,
+  );
+const composeArgs = ["compose", "-p", project];
 const argument = process.argv[2];
 if (!argument || argument.startsWith("--"))
   throw new Error("Pass a directory outside the repository for demo evidence.");
@@ -24,11 +34,10 @@ const execute = promisify(execFile);
 const docker = (args: string[]) =>
   execute("docker", args, { cwd: root, maxBuffer: 5 * 1024 * 1024 });
 const rawConfiguration: unknown = JSON.parse(
-  (await docker(["compose", "config", "--format", "json"])).stdout,
+  (await docker([...composeArgs, "config", "--format", "json"])).stdout,
 );
 const configuration = z
   .object({
-    name: z.string(),
     services: z.record(
       z.string(),
       z.object({
@@ -38,8 +47,6 @@ const configuration = z
     ),
   })
   .parse(rawConfiguration);
-const project = configuration.name;
-const composeArgs = ["compose", "-p", project];
 const appPort = configuration.services.app?.ports?.[0]?.published;
 const mailPort = configuration.services.mail?.ports?.[0]?.published;
 assert(appPort && mailPort, "The app and inbox must publish ports.");
@@ -95,7 +102,7 @@ const command = readme
 assert.equal(command, "docker compose up", "Run exactly the README quickstart.");
 const log = createWriteStream(resolve(directory, "compose.log"));
 const started = performance.now();
-const compose = spawn("docker", ["compose", "up"], {
+const compose = spawn("docker", [...composeArgs, "up"], {
   cwd: root,
   stdio: ["ignore", "pipe", "pipe"],
 });

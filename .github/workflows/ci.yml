@@ -38,6 +38,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm demo:check "$RUNNER_TEMP/relay-demo" --cold
+        env:
+          COMPOSE_PROJECT_NAME: relay-ci-demo
 
   check:
     runs-on: ubuntu-latest

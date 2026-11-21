@@ -317,6 +317,10 @@ export function readDemoSetupEnv() {
   };
 }
 
+export function readComposeProject() {
+  return process.env.COMPOSE_PROJECT_NAME ?? null;
+}
+
 export function commandEnvironment(overrides: Readonly<Record<string, string>>) {
   return { ...process.env, ...overrides };
 }

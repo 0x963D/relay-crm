@@ -1,6 +1,6 @@
 # Relay CRM verification evidence
 
-Local runs on 21 November 2026 on Docker Desktop for Windows, from the `chore/verify-relay-crm` worktree. The [verification skill](../../.agents/skills/verify-relay-crm/SKILL.md) has the commands. Every Compose command named its project with `-p`.
+Local runs on 21 November 2026 on Docker Desktop for Windows, from the `chore/verify-relay-crm` worktree. The [verification skill](../../.agents/skills/verify-relay-crm/SKILL.md) has the commands. Every Compose command typed by hand named its project with `-p`. `pnpm demo:check` named it through `COMPOSE_PROJECT_NAME` until [the demo check needed a project name](#the-demo-check-needs-a-project-name).
 
 ## The resetter failed on a warm build cache
 
@@ -60,6 +60,30 @@ The `P2028` failure was in `work.int.test.ts`, whose 35 tests all passed in the 
 ```text
 FAIL  |integration| packages/store/test/work.int.test.ts > a note does not count as an attempt in the queue
 AssertionError: expected [] to deeply equal [ Array(1) ]
+```
+
+## The demo check needs a project name
+
+`pnpm demo:check` read its project name from `docker compose config` and ran `config` and `up` without `-p`. Without `COMPOSE_PROJECT_NAME`, Compose fell back to the folder name, and the check's teardown used that name too. In the worktree that read:
+
+```text
+name chore-verify-relay-crm-5ef013c89a7677ea app image chore-verify-relay-crm-5ef013c89a7677ea-app:local
+```
+
+The check now refuses to start without the variable, with the folder's default name or with `relay-crm`, before it creates the evidence directory. It passes the name with `-p` to every Compose call, and CI's `demo` job sets `relay-ci-demo`.
+
+```text
+Error: Set COMPOSE_PROJECT_NAME to a fresh, disposable project name, such as relay-verify-1a2b3c4d. It must not be Compose's default for this folder (chore-verify-relay-crm-5ef013c89a7677ea) or relay-crm.
+```
+
+With `COMPOSE_PROJECT_NAME=relay-verify-644be7a7`, and again on the final code with `relay-verify-cd8172b6`, `pnpm demo:check <directory> --cold` passed. Each run left no containers, volumes, networks or images with its name. The final run shared the machine with the unit suite, so its `wallMs` is not a measurement. Its lines:
+
+```text
+QUICKSTART {"wallMs":387878,"command":"docker compose up","roles":["Priya Raman","Dele Akinwale","Esther Okafor"], ...}
+LIVE_RECOVERY {"paymentId":"01a1fd95-bbae-72ca-804e-85efe1c72464","completedBy":"reconciler","wallMs":50502}
+LIVE_RESET {"sessionsEnded":true,"visitorPaymentRemoved":true, ...}
+exit 0
+containers:[] volumes:[] images:[] networks:[]
 ```
 
 ## Cleanup
