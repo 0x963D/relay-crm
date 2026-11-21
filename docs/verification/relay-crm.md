@@ -98,6 +98,18 @@ AssertionError: promise resolved "{ stdout: '', stderr: '' }" instead of rejecti
 Tests  1 passed (1)
 ```
 
+## Checks at the final head
+
+`pnpm demo:check` exits before launching anything unless its first argument is an evidence directory, so the pull request now gives `pnpm demo:check <directory> --cold`. No page in the repository gave the command without the directory. These checks ran on the host after the two fixes above.
+
+```text
+pnpm test           Test Files  65 passed (65)   Tests  1309 passed (1309)   exit 0
+pnpm typecheck      apps/mobile typecheck: Done                              exit 0
+node scripts/check-docs.mjs   Documentation checks passed.                   exit 0
+pnpm lint                                                                     exit 0
+pnpm format:check   All matched files use Prettier code style!               exit 0
+```
+
 ## Cleanup
 
 Both Compose projects and the test database container were removed by name. Label-filtered container, volume and image listings for each name came back empty.
